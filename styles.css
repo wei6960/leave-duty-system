@@ -198,7 +198,8 @@ select {
 .tab-button,
 .primary,
 .ghost,
-.grade-button {
+.grade-button,
+.mode-button {
   border: 1px solid rgba(241, 211, 124, .18);
   color: var(--text);
   background: linear-gradient(180deg, #181d24, #10141a);
@@ -210,9 +211,22 @@ select {
 
 .tab-button:hover,
 .ghost:hover,
-.grade-button:hover {
+.grade-button:hover,
+.mode-button:hover {
   border-color: rgba(241, 211, 124, .42);
   background: linear-gradient(180deg, #20262e, #12171d);
+}
+
+button:active {
+  transform: translateY(1px) scale(.98);
+  box-shadow: 0 0 0 3px rgba(241, 211, 124, .22), inset 0 .16rem .35rem rgba(0, 0, 0, .32);
+}
+
+button.button-confirmed {
+  border-color: rgba(49, 208, 112, .72);
+  background: linear-gradient(135deg, #31d070, #167a45);
+  color: #effff3;
+  box-shadow: 0 0 0 3px rgba(49, 208, 112, .18), 0 .7rem 1.4rem rgba(0, 0, 0, .24);
 }
 
 .tab-button {

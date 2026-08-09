@@ -484,6 +484,29 @@ function setFixedLateValues(values) {
   });
 }
 
+function flashButton(button, label = "已完成") {
+  if (!button) return;
+  const originalText = button.textContent;
+  button.classList.add("button-confirmed");
+  button.textContent = label;
+  window.setTimeout(() => {
+    button.classList.remove("button-confirmed");
+    button.textContent = originalText;
+  }, 900);
+}
+
+function resetLeaveForm() {
+  $("#leaveStudentPicker").value = "";
+  $("#leaveStudent").value = "";
+  $("#leaveStartDate").value = todayISO();
+  $("#leaveEndDate").value = todayISO();
+  $("#leaveNote").value = "";
+  $$("input[name='leavePeriod']").forEach((input) => {
+    input.checked = false;
+  });
+  renderLeaveStudentOptions(false);
+}
+
 function clearStudentForm() {
   editingStudentId = null;
   $("#studentForm").reset();
@@ -579,6 +602,7 @@ function setupForms() {
 
   $("#leaveForm").addEventListener("submit", (event) => {
     event.preventDefault();
+    const submitButton = event.submitter;
     const studentId = $("#leaveStudent").value;
     const start = $("#leaveStartDate").value;
     const end = $("#leaveEndDate").value;
@@ -597,12 +621,10 @@ function setupForms() {
       createdAt: new Date().toISOString(),
     });
 
-    $("#leaveNote").value = "";
-    $$("input[name='leavePeriod']").forEach((input) => {
-      input.checked = false;
-    });
     saveState();
     renderAll();
+    resetLeaveForm();
+    flashButton(submitButton, "已新增");
   });
 
   $("#lateForm").addEventListener("submit", (event) => {
@@ -1114,8 +1136,7 @@ function boot() {
   renderWeekdayInputs("studentWeekdays", "classWeekday");
   renderWeekdayInputs("studentFixedLeave", "fixedLeave");
   renderFixedLateInputs();
-  $("#leaveStartDate").value = todayISO();
-  $("#leaveEndDate").value = todayISO();
+  resetLeaveForm();
   $("#lateDate").value = todayISO();
   setupTabs();
   mobileQuery.addEventListener("change", enforceMobilePages);
