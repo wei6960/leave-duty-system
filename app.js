@@ -4,7 +4,7 @@ const SESSION_KEY = "leave-duty-branch-session";
 const LOGIN_PASSWORD = "90757744";
 const FIREBASE_SDK_VERSION = "12.17.1";
 const SUPABASE_SDK_VERSION = "2.86.0";
-const XLSX_SDK_URL = "https://cdn.sheetjs.com/xlsx-0.20.3/package/xlsx.mjs";
+const XLSX_SDK_URL = "./xlsx.mjs";
 const SUPABASE_COLLECTION = "leaveDutyBranches";
 const grades = ["國一", "國二", "國三"];
 const weekdays = ["一", "二", "三", "四", "五"];
@@ -768,6 +768,19 @@ function rowValue(row, names) {
   return key ? row[key] : "";
 }
 
+function sheetRowsToObjects(sheet, XLSX) {
+  const matrix = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
+  const headerIndex = matrix.findIndex((row) => {
+    const normalized = row.map((cell) => String(cell).trim());
+    return normalized.includes("年級") && normalized.includes("姓名");
+  });
+  if (headerIndex < 0) throw new Error("找不到欄位列，請使用標準格式。");
+  const headers = matrix[headerIndex].map((cell) => String(cell).trim());
+  return matrix.slice(headerIndex + 1)
+    .filter((row) => row.some((cell) => String(cell).trim()))
+    .map((row) => Object.fromEntries(headers.map((header, index) => [header, row[index] ?? ""])));
+}
+
 async function handleStudentImport(event) {
   const file = event.target.files[0];
   if (!file) return;
@@ -778,7 +791,7 @@ async function handleStudentImport(event) {
     const XLSX = await loadXlsxModule();
     const workbook = XLSX.read(await file.arrayBuffer(), { type: "array" });
     const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-    const rows = XLSX.utils.sheet_to_json(firstSheet, { defval: "" });
+    const rows = sheetRowsToObjects(firstSheet, XLSX);
     let added = 0;
     let updated = 0;
     let skipped = 0;
@@ -814,7 +827,7 @@ async function handleStudentImport(event) {
     renderAll();
     status.textContent = `匯入完成：新增 ${added} 位、更新 ${updated} 位、略過 ${skipped} 列。`;
   } catch (error) {
-    status.textContent = "匯入失敗，請確認格式是否符合標準範本。";
+    status.textContent = `匯入失敗：${error.message || "請確認格式是否符合標準範本。"}`;
   } finally {
     event.target.value = "";
   }
