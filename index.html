@@ -165,18 +165,11 @@
         <section class="panel import-panel">
           <div>
             <h2>快速匯入學生檔案</h2>
-            <p>使用標準 Excel 格式匯入，若同年級同姓名已存在會更新原資料。</p>
-          </div>
-          <div class="import-actions">
-            <a class="ghost link-button" href="student-import-template.xlsx" download>下載標準格式</a>
-            <label class="ghost file-button">
-              選擇 Excel 匯入
-              <input id="studentImportFile" type="file" accept=".xlsx,.xls,.csv">
-            </label>
+            <p>直接貼上名單，若同年級同姓名已存在會更新原資料。</p>
           </div>
           <div class="paste-import">
             <label>貼上名單快速新增
-              <textarea id="studentPasteInput" rows="5" placeholder="從 Excel 複製 A、B 欄貼上：&#10;國一 王小明&#10;國二 陳小華&#10;國三 林小美"></textarea>
+              <textarea id="studentPasteInput" rows="5" placeholder="國一    王小明    一三五    有訂餐        一 18:30 家長接送；三 18:40 學校活動"></textarea>
             </label>
             <button class="primary" id="studentPasteImport" type="button">貼上匯入</button>
           </div>

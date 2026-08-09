@@ -4,7 +4,6 @@ const SESSION_KEY = "leave-duty-branch-session";
 const LOGIN_PASSWORD = "90757744";
 const FIREBASE_SDK_VERSION = "12.17.1";
 const SUPABASE_SDK_VERSION = "2.86.0";
-const XLSX_SDK_URL = "./xlsx.mjs";
 const SUPABASE_COLLECTION = "leaveDutyBranches";
 const grades = ["國一", "國二", "國三"];
 const weekdays = ["一", "二", "三", "四", "五"];
@@ -25,7 +24,6 @@ let remoteSave = null;
 let supabaseClient = null;
 let supabasePollTimer = null;
 let lastRemoteUpdatedAt = "";
-let xlsxModulePromise = null;
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -623,7 +621,6 @@ function setupForms() {
     renderAll();
   });
 
-  $("#studentImportFile").addEventListener("change", handleStudentImport);
   $("#studentPasteImport").addEventListener("click", handleStudentPasteImport);
 
   $("#leaveGrade").addEventListener("change", () => {
@@ -713,11 +710,6 @@ function renderLeaveStudentOptions(open) {
       `).join("")
     : `<div class="combo-empty">沒有符合的學生</div>`;
   optionsBox.hidden = !open;
-}
-
-async function loadXlsxModule() {
-  if (!xlsxModulePromise) xlsxModulePromise = import(XLSX_SDK_URL);
-  return xlsxModulePromise;
 }
 
 function normalizeDayToken(value) {
@@ -812,33 +804,6 @@ function normalizeGradeText(value) {
   return map[text] || "";
 }
 
-function previewRows(matrix) {
-  return matrix
-    .slice(0, 8)
-    .map((row, index) => `${index + 1}: ${row.slice(0, 6).map((cell) => cleanCellText(cell) || "空").join(" / ")}`)
-    .join("；");
-}
-
-function sheetRowsToObjects(sheet, XLSX) {
-  const matrix = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "", blankrows: false });
-  const defaultHeaders = ["年級", "姓名", "上課星期", "有無訂餐", "固定請假", "固定晚到"];
-  let currentGrade = "";
-  const rows = [];
-
-  matrix.forEach((row) => {
-    const grade = normalizeGradeText(row[0]) || currentGrade;
-    const name = String(row[1] || "").trim();
-    if (normalizeGradeText(row[0])) currentGrade = normalizeGradeText(row[0]);
-    if (!grade || !name || cleanCellText(name) === "姓名") return;
-    rows.push(Object.fromEntries(defaultHeaders.map((header, index) => [header, index === 0 ? grade : row[index] ?? ""])));
-  });
-
-  if (!rows.length) {
-    throw new Error(`找不到學生資料列。請確認 A 欄是年級、B 欄是姓名。讀到前幾列：${previewRows(matrix) || "空白"}`);
-  }
-  return rows;
-}
-
 function textRowsToObjects(text) {
   const defaultHeaders = ["年級", "姓名", "上課星期", "有無訂餐", "固定請假", "固定晚到"];
   let currentGrade = "";
@@ -898,26 +863,6 @@ function importStudentRows(rows) {
   saveState();
   renderAll();
   return { added, updated, skipped };
-}
-
-async function handleStudentImport(event) {
-  const file = event.target.files[0];
-  if (!file) return;
-  const status = $("#studentImportStatus");
-  status.textContent = "匯入中...";
-
-  try {
-    const XLSX = await loadXlsxModule();
-    const workbook = XLSX.read(await file.arrayBuffer(), { type: "array" });
-    const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-    const rows = sheetRowsToObjects(firstSheet, XLSX);
-    const { added, updated, skipped } = importStudentRows(rows);
-    status.textContent = `匯入完成：新增 ${added} 位、更新 ${updated} 位、略過 ${skipped} 列。`;
-  } catch (error) {
-    status.textContent = `匯入失敗：${error.message || "請確認格式是否符合標準範本。"}`;
-  } finally {
-    event.target.value = "";
-  }
 }
 
 function handleStudentPasteImport() {

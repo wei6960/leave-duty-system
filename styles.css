@@ -621,9 +621,7 @@ legend {
 }
 
 .import-panel {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+  display: grid;
   gap: 1rem;
   margin-bottom: 1rem;
 }
