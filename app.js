@@ -769,16 +769,61 @@ function rowValue(row, names) {
 }
 
 function cleanCellText(value) {
-  return String(value || "").replace(/^\uFEFF/, "").replace(/\s+/g, "").trim();
+  return String(value || "")
+    .replace(/^\uFEFF/, "")
+    .replace(/[\u00A0\u3000]/g, " ")
+    .replace(/\s+/g, "")
+    .trim();
+}
+
+function normalizeGradeText(value) {
+  const text = cleanCellText(value)
+    .replace(/[０-９]/g, (char) => String.fromCharCode(char.charCodeAt(0) - 0xfee0))
+    .replace("年級", "")
+    .replace("國中", "")
+    .replace("國", "");
+  const map = {
+    一: "國一",
+    1: "國一",
+    七: "國一",
+    7: "國一",
+    二: "國二",
+    2: "國二",
+    八: "國二",
+    8: "國二",
+    三: "國三",
+    3: "國三",
+    九: "國三",
+    9: "國三",
+  };
+  if (grades.includes(cleanCellText(value))) return cleanCellText(value);
+  return map[text] || "";
+}
+
+function previewRows(matrix) {
+  return matrix
+    .slice(0, 8)
+    .map((row, index) => `${index + 1}: ${row.slice(0, 6).map((cell) => cleanCellText(cell) || "空").join(" / ")}`)
+    .join("；");
 }
 
 function sheetRowsToObjects(sheet, XLSX) {
-  const matrix = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
+  const matrix = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "", blankrows: false });
   const defaultHeaders = ["年級", "姓名", "上課星期", "有無訂餐", "固定請假", "固定晚到"];
-  const rows = matrix
-    .filter((row) => grades.includes(cleanCellText(row[0])) && cleanCellText(row[1]))
-    .map((row) => Object.fromEntries(defaultHeaders.map((header, index) => [header, row[index] ?? ""])));
-  if (!rows.length) throw new Error("找不到學生資料列，請確認 A 欄是年級、B 欄是姓名。");
+  let currentGrade = "";
+  const rows = [];
+
+  matrix.forEach((row) => {
+    const grade = normalizeGradeText(row[0]) || currentGrade;
+    const name = String(row[1] || "").trim();
+    if (normalizeGradeText(row[0])) currentGrade = normalizeGradeText(row[0]);
+    if (!grade || !name || cleanCellText(name) === "姓名") return;
+    rows.push(Object.fromEntries(defaultHeaders.map((header, index) => [header, index === 0 ? grade : row[index] ?? ""])));
+  });
+
+  if (!rows.length) {
+    throw new Error(`找不到學生資料列。請確認 A 欄是年級、B 欄是姓名。讀到前幾列：${previewRows(matrix) || "空白"}`);
+  }
   return rows;
 }
 
@@ -798,7 +843,7 @@ async function handleStudentImport(event) {
     let skipped = 0;
 
     rows.forEach((row) => {
-      const grade = String(rowValue(row, ["年級", "班級"])).trim();
+      const grade = normalizeGradeText(rowValue(row, ["年級", "班級"]));
       const name = String(rowValue(row, ["姓名", "學生姓名"])).trim();
       if (!grades.includes(grade) || !name) {
         skipped += 1;
