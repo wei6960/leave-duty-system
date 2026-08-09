@@ -1,0 +1,913 @@
+const STORAGE_KEY_PREFIX = "leave-duty-system-v2";
+const OLD_STORAGE_KEY = "leave-duty-system-v1";
+const SESSION_KEY = "leave-duty-branch-session";
+const LOGIN_PASSWORD = "90757744";
+const FIREBASE_SDK_VERSION = "12.17.1";
+const grades = ["國一", "國二", "國三"];
+const weekdays = ["一", "二", "三", "四", "五"];
+
+let dashboardGrade = "全體";
+let dashboardMode = "today";
+let editingStudentId = null;
+let currentBranch = sessionStorage.getItem(SESSION_KEY) || "";
+let state = currentBranch ? loadState() : emptyState();
+let syncReady = false;
+let syncLoading = false;
+let syncUnsubscribe = null;
+let syncSaveTimer = null;
+let syncDocRef = null;
+let setDocRemote = null;
+
+const $ = (selector) => document.querySelector(selector);
+const $$ = (selector) => [...document.querySelectorAll(selector)];
+const mobileQuery = window.matchMedia("(max-width: 720px)");
+
+function emptyState() {
+  return { students: [], leaves: [], lateRecords: [] };
+}
+
+function storageKey() {
+  return `${STORAGE_KEY_PREFIX}-${currentBranch || "平鎮"}`;
+}
+
+function loadState() {
+  const saved = localStorage.getItem(storageKey());
+  if (saved) return normalizeState(JSON.parse(saved));
+
+  const previousSaved = currentBranch === "平鎮" ? localStorage.getItem(STORAGE_KEY_PREFIX) : null;
+  if (previousSaved) return normalizeState(JSON.parse(previousSaved));
+
+  const oldSaved = currentBranch === "平鎮" ? localStorage.getItem(OLD_STORAGE_KEY) : null;
+  if (oldSaved) {
+    const oldState = normalizeState(JSON.parse(oldSaved));
+    const onlyOriginalSample =
+      oldState.students.length === 1 &&
+      oldState.students[0].name === "王小明" &&
+      oldState.leaves.length === 0 &&
+      oldState.lateRecords.length === 0;
+    if (!onlyOriginalSample) return oldState;
+  }
+
+  return emptyState();
+}
+
+function normalizeState(raw) {
+  return {
+    students: (raw.students || []).map((student) => ({
+      id: student.id || crypto.randomUUID(),
+      grade: grades.includes(student.grade) ? student.grade : "國一",
+      name: student.name || "",
+      weekdays: student.weekdays || [],
+      meal: student.meal || "無訂餐",
+      fixedLeave: student.fixedLeave || [],
+      fixedLate: normalizeFixedLate(student.fixedLate || []),
+    })),
+    leaves: normalizeLeaves(raw.leaves || []),
+    lateRecords: raw.lateRecords || [],
+  };
+}
+
+function normalizeFixedLate(items) {
+  return items.map((item) => {
+    if (typeof item === "string") return { day: item, time: "", reason: "" };
+    return { day: item.day, time: item.time || "", reason: item.reason || "" };
+  }).filter((item) => weekdays.includes(item.day));
+}
+
+function normalizeLeaves(records) {
+  const normalized = records.map((record) => ({
+    ...record,
+    startDate: record.startDate || record.date,
+    endDate: record.endDate || record.date,
+    date: record.startDate || record.date,
+  }));
+
+  const groups = new Map();
+  normalized.forEach((record) => {
+    const createdBucket = record.createdAt ? record.createdAt.slice(0, 19) : record.id;
+    const key = [record.studentId, record.note || "", record.dismissedAt || "", createdBucket].join("|");
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(record);
+  });
+
+  return [...groups.values()].flatMap((group) => {
+    const sorted = group.sort((a, b) => getLeaveStart(a).localeCompare(getLeaveStart(b)));
+    const merged = [];
+    sorted.forEach((record) => {
+      const last = merged[merged.length - 1];
+      if (!last) {
+        merged.push({ ...record });
+        return;
+      }
+      const nextExpected = addDays(getLeaveEnd(last), 1);
+      if (getLeaveStart(record) <= nextExpected) {
+        last.endDate = maxDate(getLeaveEnd(last), getLeaveEnd(record));
+        last.date = last.startDate;
+      } else {
+        merged.push({ ...record });
+      }
+    });
+    return merged;
+  });
+}
+
+function saveState() {
+  if (!currentBranch) return;
+  localStorage.setItem(storageKey(), JSON.stringify(state));
+  queueRemoteSave();
+}
+
+function setSyncStatus(text) {
+  const target = $("#syncStatus");
+  if (target) target.textContent = text;
+}
+
+function queueRemoteSave() {
+  if (!syncReady || syncLoading || !syncDocRef || !setDocRemote) return;
+  clearTimeout(syncSaveTimer);
+  syncSaveTimer = setTimeout(() => {
+    setDocRemote(syncDocRef, {
+      branch: currentBranch,
+      data: JSON.parse(JSON.stringify(state)),
+      updatedAt: new Date().toISOString(),
+    }, { merge: true }).catch(() => setSyncStatus("同步失敗"));
+  }, 350);
+}
+
+function hasFirebaseConfig() {
+  const config = window.FIREBASE_CONFIG;
+  return Boolean(config && config.apiKey && config.projectId && config.appId);
+}
+
+async function setupCloudSync() {
+  if (!currentBranch) return;
+  if (syncUnsubscribe) {
+    syncUnsubscribe();
+    syncUnsubscribe = null;
+  }
+  syncReady = false;
+  syncDocRef = null;
+  setDocRemote = null;
+
+  if (!hasFirebaseConfig()) {
+    setSyncStatus("本機模式");
+    return;
+  }
+
+  try {
+    setSyncStatus("連線中");
+    const [{ initializeApp, getApps, getApp }, firestore] = await Promise.all([
+      import(`https://www.gstatic.com/firebasejs/${FIREBASE_SDK_VERSION}/firebase-app.js`),
+      import(`https://www.gstatic.com/firebasejs/${FIREBASE_SDK_VERSION}/firebase-firestore.js`),
+    ]);
+    const app = getApps().length ? getApp() : initializeApp(window.FIREBASE_CONFIG);
+    const db = firestore.getFirestore(app);
+    syncDocRef = firestore.doc(db, "leave-duty-system", currentBranch);
+    setDocRemote = firestore.setDoc;
+
+    syncLoading = true;
+    syncUnsubscribe = firestore.onSnapshot(syncDocRef, (snapshot) => {
+      if (!snapshot.exists()) {
+        syncLoading = false;
+        syncReady = true;
+        setSyncStatus("同步中");
+        queueRemoteSave();
+        return;
+      }
+      const remote = snapshot.data().data;
+      if (remote && !snapshot.metadata.hasPendingWrites) {
+        state = normalizeState(remote);
+        localStorage.setItem(storageKey(), JSON.stringify(state));
+        renderAll();
+      }
+      syncLoading = false;
+      syncReady = true;
+      setSyncStatus("同步中");
+    }, () => {
+      syncLoading = false;
+      syncReady = false;
+      setSyncStatus("同步失敗");
+    });
+  } catch (error) {
+    syncLoading = false;
+    syncReady = false;
+    setSyncStatus("本機模式");
+  }
+}
+
+function todayISO() {
+  const now = new Date();
+  return toISODate(now);
+}
+
+function toISODate(date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function dateLabel(isoDate) {
+  if (!isoDate) return "";
+  return new Date(`${isoDate}T00:00:00`).toLocaleDateString("zh-TW", {
+    month: "2-digit",
+    day: "2-digit",
+    weekday: "short",
+  });
+}
+
+function datesBetween(start, end) {
+  const startDate = new Date(`${start}T00:00:00`);
+  const endDate = new Date(`${end}T00:00:00`);
+  const dates = [];
+  for (let cursor = startDate; cursor <= endDate; cursor.setDate(cursor.getDate() + 1)) {
+    dates.push(toISODate(cursor));
+  }
+  return dates;
+}
+
+function addDays(isoDate, amount) {
+  const date = new Date(`${isoDate}T00:00:00`);
+  date.setDate(date.getDate() + amount);
+  return toISODate(date);
+}
+
+function maxDate(a, b) {
+  return a > b ? a : b;
+}
+
+function getLeaveStart(record) {
+  return record.startDate || record.date;
+}
+
+function getLeaveEnd(record) {
+  return record.endDate || record.date;
+}
+
+function leaveDayCount(record) {
+  return datesBetween(getLeaveStart(record), getLeaveEnd(record)).length;
+}
+
+function leaveDateLabel(record) {
+  const start = getLeaveStart(record);
+  const end = getLeaveEnd(record);
+  if (start === end) return dateLabel(start);
+  return `${dateLabel(start)} 到 ${dateLabel(end)}`;
+}
+
+function weekdayFromDate(isoDate) {
+  return ["日", "一", "二", "三", "四", "五", "六"][new Date(`${isoDate}T00:00:00`).getDay()];
+}
+
+function byDateDesc(a, b) {
+  return b.date.localeCompare(a.date);
+}
+
+function getStudent(id) {
+  return state.students.find((student) => student.id === id);
+}
+
+function studentLabel(student) {
+  return `${student.grade} ${student.name}`;
+}
+
+function dashboardStudents() {
+  return state.students.filter((student) => dashboardGrade === "全體" || student.grade === dashboardGrade);
+}
+
+function dashboardStudentIds() {
+  return new Set(dashboardStudents().map((student) => student.id));
+}
+
+function todayLeaveStudentIds() {
+  const today = todayISO();
+  const todayWeekday = weekdayFromDate(today);
+  const ids = dashboardStudentIds();
+  const leaveIds = new Set();
+
+  state.leaves.forEach((record) => {
+    if (record.dismissedAt || !ids.has(record.studentId)) return;
+    if (getLeaveStart(record) <= today && getLeaveEnd(record) >= today) {
+      leaveIds.add(record.studentId);
+    }
+  });
+
+  state.students.forEach((student) => {
+    if (ids.has(student.id) && student.fixedLeave.includes(todayWeekday)) {
+      leaveIds.add(student.id);
+    }
+  });
+
+  return leaveIds;
+}
+
+function renderExpectedAttendance() {
+  const todayWeekday = weekdayFromDate(todayISO());
+  const leaveIds = todayLeaveStudentIds();
+  const expected = dashboardStudents()
+    .filter((student) => student.weekdays.includes(todayWeekday))
+    .filter((student) => !leaveIds.has(student.id)).length;
+  $("#todayExpectedCount").textContent = expected;
+}
+
+function renderWeekdayInputs(targetId, name) {
+  const target = $(`#${targetId}`);
+  target.innerHTML = weekdays
+    .map((day) => `
+      <label class="check-pill">
+        <input type="checkbox" name="${name}" value="${day}">
+        星期${day}
+      </label>
+    `)
+    .join("");
+}
+
+function renderFixedLateInputs() {
+  $("#studentFixedLate").innerHTML = weekdays
+    .map((day) => `
+      <label class="fixed-late-row">
+        <span>
+          <input type="checkbox" name="fixedLateDay" value="${day}">
+          星期${day}
+        </span>
+        <input type="time" data-fixed-late-time="${day}" aria-label="星期${day}到班時間">
+        <input data-fixed-late-reason="${day}" placeholder="原因" aria-label="星期${day}固定晚到原因">
+      </label>
+    `)
+    .join("");
+}
+
+function selectedValues(name) {
+  return $$(`input[name="${name}"]:checked`).map((input) => input.value);
+}
+
+function setCheckedValues(name, values) {
+  $$(`input[name="${name}"]`).forEach((input) => {
+    input.checked = values.includes(input.value);
+  });
+}
+
+function selectedFixedLate() {
+  return $$('input[name="fixedLateDay"]:checked').map((input) => ({
+    day: input.value,
+    time: document.querySelector(`[data-fixed-late-time="${input.value}"]`).value,
+    reason: document.querySelector(`[data-fixed-late-reason="${input.value}"]`).value.trim(),
+  }));
+}
+
+function setFixedLateValues(values) {
+  const normalized = normalizeFixedLate(values);
+  $$('input[name="fixedLateDay"]').forEach((input) => {
+    const match = normalized.find((item) => item.day === input.value);
+    input.checked = Boolean(match);
+    document.querySelector(`[data-fixed-late-time="${input.value}"]`).value = match ? match.time : "";
+    document.querySelector(`[data-fixed-late-reason="${input.value}"]`).value = match ? match.reason : "";
+  });
+}
+
+function clearStudentForm() {
+  editingStudentId = null;
+  $("#studentForm").reset();
+  setCheckedValues("classWeekday", []);
+  setCheckedValues("fixedLeave", []);
+  setFixedLateValues([]);
+  $("#studentSubmitButton").textContent = "新增學生檔案";
+  $("#cancelStudentEdit").hidden = true;
+}
+
+function fillStudentForm(student) {
+  editingStudentId = student.id;
+  $("#studentGrade").value = student.grade;
+  $("#studentName").value = student.name;
+  $("#studentMeal").value = student.meal;
+  setCheckedValues("classWeekday", student.weekdays);
+  setCheckedValues("fixedLeave", student.fixedLeave);
+  setFixedLateValues(student.fixedLate);
+  $("#studentSubmitButton").textContent = "儲存學生修改";
+  $("#cancelStudentEdit").hidden = false;
+}
+
+function setupTabs() {
+  $$(".tab-button").forEach((button) => {
+    button.addEventListener("click", () => {
+      if (mobileQuery.matches && button.classList.contains("desktop-only")) return;
+      $$(".tab-button").forEach((tab) => tab.classList.remove("active"));
+      $$(".page").forEach((page) => page.classList.remove("active"));
+      button.classList.add("active");
+      $(`#${button.dataset.tab}`).classList.add("active");
+      renderAll();
+    });
+  });
+}
+
+function enforceMobilePages() {
+  if (!mobileQuery.matches) return;
+  const activePage = $(".page.active");
+  if (activePage && ["students", "history"].includes(activePage.id)) {
+    document.querySelector('[data-tab="dashboard"]').click();
+  }
+}
+
+function setupDashboardFilter() {
+  $$(".grade-button").forEach((button) => {
+    button.addEventListener("click", () => {
+      dashboardGrade = button.dataset.grade;
+      $$(".grade-button").forEach((item) => item.classList.remove("active"));
+      button.classList.add("active");
+      renderAll();
+    });
+  });
+
+  $$(".mode-button").forEach((button) => {
+    button.addEventListener("click", () => {
+      dashboardMode = button.dataset.mode;
+      $$(".mode-button").forEach((item) => item.classList.remove("active"));
+      button.classList.add("active");
+      renderAll();
+    });
+  });
+}
+
+function setupForms() {
+  $("#studentForm").addEventListener("submit", (event) => {
+    event.preventDefault();
+    const payload = {
+      grade: $("#studentGrade").value,
+      name: $("#studentName").value.trim(),
+      weekdays: selectedValues("classWeekday"),
+      meal: $("#studentMeal").value,
+      fixedLeave: selectedValues("fixedLeave"),
+      fixedLate: selectedFixedLate(),
+    };
+    if (editingStudentId) {
+      const student = getStudent(editingStudentId);
+      if (student) Object.assign(student, payload);
+    } else {
+      state.students.push({
+        id: crypto.randomUUID(),
+        ...payload,
+      });
+    }
+    clearStudentForm();
+    saveState();
+    renderAll();
+  });
+
+  $("#cancelStudentEdit").addEventListener("click", () => {
+    clearStudentForm();
+    renderAll();
+  });
+
+  $("#leaveForm").addEventListener("submit", (event) => {
+    event.preventDefault();
+    const studentId = $("#leaveStudent").value;
+    const start = $("#leaveStartDate").value;
+    const end = $("#leaveEndDate").value;
+    if (!studentId) return alert("請先選擇學生");
+    if (end < start) return alert("結束日期不能早於開始日期");
+
+    state.leaves.push({
+      id: crypto.randomUUID(),
+      studentId,
+      date: start,
+      startDate: start,
+      endDate: end,
+      note: $("#leaveNote").value.trim(),
+      createdAt: new Date().toISOString(),
+    });
+
+    $("#leaveNote").value = "";
+    saveState();
+    renderAll();
+  });
+
+  $("#lateForm").addEventListener("submit", (event) => {
+    event.preventDefault();
+    if (!$("#lateStudent").value) return alert("請先選擇學生");
+    state.lateRecords.push({
+      id: crypto.randomUUID(),
+      studentId: $("#lateStudent").value,
+      date: $("#lateDate").value,
+      type: "臨時晚到",
+      note: $("#lateNote").value.trim(),
+      createdAt: new Date().toISOString(),
+    });
+    $("#lateNote").value = "";
+    saveState();
+    renderAll();
+  });
+
+  $("#leaveGrade").addEventListener("change", () => {
+    $("#leaveStudentPicker").value = "";
+    $("#leaveStudent").value = "";
+    renderAll();
+  });
+
+  $("#leaveStudentPicker").addEventListener("focus", () => renderLeaveStudentOptions(true));
+  $("#leaveStudentPicker").addEventListener("click", () => renderLeaveStudentOptions(true));
+  $("#leaveStudentPicker").addEventListener("input", () => {
+    $("#leaveStudent").value = "";
+    renderLeaveStudentOptions(true);
+  });
+
+  document.addEventListener("click", (event) => {
+    if (!$("#leaveStudentCombo").contains(event.target)) {
+      $("#leaveStudentOptions").hidden = true;
+    }
+  });
+
+  ["studentFilter", "studentSearch", "lateGrade", "historyType", "historySearch"].forEach((id) => {
+    $(`#${id}`).addEventListener("input", renderAll);
+  });
+}
+
+function updateClock() {
+  const now = new Date();
+  $("#currentDate").textContent = now.toLocaleDateString("zh-TW", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    weekday: "long",
+  });
+  $("#currentTime").textContent = now.toLocaleTimeString("zh-TW", {
+    hour12: false,
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+}
+
+function leaveStatus(record) {
+  const today = todayISO();
+  const start = getLeaveStart(record);
+  const end = getLeaveEnd(record);
+  if (start > today) return { className: "", label: "未到日期", active: true };
+  if (end === today) return { className: "ending", label: "今日即將結束", active: true };
+  if (start <= today && end >= today) return { className: "ending", label: "請假中", active: true };
+  return { className: "done", label: "已結束", active: false };
+}
+
+function renderStudentOptions() {
+  const renderLeaveOptions = () => {
+    renderLeaveStudentOptions(false);
+  };
+
+  const renderOptions = (gradeSelector, studentSelector) => {
+    const grade = $(gradeSelector).value;
+    const options = state.students
+      .filter((student) => student.grade === grade)
+      .map((student) => `<option value="${student.id}">${student.name}</option>`)
+      .join("");
+    $(studentSelector).innerHTML = options || `<option value="">請先建立學生檔案</option>`;
+  };
+  renderLeaveOptions();
+  renderOptions("#lateGrade", "#lateStudent");
+}
+
+function leaveStudentMatches() {
+  const grade = $("#leaveGrade").value;
+  const keyword = $("#leaveStudentPicker").value.trim();
+  return state.students
+    .filter((student) => student.grade === grade)
+    .filter((student) => !keyword || student.name.includes(keyword));
+}
+
+function renderLeaveStudentOptions(open) {
+  const optionsBox = $("#leaveStudentOptions");
+  const matches = leaveStudentMatches();
+  optionsBox.innerHTML = matches.length
+    ? matches.map((student) => `
+        <button type="button" class="combo-option" data-pick-leave-student="${student.id}">
+          <strong>${student.name}</strong>
+          <span>${student.grade}</span>
+        </button>
+      `).join("")
+    : `<div class="combo-empty">沒有符合的學生</div>`;
+  optionsBox.hidden = !open;
+}
+
+function renderStudents() {
+  const grade = $("#studentFilter").value;
+  const keyword = $("#studentSearch").value.trim();
+  const rows = state.students
+    .filter((student) => grade === "全部" || student.grade === grade)
+    .filter((student) => !keyword || student.name.includes(keyword))
+    .map((student) => {
+      const leaveCount = state.leaves
+        .filter((record) => record.studentId === student.id)
+        .reduce((sum, record) => sum + leaveDayCount(record), 0);
+      const lateCount = state.lateRecords.filter((record) => record.studentId === student.id).length + student.fixedLate.length;
+      return `
+        <tr>
+          <td>${student.grade}</td>
+          <td>${student.name}</td>
+          <td>${student.weekdays.map((day) => `星期${day}`).join("、") || "-"}</td>
+          <td>${student.meal}</td>
+          <td>請假 ${leaveCount} / 晚到 ${lateCount}</td>
+          <td>${student.fixedLeave.map((day) => `星期${day}`).join("、") || "-"}</td>
+          <td>${student.fixedLate.map((item) => `星期${item.day}${item.time ? ` ${item.time}` : ""}${item.reason ? ` ${item.reason}` : ""}`).join("、") || "-"}</td>
+          <td>
+            <div class="action-row">
+              <button class="ghost" data-edit-student="${student.id}">編輯</button>
+              <button class="ghost danger" data-delete-student="${student.id}">移除學生</button>
+            </div>
+          </td>
+        </tr>
+      `;
+    })
+    .join("");
+  $("#studentTable").innerHTML = rows || `<tr><td colspan="8">尚無學生資料</td></tr>`;
+}
+
+function renderActiveLeaves() {
+  const today = todayISO();
+  const ids = dashboardStudentIds();
+  const regularRecords = state.leaves
+    .filter((record) => {
+      if (record.dismissedAt || !ids.has(record.studentId)) return false;
+      if (dashboardMode === "today") return getLeaveStart(record) <= today && getLeaveEnd(record) >= today;
+      return getLeaveEnd(record) >= today;
+    });
+  const fixedRecords = buildFixedLeaveRecords(today, ids);
+  const records = [...regularRecords, ...fixedRecords]
+    .sort((a, b) => getLeaveStart(a).localeCompare(getLeaveStart(b)));
+  $("#activeLeaveCount").textContent = records.length;
+  $("#activeLeaveList").innerHTML = records.map(renderLeaveCard).join("") || `<div class="empty">目前沒有亮燈中的請假。</div>`;
+}
+
+function buildFixedLeaveRecords(today, ids) {
+  const days = dashboardMode === "today" ? [today] : datesBetween(today, addDays(today, 6));
+  return state.students
+    .filter((student) => ids.has(student.id))
+    .flatMap((student) => days
+      .filter((date) => student.fixedLeave.includes(weekdayFromDate(date)))
+      .map((date) => ({
+        id: `fixed-leave-${student.id}-${date}`,
+        studentId: student.id,
+        date,
+        startDate: date,
+        endDate: date,
+        note: "固定請假",
+        fixed: true,
+      })));
+}
+
+function renderLeaveCard(record) {
+  const student = getStudent(record.studentId);
+  if (!student) return "";
+  const status = leaveStatus(record);
+  return `
+    <article class="record-card ${status.className}">
+      <strong>${studentLabel(student)}</strong>
+      <div class="meta">
+        <span class="badge green">${status.label}</span>
+        <span class="badge">${leaveDateLabel(record)}</span>
+        <span class="badge">${leaveDayCount(record)} 天</span>
+        <span class="badge">${student.meal}</span>
+        ${record.note ? `<span class="badge gold">${record.note}</span>` : ""}
+      </div>
+    </article>
+  `;
+}
+
+function renderLateBoard() {
+  const today = todayISO();
+  const todayWeekday = weekdayFromDate(today);
+  const ids = dashboardStudentIds();
+  const fixed = state.students
+    .filter((student) => ids.has(student.id) && student.fixedLate.some((item) => item.day === todayWeekday))
+    .map((student) => {
+      const fixedLate = student.fixedLate.find((item) => item.day === todayWeekday);
+      return {
+        student,
+        date: today,
+        type: "固定晚到",
+        note: `每週${todayWeekday}${fixedLate.time ? ` ${fixedLate.time} 到班` : ""}${fixedLate.reason ? `｜${fixedLate.reason}` : ""}`,
+      };
+    });
+  const temporary = state.lateRecords
+    .filter((record) => {
+      if (record.dismissedAt || !ids.has(record.studentId)) return false;
+      if (dashboardMode === "today") return record.date === today;
+      return record.date >= today;
+    })
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .map((record) => ({ ...record, student: getStudent(record.studentId) }))
+    .filter((record) => record.student);
+  const records = [...fixed, ...temporary];
+  $("#todayLateCount").textContent = fixed.length + temporary.filter((record) => record.date === today).length;
+  $("#lateList").innerHTML = records.map(renderLateCard).join("") || `<div class="empty">今日與未來暫無晚到。</div>`;
+}
+
+function renderLateCard(record) {
+  return `
+    <article class="record-card late">
+      <strong>${studentLabel(record.student)}</strong>
+      <div class="meta">
+        <span class="badge">${record.type}</span>
+        <span class="badge">${dateLabel(record.date)}</span>
+        ${record.note ? `<span class="badge gold">${record.note}</span>` : ""}
+      </div>
+    </article>
+  `;
+}
+
+function renderRecentHistory() {
+  const today = todayISO();
+  const ids = dashboardStudentIds();
+  const records = state.leaves
+    .filter((record) => getLeaveEnd(record) < today && ids.has(record.studentId))
+    .sort((a, b) => getLeaveEnd(b).localeCompare(getLeaveEnd(a)))
+    .slice(0, 6);
+  $("#recentHistoryList").innerHTML = records.map(renderLeaveCard).join("") || `<div class="empty">尚無近期結束的請假。</div>`;
+}
+
+function renderManageLists() {
+  $("#leaveManageList").innerHTML = state.leaves
+    .slice()
+    .sort((a, b) => getLeaveStart(b).localeCompare(getLeaveStart(a)))
+    .map((record) => `${renderLeaveCard(record)}
+      <div class="action-row">
+        ${record.dismissedAt ? "" : `<button class="ghost" data-dismiss-leave="${record.id}">結束顯示但保留紀錄</button>`}
+        <button class="ghost danger" data-delete-leave="${record.id}">移除請假</button>
+      </div>`)
+    .join("") || `<div class="empty">尚未新增請假日期。</div>`;
+
+  $("#lateManageList").innerHTML = state.lateRecords
+    .slice()
+    .sort(byDateDesc)
+    .map((record) => {
+      const student = getStudent(record.studentId);
+      if (!student) return "";
+      return `${renderLateCard({ ...record, student })}
+        <div class="action-row">
+          ${record.dismissedAt ? "" : `<button class="ghost" data-remove-late="${record.id}">結束顯示但保留紀錄</button>`}
+        </div>`;
+    })
+    .join("") || `<div class="empty">尚未新增臨時晚到。</div>`;
+}
+
+function renderHistory() {
+  const type = $("#historyType").value;
+  const keyword = $("#historySearch").value.trim();
+  const leaveItems = state.leaves.map((record) => ({ ...record, type: "請假" }));
+  const lateItems = state.lateRecords.map((record) => ({ ...record, type: "晚到" }));
+  const items = [...leaveItems, ...lateItems]
+    .filter((item) => type === "全部" || item.type === type)
+    .filter((item) => {
+      const student = getStudent(item.studentId);
+      const haystack = `${student ? studentLabel(student) : ""}${item.note || ""}`;
+      return !keyword || haystack.includes(keyword);
+    })
+    .sort((a, b) => (getLeaveStart(b) || b.date).localeCompare(getLeaveStart(a) || a.date));
+
+  $("#historyList").innerHTML = items.map((item) => {
+    const student = getStudent(item.studentId);
+    if (!student) return "";
+    return `
+      <article class="record-card ${item.type === "晚到" ? "late" : leaveStatus(item).className}">
+        <strong>${studentLabel(student)}</strong>
+        <div class="meta">
+          <span class="badge">${item.type}</span>
+          <span class="badge">${item.type === "請假" ? leaveDateLabel(item) : dateLabel(item.date)}</span>
+          ${item.type === "請假" ? `<span class="badge">${leaveDayCount(item)} 天</span>` : ""}
+          <span class="badge">${item.type === "請假" ? leaveStatus(item).label : item.type}</span>
+          ${item.note ? `<span class="badge gold">${item.note}</span>` : ""}
+        </div>
+      </article>
+    `;
+  }).join("") || `<div class="empty">目前沒有符合條件的歷史紀錄。</div>`;
+}
+
+function setupActions() {
+  document.addEventListener("click", (event) => {
+    const deleteStudentId = event.target.dataset.deleteStudent;
+    const editStudentId = event.target.dataset.editStudent;
+    const pickLeaveStudentId = event.target.dataset.pickLeaveStudent;
+    const dismissLeaveId = event.target.dataset.dismissLeave;
+    const deleteLeaveId = event.target.dataset.deleteLeave;
+    const removeLateId = event.target.dataset.removeLate;
+
+    if (pickLeaveStudentId) {
+      const student = getStudent(pickLeaveStudentId);
+      if (student) {
+        $("#leaveStudent").value = student.id;
+        $("#leaveStudentPicker").value = student.name;
+        $("#leaveStudentOptions").hidden = true;
+      }
+    }
+    if (editStudentId) {
+      const student = getStudent(editStudentId);
+      if (student) {
+        fillStudentForm(student);
+        document.querySelector('[data-tab="students"]').click();
+        $("#studentName").focus();
+      }
+    }
+    if (deleteStudentId && confirm("確定移除這位學生檔案？相關請假與晚到紀錄也會一起移除。")) {
+      state.students = state.students.filter((student) => student.id !== deleteStudentId);
+      state.leaves = state.leaves.filter((record) => record.studentId !== deleteStudentId);
+      state.lateRecords = state.lateRecords.filter((record) => record.studentId !== deleteStudentId);
+      if (editingStudentId === deleteStudentId) clearStudentForm();
+    }
+    if (dismissLeaveId) {
+      const leave = state.leaves.find((record) => record.id === dismissLeaveId);
+      if (leave) leave.dismissedAt = new Date().toISOString();
+    }
+    if (deleteLeaveId && confirm("確定移除這筆請假？這會從歷史紀錄中刪除。")) {
+      state.leaves = state.leaves.filter((record) => record.id !== deleteLeaveId);
+    }
+    if (removeLateId) {
+      const late = state.lateRecords.find((record) => record.id === removeLateId);
+      if (late) late.dismissedAt = new Date().toISOString();
+    }
+
+    if (deleteStudentId || dismissLeaveId || deleteLeaveId || removeLateId) {
+      saveState();
+      renderAll();
+    }
+  });
+}
+
+function showLogin() {
+  $("#loginScreen").hidden = false;
+  $("#appShell").hidden = true;
+  $("#loginPassword").value = "";
+  $("#loginPassword").focus();
+}
+
+function showApp() {
+  $("#loginScreen").hidden = true;
+  $("#appShell").hidden = false;
+  $("#currentBranchLabel").textContent = `${currentBranch}分校`;
+}
+
+function setupLogin() {
+  $("#loginForm").addEventListener("submit", (event) => {
+    event.preventDefault();
+    if ($("#loginPassword").value !== LOGIN_PASSWORD) {
+      $("#loginError").hidden = false;
+      $("#loginPassword").select();
+      return;
+    }
+
+    currentBranch = $("#loginBranch").value;
+    sessionStorage.setItem(SESSION_KEY, currentBranch);
+    state = loadState();
+    $("#loginError").hidden = true;
+    showApp();
+    setupCloudSync();
+    saveState();
+    renderAll();
+  });
+
+  $("#logoutButton").addEventListener("click", () => {
+    sessionStorage.removeItem(SESSION_KEY);
+    currentBranch = "";
+    state = emptyState();
+    if (syncUnsubscribe) {
+      syncUnsubscribe();
+      syncUnsubscribe = null;
+    }
+    syncReady = false;
+    setSyncStatus("本機模式");
+    showLogin();
+  });
+}
+
+function renderAll() {
+  $("#studentCount").textContent = dashboardStudents().length;
+  renderExpectedAttendance();
+  renderStudentOptions();
+  renderStudents();
+  renderActiveLeaves();
+  renderLateBoard();
+  renderRecentHistory();
+  renderManageLists();
+  renderHistory();
+}
+
+function boot() {
+  renderWeekdayInputs("studentWeekdays", "classWeekday");
+  renderWeekdayInputs("studentFixedLeave", "fixedLeave");
+  renderFixedLateInputs();
+  $("#leaveStartDate").value = todayISO();
+  $("#leaveEndDate").value = todayISO();
+  $("#lateDate").value = todayISO();
+  setupTabs();
+  mobileQuery.addEventListener("change", enforceMobilePages);
+  setupDashboardFilter();
+  setupForms();
+  setupActions();
+  setupLogin();
+  updateClock();
+  setInterval(updateClock, 1000);
+  if (currentBranch) {
+    showApp();
+    setupCloudSync();
+    saveState();
+    renderAll();
+    enforceMobilePages();
+  } else {
+    showLogin();
+  }
+}
+
+boot();

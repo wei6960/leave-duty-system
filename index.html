@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#07090c">
+  <title>請假班務系統</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <section class="login-screen" id="loginScreen">
+    <form class="login-card" id="loginForm">
+      <img src="assets/logo.png" alt="金牌躍騰教育集團 logo">
+      <p class="eyebrow">金牌躍騰教育集團</p>
+      <h1>請假班務系統</h1>
+      <label>選擇分校
+        <select id="loginBranch" required>
+          <option value="平鎮">平鎮</option>
+          <option value="平興">平興</option>
+          <option value="東興">東興</option>
+        </select>
+      </label>
+      <label>登入密碼
+        <input id="loginPassword" type="password" placeholder="請輸入密碼" required>
+      </label>
+      <p class="login-error" id="loginError" hidden>密碼錯誤，請重新輸入。</p>
+      <button class="primary" type="submit">登入系統</button>
+    </form>
+  </section>
+
+  <div class="app-shell" id="appShell" hidden>
+    <aside class="sidebar">
+      <div class="brand">
+        <img src="assets/logo.png" alt="平鎮分校 logo">
+        <div>
+          <strong>請假班務系統</strong>
+          <span id="currentBranchLabel">平鎮分校</span>
+          <small id="syncStatus">本機模式</small>
+        </div>
+      </div>
+
+      <nav class="tabs" aria-label="系統分頁">
+        <button class="tab-button active" data-tab="dashboard">主頁看板</button>
+        <button class="tab-button desktop-only" data-tab="students">學生檔案</button>
+        <button class="tab-button" data-tab="leave">請假登記</button>
+        <button class="tab-button" data-tab="late">晚到登記</button>
+        <button class="tab-button desktop-only" data-tab="history">歷史紀錄</button>
+      </nav>
+      <button class="logout-button" id="logoutButton" type="button">登出 / 切換分校</button>
+    </aside>
+
+    <main>
+      <section class="page active" id="dashboard">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">即時班務狀態</p>
+            <h1>今日請假與晚到總覽</h1>
+          </div>
+          <div class="clock-card">
+            <span id="currentDate"></span>
+            <strong id="currentTime"></strong>
+          </div>
+        </header>
+
+        <div class="grade-switch" id="dashboardGradeFilter" aria-label="主頁年級篩選">
+          <button class="grade-button active" data-grade="全體">全體</button>
+          <button class="grade-button" data-grade="國一">國一</button>
+          <button class="grade-button" data-grade="國二">國二</button>
+          <button class="grade-button" data-grade="國三">國三</button>
+        </div>
+
+        <div class="mode-switch" id="dashboardModeFilter" aria-label="主頁顯示範圍">
+          <button class="mode-button active" data-mode="today">今日請假晚到</button>
+          <button class="mode-button" data-mode="all">顯示所有</button>
+        </div>
+
+        <div class="status-grid">
+          <article class="metric">
+            <span>進行中請假</span>
+            <strong id="activeLeaveCount">0</strong>
+          </article>
+          <article class="metric">
+            <span>今日晚到</span>
+            <strong id="todayLateCount">0</strong>
+          </article>
+          <article class="metric">
+            <span>今日應到</span>
+            <strong id="todayExpectedCount">0</strong>
+          </article>
+          <article class="metric">
+            <span>學生檔案</span>
+            <strong id="studentCount">0</strong>
+          </article>
+        </div>
+
+        <div class="board-layout">
+          <section class="panel large-panel">
+            <div class="panel-title">
+              <h2>請假同學</h2>
+              <span class="live-dot">亮燈中</span>
+            </div>
+            <div class="record-list" id="activeLeaveList"></div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-title">
+              <h2>晚到區塊</h2>
+              <span>固定 + 臨時</span>
+            </div>
+            <div class="record-list compact" id="lateList"></div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-title">
+              <h2>近期結束</h2>
+              <span>歷史請假</span>
+            </div>
+            <div class="record-list compact" id="recentHistoryList"></div>
+          </section>
+        </div>
+      </section>
+
+      <section class="page" id="students">
+        <header class="section-head">
+          <div>
+            <p class="eyebrow">學生檔案</p>
+            <h1>建立與管理學生資料</h1>
+          </div>
+        </header>
+
+        <form class="form-grid panel" id="studentForm">
+          <label>年級
+            <select id="studentGrade" required>
+              <option value="國一">國一</option>
+              <option value="國二">國二</option>
+              <option value="國三">國三</option>
+            </select>
+          </label>
+          <label>姓名
+            <input id="studentName" required placeholder="輸入學生姓名">
+          </label>
+          <label>有無訂餐
+            <select id="studentMeal">
+              <option value="有訂餐">有訂餐</option>
+              <option value="無訂餐">無訂餐</option>
+            </select>
+          </label>
+          <fieldset>
+            <legend>上課星期</legend>
+            <div class="weekday-group" id="studentWeekdays"></div>
+          </fieldset>
+          <fieldset>
+            <legend>固定請假</legend>
+            <div class="weekday-group" id="studentFixedLeave"></div>
+          </fieldset>
+          <fieldset>
+            <legend>固定晚到、到班時間與原因</legend>
+            <div class="fixed-late-group" id="studentFixedLate"></div>
+          </fieldset>
+          <button class="primary" id="studentSubmitButton" type="submit">新增學生檔案</button>
+          <button class="ghost" id="cancelStudentEdit" type="button" hidden>取消編輯</button>
+        </form>
+
+        <div class="toolbar">
+          <select id="studentFilter">
+            <option value="全部">全部年級</option>
+            <option value="國一">國一</option>
+            <option value="國二">國二</option>
+            <option value="國三">國三</option>
+          </select>
+          <input id="studentSearch" placeholder="搜尋姓名">
+        </div>
+        <div class="table-wrap panel">
+          <table>
+            <thead>
+              <tr>
+                <th>年級</th>
+                <th>姓名</th>
+                <th>上課日</th>
+                <th>訂餐</th>
+                <th>累積</th>
+                <th>固定請假</th>
+                <th>固定晚到</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody id="studentTable"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="page" id="leave">
+        <header class="section-head">
+          <div>
+            <p class="eyebrow">請假登記</p>
+            <h1>單日或連續日期都可新增</h1>
+          </div>
+        </header>
+
+        <form class="form-grid panel" id="leaveForm">
+          <label>年級
+            <select id="leaveGrade">
+              <option value="國一">國一</option>
+              <option value="國二">國二</option>
+              <option value="國三">國三</option>
+            </select>
+          </label>
+          <label>搜尋 / 選擇學生
+            <div class="combo-box" id="leaveStudentCombo">
+              <input id="leaveStudentPicker" autocomplete="off" placeholder="點選或輸入姓名搜尋" required>
+              <div class="combo-options" id="leaveStudentOptions" hidden></div>
+            </div>
+            <input id="leaveStudent" type="hidden">
+          </label>
+          <label>開始日期
+            <input id="leaveStartDate" type="date" required>
+          </label>
+          <label>結束日期
+            <input id="leaveEndDate" type="date" required>
+          </label>
+          <label>原因或備註
+            <input id="leaveNote" placeholder="例：病假、事假、補課另排">
+          </label>
+          <button class="primary" type="submit">新增請假</button>
+        </form>
+        <div class="record-list panel list-panel" id="leaveManageList"></div>
+      </section>
+
+      <section class="page" id="late">
+        <header class="section-head">
+          <div>
+            <p class="eyebrow">晚到登記</p>
+            <h1>固定晚到與臨時晚到</h1>
+          </div>
+        </header>
+
+        <form class="form-grid panel" id="lateForm">
+          <label>年級
+            <select id="lateGrade">
+              <option value="國一">國一</option>
+              <option value="國二">國二</option>
+              <option value="國三">國三</option>
+            </select>
+          </label>
+          <label>學生
+            <select id="lateStudent" required></select>
+          </label>
+          <label>臨時晚到日期
+            <input id="lateDate" type="date" required>
+          </label>
+          <label>晚到原因
+            <input id="lateNote" placeholder="例：家長通知、交通、學校活動">
+          </label>
+          <button class="primary" type="submit">新增臨時晚到</button>
+        </form>
+        <div class="record-list panel list-panel" id="lateManageList"></div>
+      </section>
+
+      <section class="page" id="history">
+        <header class="section-head">
+          <div>
+            <p class="eyebrow">歷史紀錄</p>
+            <h1>請假與晚到保留查詢</h1>
+          </div>
+        </header>
+        <div class="toolbar">
+          <select id="historyType">
+            <option value="全部">全部紀錄</option>
+            <option value="請假">請假</option>
+            <option value="晚到">晚到</option>
+          </select>
+          <input id="historySearch" placeholder="搜尋姓名、備註">
+        </div>
+        <div class="record-list panel list-panel" id="historyList"></div>
+      </section>
+    </main>
+  </div>
+
+  <script src="firebase-config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
