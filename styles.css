@@ -421,7 +421,8 @@ fieldset {
 }
 
 input,
-select {
+select,
+textarea {
   width: 100%;
   border: 1px solid rgba(241, 211, 124, .18);
   border-radius: .38rem;
@@ -430,6 +431,12 @@ select {
   background: linear-gradient(180deg, #0d1116, #090c10);
   color: var(--text);
   outline: none;
+}
+
+textarea {
+  resize: vertical;
+  min-height: 7rem;
+  line-height: 1.55;
 }
 
 select,
@@ -444,7 +451,8 @@ select option:checked {
 }
 
 input:focus,
-select:focus {
+select:focus,
+textarea:focus {
   border-color: var(--gold);
   box-shadow: 0 0 0 3px rgba(198, 151, 53, .16);
 }
@@ -636,6 +644,14 @@ legend {
   justify-content: flex-end;
 }
 
+.paste-import {
+  display: grid;
+  grid-template-columns: minmax(16rem, 1fr) auto;
+  align-items: end;
+  gap: .75rem;
+  width: 100%;
+}
+
 .link-button,
 .file-button {
   display: inline-flex;
@@ -806,6 +822,10 @@ tbody tr:hover {
 
   .import-actions > * {
     width: 100%;
+  }
+
+  .paste-import {
+    grid-template-columns: 1fr;
   }
 
   .import-status {
