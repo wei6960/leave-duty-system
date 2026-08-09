@@ -8,6 +8,8 @@ const SUPABASE_COLLECTION = "leaveDutyBranches";
 const grades = ["國一", "國二", "國三"];
 const weekdays = ["一", "二", "三", "四", "五"];
 const leavePeriods = ["上午", "下午", "晚上"];
+const studentImportTemplate = `年級\t姓名\t上課星期\t有無訂餐\t固定請假\t固定晚到
+國一\t王小明\t一三五\t有訂餐\t\t一 18:30 家長接送；三 18:40 學校活動`;
 
 let dashboardGrade = "全體";
 let dashboardMode = "today";
@@ -622,6 +624,10 @@ function setupForms() {
   });
 
   $("#studentPasteImport").addEventListener("click", handleStudentPasteImport);
+  $("#studentUseTemplate").addEventListener("click", () => {
+    $("#studentPasteInput").value = studentImportTemplate;
+    $("#studentPasteInput").focus();
+  });
 
   $("#leaveGrade").addEventListener("change", () => {
     $("#leaveStudentPicker").value = "";
