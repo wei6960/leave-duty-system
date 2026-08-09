@@ -620,65 +620,6 @@ legend {
   margin: 1rem 0;
 }
 
-.import-panel {
-  display: grid;
-  gap: 1rem;
-  margin-bottom: 1rem;
-}
-
-.import-panel h2 {
-  margin-bottom: .25rem;
-}
-
-.import-panel p {
-  color: var(--muted);
-  font-size: .9rem;
-}
-
-.import-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: .65rem;
-  justify-content: flex-end;
-}
-
-.import-template {
-  border: 1px solid rgba(241, 211, 124, .18);
-  border-radius: .42rem;
-  background: rgba(0, 0, 0, .16);
-  padding: .85rem;
-}
-
-.template-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: .75rem;
-  margin-bottom: .65rem;
-}
-
-.import-template strong {
-  color: var(--gold-2);
-}
-
-.import-template pre {
-  margin: 0;
-  overflow-x: auto;
-  color: var(--text);
-  font-family: "Microsoft JhengHei", sans-serif;
-  font-size: .9rem;
-  line-height: 1.65;
-  white-space: pre;
-}
-
-.paste-import {
-  display: grid;
-  grid-template-columns: minmax(16rem, 1fr) auto;
-  align-items: end;
-  gap: .75rem;
-  width: 100%;
-}
-
 .link-button,
 .file-button {
   display: inline-flex;
@@ -689,11 +630,6 @@ legend {
 
 .file-button input {
   display: none;
-}
-
-.import-status {
-  min-width: 12rem;
-  text-align: right;
 }
 
 .toolbar select {
@@ -837,31 +773,9 @@ tbody tr:hover {
 
   .topbar,
   .section-head,
-  .toolbar,
-  .import-panel {
+  .toolbar {
     align-items: stretch;
     flex-direction: column;
-  }
-
-  .import-actions {
-    justify-content: stretch;
-  }
-
-  .import-actions > * {
-    width: 100%;
-  }
-
-  .paste-import {
-    grid-template-columns: 1fr;
-  }
-
-  .template-head {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .import-status {
-    text-align: left;
   }
 
   .clock-card {

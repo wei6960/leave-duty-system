@@ -162,28 +162,6 @@
           <button class="ghost" id="cancelStudentEdit" type="button" hidden>取消編輯</button>
         </form>
 
-        <section class="panel import-panel">
-          <div>
-            <h2>快速匯入學生檔案</h2>
-            <p>直接貼上名單，若同年級同姓名已存在會更新原資料。</p>
-          </div>
-          <div class="import-template">
-            <div class="template-head">
-              <strong>內建快速匯入格式</strong>
-              <button class="ghost" id="studentUseTemplate" type="button">套用範本</button>
-            </div>
-            <pre>年級    姓名      上課星期    有無訂餐    固定請假    固定晚到
-國一    王小明    一三五      有訂餐                  一 18:30 家長接送；三 18:40 學校活動</pre>
-          </div>
-          <div class="paste-import">
-            <label>貼上名單快速新增
-              <textarea id="studentPasteInput" rows="5" placeholder="國一    王小明    一三五    有訂餐        一 18:30 家長接送；三 18:40 學校活動"></textarea>
-            </label>
-            <button class="primary" id="studentPasteImport" type="button">貼上匯入</button>
-          </div>
-          <p class="import-status" id="studentImportStatus"></p>
-        </section>
-
         <div class="toolbar">
           <select id="studentFilter">
             <option value="全部">全部年級</option>

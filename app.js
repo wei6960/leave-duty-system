@@ -8,8 +8,6 @@ const SUPABASE_COLLECTION = "leaveDutyBranches";
 const grades = ["國一", "國二", "國三"];
 const weekdays = ["一", "二", "三", "四", "五"];
 const leavePeriods = ["上午", "下午", "晚上"];
-const studentImportTemplate = `年級\t姓名\t上課星期\t有無訂餐\t固定請假\t固定晚到
-國一\t王小明\t一三五\t有訂餐\t\t一 18:30 家長接送；三 18:40 學校活動`;
 
 let dashboardGrade = "全體";
 let dashboardMode = "today";
@@ -623,12 +621,6 @@ function setupForms() {
     renderAll();
   });
 
-  $("#studentPasteImport").addEventListener("click", handleStudentPasteImport);
-  $("#studentUseTemplate").addEventListener("click", () => {
-    $("#studentPasteInput").value = studentImportTemplate;
-    $("#studentPasteInput").focus();
-  });
-
   $("#leaveGrade").addEventListener("change", () => {
     $("#leaveStudentPicker").value = "";
     $("#leaveStudent").value = "";
@@ -808,79 +800,6 @@ function normalizeGradeText(value) {
   };
   if (grades.includes(cleanCellText(value))) return cleanCellText(value);
   return map[text] || "";
-}
-
-function textRowsToObjects(text) {
-  const defaultHeaders = ["年級", "姓名", "上課星期", "有無訂餐", "固定請假", "固定晚到"];
-  let currentGrade = "";
-  const rows = String(text || "")
-    .split(/\r?\n/)
-    .filter((line) => cleanCellText(line))
-    .map((line) => {
-      const parts = line.includes("\t")
-        ? line.split("\t")
-        : line.includes(",")
-          ? line.split(",")
-          : line.trim().split(/\s+/);
-      const explicitGrade = normalizeGradeText(parts[0]);
-      const grade = explicitGrade || currentGrade;
-      if (explicitGrade) currentGrade = explicitGrade;
-      return [grade, ...parts.slice(1)];
-    })
-    .filter((row) => row[0] && row[1] && cleanCellText(row[1]) !== "姓名")
-    .map((row) => Object.fromEntries(defaultHeaders.map((header, index) => [header, row[index] ?? ""])));
-
-  if (!rows.length) throw new Error("貼上的內容讀不到學生。請確認每列前兩欄是：年級、姓名。");
-  return rows;
-}
-
-function importStudentRows(rows) {
-  let added = 0;
-  let updated = 0;
-  let skipped = 0;
-
-  rows.forEach((row) => {
-    const grade = normalizeGradeText(rowValue(row, ["年級", "班級"]));
-    const name = String(rowValue(row, ["姓名", "學生姓名"])).trim();
-    if (!grades.includes(grade) || !name) {
-      skipped += 1;
-      return;
-    }
-
-    const payload = {
-      grade,
-      name,
-      weekdays: parseWeekdays(rowValue(row, ["上課星期", "上課日", "課程星期"])),
-      meal: String(rowValue(row, ["有無訂餐", "訂餐"])).includes("有") ? "有訂餐" : "無訂餐",
-      fixedLeave: parseWeekdays(rowValue(row, ["固定請假"])),
-      fixedLate: normalizeFixedLate(parseFixedLate(rowValue(row, ["固定晚到"]))),
-    };
-
-    const existing = state.students.find((student) => student.grade === grade && student.name === name);
-    if (existing) {
-      Object.assign(existing, payload);
-      updated += 1;
-    } else {
-      state.students.push({ id: crypto.randomUUID(), ...payload });
-      added += 1;
-    }
-  });
-
-  saveState();
-  renderAll();
-  return { added, updated, skipped };
-}
-
-function handleStudentPasteImport() {
-  const status = $("#studentImportStatus");
-  try {
-    const rows = textRowsToObjects($("#studentPasteInput").value);
-    const { added, updated, skipped } = importStudentRows(rows);
-    $("#studentPasteInput").value = "";
-    status.textContent = `貼上匯入完成：新增 ${added} 位、更新 ${updated} 位、略過 ${skipped} 列。`;
-  } catch (error) {
-    status.textContent = `貼上匯入失敗：${error.message}`;
-  }
 }
 
 function renderStudents() {
