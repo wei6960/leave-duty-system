@@ -3,6 +3,8 @@ const OLD_STORAGE_KEY = "leave-duty-system-v1";
 const SESSION_KEY = "leave-duty-branch-session";
 const LOGIN_PASSWORD = "90757744";
 const FIREBASE_SDK_VERSION = "12.17.1";
+const SUPABASE_SDK_VERSION = "2.86.0";
+const SUPABASE_COLLECTION = "leaveDutyBranches";
 const grades = ["國一", "國二", "國三"];
 const weekdays = ["一", "二", "三", "四", "五"];
 
@@ -17,6 +19,10 @@ let syncUnsubscribe = null;
 let syncSaveTimer = null;
 let syncDocRef = null;
 let setDocRemote = null;
+let remoteSave = null;
+let supabaseClient = null;
+let supabasePollTimer = null;
+let lastRemoteUpdatedAt = "";
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -123,15 +129,16 @@ function setSyncStatus(text) {
 }
 
 function queueRemoteSave() {
-  if (!syncReady || syncLoading || !syncDocRef || !setDocRemote) return;
+  if (!syncReady || syncLoading || !remoteSave) return;
   clearTimeout(syncSaveTimer);
   syncSaveTimer = setTimeout(() => {
-    setDocRemote(syncDocRef, {
-      branch: currentBranch,
-      data: JSON.parse(JSON.stringify(state)),
-      updatedAt: new Date().toISOString(),
-    }, { merge: true }).catch(() => setSyncStatus("同步失敗"));
+    remoteSave().catch(() => setSyncStatus("同步失敗"));
   }, 350);
+}
+
+function hasSupabaseConfig() {
+  const config = window.SUPABASE_CONFIG;
+  return Boolean(config && config.url && config.anonKey);
 }
 
 function hasFirebaseConfig() {
@@ -141,13 +148,107 @@ function hasFirebaseConfig() {
 
 async function setupCloudSync() {
   if (!currentBranch) return;
+  cleanupCloudSync();
+  if (hasSupabaseConfig()) {
+    await setupSupabaseSync();
+    return;
+  }
+  await setupFirebaseSync();
+}
+
+function cleanupCloudSync() {
   if (syncUnsubscribe) {
     syncUnsubscribe();
     syncUnsubscribe = null;
   }
+  if (supabasePollTimer) {
+    clearInterval(supabasePollTimer);
+    supabasePollTimer = null;
+  }
   syncReady = false;
   syncDocRef = null;
   setDocRemote = null;
+  remoteSave = null;
+  supabaseClient = null;
+  lastRemoteUpdatedAt = "";
+}
+
+async function setupSupabaseSync() {
+  try {
+    setSyncStatus("連線中");
+    const { createClient } = await import(`https://esm.sh/@supabase/supabase-js@${SUPABASE_SDK_VERSION}`);
+    supabaseClient = createClient(window.SUPABASE_CONFIG.url, window.SUPABASE_CONFIG.anonKey);
+    remoteSave = saveSupabaseState;
+
+    const remote = await loadSupabaseState();
+    if (remote) {
+      state = normalizeState(remote.data || emptyState());
+      lastRemoteUpdatedAt = remote.updatedAt || "";
+      localStorage.setItem(storageKey(), JSON.stringify(state));
+      renderAll();
+    }
+
+    syncReady = true;
+    setSyncStatus("同步中");
+    if (!remote) await saveSupabaseState();
+    supabasePollTimer = setInterval(checkSupabaseState, 5000);
+  } catch (error) {
+    syncReady = false;
+    setSyncStatus("同步失敗");
+  }
+}
+
+async function loadSupabaseState() {
+  const { data, error } = await supabaseClient
+    .from("app_records")
+    .select("data")
+    .eq("collection", SUPABASE_COLLECTION)
+    .eq("id", currentBranch)
+    .maybeSingle();
+  if (error) throw error;
+  return data ? data.data : null;
+}
+
+async function saveSupabaseState() {
+  if (!supabaseClient || !currentBranch) return;
+  const updatedAt = new Date().toISOString();
+  lastRemoteUpdatedAt = updatedAt;
+  const payload = {
+    branch: currentBranch,
+    data: JSON.parse(JSON.stringify(state)),
+    updatedAt,
+  };
+  const { error } = await supabaseClient.from("app_records").upsert({
+    collection: SUPABASE_COLLECTION,
+    id: currentBranch,
+    group_code: currentBranch,
+    username: null,
+    data: payload,
+  }, { onConflict: "collection,id" });
+  if (error) throw error;
+  setSyncStatus("同步中");
+}
+
+async function checkSupabaseState() {
+  if (!syncReady || syncLoading) return;
+  try {
+    syncLoading = true;
+    const remote = await loadSupabaseState();
+    if (remote && remote.updatedAt && remote.updatedAt !== lastRemoteUpdatedAt) {
+      state = normalizeState(remote.data || emptyState());
+      lastRemoteUpdatedAt = remote.updatedAt;
+      localStorage.setItem(storageKey(), JSON.stringify(state));
+      renderAll();
+    }
+    setSyncStatus("同步中");
+  } catch (error) {
+    setSyncStatus("同步失敗");
+  } finally {
+    syncLoading = false;
+  }
+}
+
+async function setupFirebaseSync() {
 
   if (!hasFirebaseConfig()) {
     setSyncStatus("本機模式");
@@ -164,6 +265,11 @@ async function setupCloudSync() {
     const db = firestore.getFirestore(app);
     syncDocRef = firestore.doc(db, "leave-duty-system", currentBranch);
     setDocRemote = firestore.setDoc;
+    remoteSave = () => setDocRemote(syncDocRef, {
+      branch: currentBranch,
+      data: JSON.parse(JSON.stringify(state)),
+      updatedAt: new Date().toISOString(),
+    }, { merge: true });
 
     syncLoading = true;
     syncUnsubscribe = firestore.onSnapshot(syncDocRef, (snapshot) => {
@@ -862,11 +968,7 @@ function setupLogin() {
     sessionStorage.removeItem(SESSION_KEY);
     currentBranch = "";
     state = emptyState();
-    if (syncUnsubscribe) {
-      syncUnsubscribe();
-      syncUnsubscribe = null;
-    }
-    syncReady = false;
+    cleanupCloudSync();
     setSyncStatus("本機模式");
     showLogin();
   });
