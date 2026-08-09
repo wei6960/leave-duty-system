@@ -768,17 +768,31 @@ function rowValue(row, names) {
   return key ? row[key] : "";
 }
 
+function cleanCellText(value) {
+  return String(value || "").replace(/^\uFEFF/, "").replace(/\s+/g, "").trim();
+}
+
 function sheetRowsToObjects(sheet, XLSX) {
   const matrix = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
   const headerIndex = matrix.findIndex((row) => {
-    const normalized = row.map((cell) => String(cell).trim());
+    const normalized = row.map(cleanCellText);
     return normalized.includes("年級") && normalized.includes("姓名");
   });
-  if (headerIndex < 0) throw new Error("找不到欄位列，請使用標準格式。");
-  const headers = matrix[headerIndex].map((cell) => String(cell).trim());
-  return matrix.slice(headerIndex + 1)
+
+  if (headerIndex >= 0) {
+    const headers = matrix[headerIndex].map((cell) => String(cell).trim());
+    return matrix.slice(headerIndex + 1)
+      .filter((row) => row.some((cell) => String(cell).trim()))
+      .map((row) => Object.fromEntries(headers.map((header, index) => [header, row[index] ?? ""])));
+  }
+
+  const defaultHeaders = ["年級", "姓名", "上課星期", "有無訂餐", "固定請假", "固定晚到"];
+  const firstDataIndex = matrix.findIndex((row) => grades.includes(cleanCellText(row[0])) && cleanCellText(row[1]));
+  if (firstDataIndex < 0) throw new Error("找不到學生資料列，請確認 A 欄是年級、B 欄是姓名。");
+
+  return matrix.slice(firstDataIndex)
     .filter((row) => row.some((cell) => String(cell).trim()))
-    .map((row) => Object.fromEntries(headers.map((header, index) => [header, row[index] ?? ""])));
+    .map((row) => Object.fromEntries(defaultHeaders.map((header, index) => [header, row[index] ?? ""])));
 }
 
 async function handleStudentImport(event) {
