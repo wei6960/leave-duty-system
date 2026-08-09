@@ -8,6 +8,7 @@ const XLSX_SDK_URL = "./xlsx.mjs";
 const SUPABASE_COLLECTION = "leaveDutyBranches";
 const grades = ["國一", "國二", "國三"];
 const weekdays = ["一", "二", "三", "四", "五"];
+const leavePeriods = ["上午", "下午", "晚上"];
 
 let dashboardGrade = "全體";
 let dashboardMode = "today";
@@ -88,12 +89,13 @@ function normalizeLeaves(records) {
     startDate: record.startDate || record.date,
     endDate: record.endDate || record.date,
     date: record.startDate || record.date,
+    periods: Array.isArray(record.periods) ? record.periods.filter((period) => leavePeriods.includes(period)) : [],
   }));
 
   const groups = new Map();
   normalized.forEach((record) => {
     const createdBucket = record.createdAt ? record.createdAt.slice(0, 19) : record.id;
-    const key = [record.studentId, record.note || "", record.dismissedAt || "", createdBucket].join("|");
+    const key = [record.studentId, leavePeriodLabel(record), record.note || "", record.dismissedAt || "", createdBucket].join("|");
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(record);
   });
@@ -366,6 +368,10 @@ function leaveDateLabel(record) {
   return `${dateLabel(start)} 到 ${dateLabel(end)}`;
 }
 
+function leavePeriodLabel(record) {
+  return record.periods && record.periods.length ? record.periods.join("、") : "整天";
+}
+
 function classDaysLabel(student) {
   return student.weekdays.length ? student.weekdays.map((day) => `星期${day}`).join("、") : "未設定";
 }
@@ -580,6 +586,7 @@ function setupForms() {
     const end = $("#leaveEndDate").value;
     if (!studentId) return alert("請先選擇學生");
     if (end < start) return alert("結束日期不能早於開始日期");
+    const periods = $$("input[name='leavePeriod']:checked").map((input) => input.value);
 
     state.leaves.push({
       id: crypto.randomUUID(),
@@ -587,11 +594,15 @@ function setupForms() {
       date: start,
       startDate: start,
       endDate: end,
+      periods,
       note: $("#leaveNote").value.trim(),
       createdAt: new Date().toISOString(),
     });
 
     $("#leaveNote").value = "";
+    $$("input[name='leavePeriod']").forEach((input) => {
+      input.checked = false;
+    });
     saveState();
     renderAll();
   });
@@ -944,6 +955,7 @@ function buildFixedLeaveRecords(today, ids) {
         date,
         startDate: date,
         endDate: date,
+        periods: [],
         note: "固定請假",
         fixed: true,
       })));
@@ -961,6 +973,7 @@ function renderLeaveCard(record) {
       <div class="meta">
         <span class="badge green">${status.label}</span>
         <span class="badge">${leaveDateLabel(record)}</span>
+        <span class="badge">${leavePeriodLabel(record)}</span>
         <span class="badge">${dayCount} 天</span>
         <span class="badge">上課：${classDaysLabel(student)}</span>
         <span class="badge">${student.meal}</span>
@@ -1072,7 +1085,7 @@ function renderHistory() {
         <div class="meta">
           <span class="badge">${item.type}</span>
           <span class="badge">${item.type === "請假" ? leaveDateLabel(item) : dateLabel(item.date)}</span>
-          ${item.type === "請假" ? `<span class="badge">${leaveDayCount(item, student)} 天</span><span class="badge">上課：${classDaysLabel(student)}</span>` : ""}
+          ${item.type === "請假" ? `<span class="badge">${leavePeriodLabel(item)}</span><span class="badge">${leaveDayCount(item, student)} 天</span><span class="badge">上課：${classDaysLabel(student)}</span>` : ""}
           <span class="badge">${item.type === "請假" ? leaveStatus(item).label : item.type}</span>
           ${item.note ? `<span class="badge gold">${item.note}</span>` : ""}
         </div>
