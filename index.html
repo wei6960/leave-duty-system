@@ -162,6 +162,21 @@
           <button class="ghost" id="cancelStudentEdit" type="button" hidden>取消編輯</button>
         </form>
 
+        <section class="panel import-panel">
+          <div>
+            <h2>快速匯入學生檔案</h2>
+            <p>使用標準 Excel 格式匯入，若同年級同姓名已存在會更新原資料。</p>
+          </div>
+          <div class="import-actions">
+            <a class="ghost link-button" href="student-import-template.xlsx" download>下載標準格式</a>
+            <label class="ghost file-button">
+              選擇 Excel 匯入
+              <input id="studentImportFile" type="file" accept=".xlsx,.xls,.csv">
+            </label>
+          </div>
+          <p class="import-status" id="studentImportStatus"></p>
+        </section>
+
         <div class="toolbar">
           <select id="studentFilter">
             <option value="全部">全部年級</option>

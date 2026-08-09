@@ -606,6 +606,47 @@ legend {
   margin: 1rem 0;
 }
 
+.import-panel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.import-panel h2 {
+  margin-bottom: .25rem;
+}
+
+.import-panel p {
+  color: var(--muted);
+  font-size: .9rem;
+}
+
+.import-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .65rem;
+  justify-content: flex-end;
+}
+
+.link-button,
+.file-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+}
+
+.file-button input {
+  display: none;
+}
+
+.import-status {
+  min-width: 12rem;
+  text-align: right;
+}
+
 .toolbar select {
   max-width: 10rem;
 }
@@ -747,9 +788,22 @@ tbody tr:hover {
 
   .topbar,
   .section-head,
-  .toolbar {
+  .toolbar,
+  .import-panel {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .import-actions {
+    justify-content: stretch;
+  }
+
+  .import-actions > * {
+    width: 100%;
+  }
+
+  .import-status {
+    text-align: left;
   }
 
   .clock-card {

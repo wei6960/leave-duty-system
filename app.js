@@ -4,6 +4,7 @@ const SESSION_KEY = "leave-duty-branch-session";
 const LOGIN_PASSWORD = "90757744";
 const FIREBASE_SDK_VERSION = "12.17.1";
 const SUPABASE_SDK_VERSION = "2.86.0";
+const XLSX_SDK_URL = "https://cdn.sheetjs.com/xlsx-0.20.3/package/xlsx.mjs";
 const SUPABASE_COLLECTION = "leaveDutyBranches";
 const grades = ["國一", "國二", "國三"];
 const weekdays = ["一", "二", "三", "四", "五"];
@@ -23,6 +24,7 @@ let remoteSave = null;
 let supabaseClient = null;
 let supabasePollTimer = null;
 let lastRemoteUpdatedAt = "";
+let xlsxModulePromise = null;
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -347,8 +349,14 @@ function getLeaveEnd(record) {
   return record.endDate || record.date;
 }
 
-function leaveDayCount(record) {
-  return datesBetween(getLeaveStart(record), getLeaveEnd(record)).length;
+function studentClassDatesForLeave(record, student = getStudent(record.studentId)) {
+  if (!student) return datesBetween(getLeaveStart(record), getLeaveEnd(record));
+  return datesBetween(getLeaveStart(record), getLeaveEnd(record))
+    .filter((date) => student.weekdays.includes(weekdayFromDate(date)));
+}
+
+function leaveDayCount(record, student = getStudent(record.studentId)) {
+  return studentClassDatesForLeave(record, student).length;
 }
 
 function leaveDateLabel(record) {
@@ -356,6 +364,10 @@ function leaveDateLabel(record) {
   const end = getLeaveEnd(record);
   if (start === end) return dateLabel(start);
   return `${dateLabel(start)} 到 ${dateLabel(end)}`;
+}
+
+function classDaysLabel(student) {
+  return student.weekdays.length ? student.weekdays.map((day) => `星期${day}`).join("、") : "未設定";
 }
 
 function weekdayFromDate(isoDate) {
@@ -600,6 +612,8 @@ function setupForms() {
     renderAll();
   });
 
+  $("#studentImportFile").addEventListener("change", handleStudentImport);
+
   $("#leaveGrade").addEventListener("change", () => {
     $("#leaveStudentPicker").value = "";
     $("#leaveStudent").value = "";
@@ -689,6 +703,123 @@ function renderLeaveStudentOptions(open) {
   optionsBox.hidden = !open;
 }
 
+async function loadXlsxModule() {
+  if (!xlsxModulePromise) xlsxModulePromise = import(XLSX_SDK_URL);
+  return xlsxModulePromise;
+}
+
+function normalizeDayToken(value) {
+  const text = String(value || "").trim();
+  const map = {
+    "1": "一",
+    "2": "二",
+    "3": "三",
+    "4": "四",
+    "5": "五",
+    一: "一",
+    二: "二",
+    三: "三",
+    四: "四",
+    五: "五",
+    星期一: "一",
+    星期二: "二",
+    星期三: "三",
+    星期四: "四",
+    星期五: "五",
+    週一: "一",
+    週二: "二",
+    週三: "三",
+    週四: "四",
+    週五: "五",
+  };
+  return map[text] || "";
+}
+
+function parseWeekdays(value) {
+  const text = String(value || "")
+    .replaceAll("星期", "")
+    .replaceAll("週", "")
+    .replaceAll("禮拜", "")
+    .replace(/[、，,／/|;；\s]+/g, "");
+  return [...new Set([...text].map(normalizeDayToken).filter(Boolean))];
+}
+
+function parseFixedLate(value) {
+  return String(value || "")
+    .split(/[;；\n]/)
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .map((part) => {
+      const dayMatch = part.match(/(?:星期|週|禮拜)?([一二三四五]|[1-5])/);
+      const timeMatch = part.match(/([01]?\d|2[0-3])[:：]([0-5]\d)/);
+      const day = dayMatch ? normalizeDayToken(dayMatch[1]) : "";
+      const time = timeMatch ? `${timeMatch[1].padStart(2, "0")}:${timeMatch[2]}` : "";
+      const reason = part
+        .replace(/(?:星期|週|禮拜)?[一二三四五1-5]/, "")
+        .replace(/([01]?\d|2[0-3])[:：]([0-5]\d)/, "")
+        .trim();
+      return { day, time, reason };
+    })
+    .filter((item) => item.day);
+}
+
+function rowValue(row, names) {
+  const key = names.find((name) => Object.prototype.hasOwnProperty.call(row, name));
+  return key ? row[key] : "";
+}
+
+async function handleStudentImport(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const status = $("#studentImportStatus");
+  status.textContent = "匯入中...";
+
+  try {
+    const XLSX = await loadXlsxModule();
+    const workbook = XLSX.read(await file.arrayBuffer(), { type: "array" });
+    const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(firstSheet, { defval: "" });
+    let added = 0;
+    let updated = 0;
+    let skipped = 0;
+
+    rows.forEach((row) => {
+      const grade = String(rowValue(row, ["年級", "班級"])).trim();
+      const name = String(rowValue(row, ["姓名", "學生姓名"])).trim();
+      if (!grades.includes(grade) || !name) {
+        skipped += 1;
+        return;
+      }
+
+      const payload = {
+        grade,
+        name,
+        weekdays: parseWeekdays(rowValue(row, ["上課星期", "上課日", "課程星期"])),
+        meal: String(rowValue(row, ["有無訂餐", "訂餐"])).includes("有") ? "有訂餐" : "無訂餐",
+        fixedLeave: parseWeekdays(rowValue(row, ["固定請假"])),
+        fixedLate: normalizeFixedLate(parseFixedLate(rowValue(row, ["固定晚到"]))),
+      };
+
+      const existing = state.students.find((student) => student.grade === grade && student.name === name);
+      if (existing) {
+        Object.assign(existing, payload);
+        updated += 1;
+      } else {
+        state.students.push({ id: crypto.randomUUID(), ...payload });
+        added += 1;
+      }
+    });
+
+    saveState();
+    renderAll();
+    status.textContent = `匯入完成：新增 ${added} 位、更新 ${updated} 位、略過 ${skipped} 列。`;
+  } catch (error) {
+    status.textContent = "匯入失敗，請確認格式是否符合標準範本。";
+  } finally {
+    event.target.value = "";
+  }
+}
+
 function renderStudents() {
   const grade = $("#studentFilter").value;
   const keyword = $("#studentSearch").value.trim();
@@ -698,7 +829,7 @@ function renderStudents() {
     .map((student) => {
       const leaveCount = state.leaves
         .filter((record) => record.studentId === student.id)
-        .reduce((sum, record) => sum + leaveDayCount(record), 0);
+        .reduce((sum, record) => sum + leaveDayCount(record, student), 0);
       const lateCount = state.lateRecords.filter((record) => record.studentId === student.id).length + student.fixedLate.length;
       return `
         <tr>
@@ -727,9 +858,13 @@ function renderActiveLeaves() {
   const ids = dashboardStudentIds();
   const regularRecords = state.leaves
     .filter((record) => {
+      const student = getStudent(record.studentId);
+      if (!student || studentClassDatesForLeave(record, student).length === 0) return false;
       if (record.dismissedAt || !ids.has(record.studentId)) return false;
-      if (dashboardMode === "today") return getLeaveStart(record) <= today && getLeaveEnd(record) >= today;
-      return getLeaveEnd(record) >= today;
+      if (dashboardMode === "today") {
+        return getLeaveStart(record) <= today && getLeaveEnd(record) >= today && student.weekdays.includes(weekdayFromDate(today));
+      }
+      return studentClassDatesForLeave(record, student).some((date) => date >= today);
     });
   const fixedRecords = buildFixedLeaveRecords(today, ids);
   const records = [...regularRecords, ...fixedRecords]
@@ -743,7 +878,7 @@ function buildFixedLeaveRecords(today, ids) {
   return state.students
     .filter((student) => ids.has(student.id))
     .flatMap((student) => days
-      .filter((date) => student.fixedLeave.includes(weekdayFromDate(date)))
+      .filter((date) => student.weekdays.includes(weekdayFromDate(date)) && student.fixedLeave.includes(weekdayFromDate(date)))
       .map((date) => ({
         id: `fixed-leave-${student.id}-${date}`,
         studentId: student.id,
@@ -759,13 +894,16 @@ function renderLeaveCard(record) {
   const student = getStudent(record.studentId);
   if (!student) return "";
   const status = leaveStatus(record);
+  const dayCount = leaveDayCount(record, student);
+  if (dayCount === 0) return "";
   return `
     <article class="record-card ${status.className}">
       <strong>${studentLabel(student)}</strong>
       <div class="meta">
         <span class="badge green">${status.label}</span>
         <span class="badge">${leaveDateLabel(record)}</span>
-        <span class="badge">${leaveDayCount(record)} 天</span>
+        <span class="badge">${dayCount} 天</span>
+        <span class="badge">上課：${classDaysLabel(student)}</span>
         <span class="badge">${student.meal}</span>
         ${record.note ? `<span class="badge gold">${record.note}</span>` : ""}
       </div>
@@ -819,7 +957,7 @@ function renderRecentHistory() {
   const today = todayISO();
   const ids = dashboardStudentIds();
   const records = state.leaves
-    .filter((record) => getLeaveEnd(record) < today && ids.has(record.studentId))
+    .filter((record) => getLeaveEnd(record) < today && ids.has(record.studentId) && leaveDayCount(record) > 0)
     .sort((a, b) => getLeaveEnd(b).localeCompare(getLeaveEnd(a)))
     .slice(0, 6);
   $("#recentHistoryList").innerHTML = records.map(renderLeaveCard).join("") || `<div class="empty">尚無近期結束的請假。</div>`;
@@ -828,6 +966,7 @@ function renderRecentHistory() {
 function renderManageLists() {
   $("#leaveManageList").innerHTML = state.leaves
     .slice()
+    .filter((record) => leaveDayCount(record) > 0)
     .sort((a, b) => getLeaveStart(b).localeCompare(getLeaveStart(a)))
     .map((record) => `${renderLeaveCard(record)}
       <div class="action-row">
@@ -857,6 +996,7 @@ function renderHistory() {
   const lateItems = state.lateRecords.map((record) => ({ ...record, type: "晚到" }));
   const items = [...leaveItems, ...lateItems]
     .filter((item) => type === "全部" || item.type === type)
+    .filter((item) => item.type !== "請假" || leaveDayCount(item) > 0)
     .filter((item) => {
       const student = getStudent(item.studentId);
       const haystack = `${student ? studentLabel(student) : ""}${item.note || ""}`;
@@ -873,7 +1013,7 @@ function renderHistory() {
         <div class="meta">
           <span class="badge">${item.type}</span>
           <span class="badge">${item.type === "請假" ? leaveDateLabel(item) : dateLabel(item.date)}</span>
-          ${item.type === "請假" ? `<span class="badge">${leaveDayCount(item)} 天</span>` : ""}
+          ${item.type === "請假" ? `<span class="badge">${leaveDayCount(item, student)} 天</span><span class="badge">上課：${classDaysLabel(student)}</span>` : ""}
           <span class="badge">${item.type === "請假" ? leaveStatus(item).label : item.type}</span>
           ${item.note ? `<span class="badge gold">${item.note}</span>` : ""}
         </div>

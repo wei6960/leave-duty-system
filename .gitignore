@@ -1,6 +1,9 @@
 screenshot*.png
+*preview.png
+*.inspect.ndjson
 *.log
 .DS_Store
 Thumbs.db
 
 .vercel
+node_modules
