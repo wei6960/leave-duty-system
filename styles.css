@@ -829,7 +829,6 @@ tbody tr:hover {
 
 @media (max-width: 720px) {
   .desktop-only,
-  #students,
   #history {
     display: none !important;
   }
@@ -850,7 +849,7 @@ tbody tr:hover {
   }
 
   .tabs {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .tab-button {
@@ -868,6 +867,14 @@ tbody tr:hover {
 
   .mode-switch {
     grid-template-columns: 1fr 1fr;
+  }
+
+  #students .table-wrap {
+    border-radius: .4rem;
+  }
+
+  #students table {
+    min-width: 54rem;
   }
 }
 

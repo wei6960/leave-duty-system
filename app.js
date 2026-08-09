@@ -518,7 +518,7 @@ function setupTabs() {
 function enforceMobilePages() {
   if (!mobileQuery.matches) return;
   const activePage = $(".page.active");
-  if (activePage && ["students", "history"].includes(activePage.id)) {
+  if (activePage && ["history"].includes(activePage.id)) {
     document.querySelector('[data-tab="dashboard"]').click();
   }
 }
