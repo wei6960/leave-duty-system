@@ -1686,16 +1686,6 @@ function renderLateCard(record) {
   `;
 }
 
-function renderRecentHistory() {
-  const today = todayISO();
-  const ids = dashboardStudentIds();
-  const records = state.leaves
-    .filter((record) => getLeaveEnd(record) < today && ids.has(record.studentId) && leaveDayCount(record) > 0)
-    .sort((a, b) => getLeaveEnd(b).localeCompare(getLeaveEnd(a)))
-    .slice(0, 6);
-  $("#recentHistoryList").innerHTML = records.map(renderLeaveCard).join("") || `<div class="empty">尚無近期結束的請假。</div>`;
-}
-
 function renderManageLists() {
   $("#leaveManageList").innerHTML = state.leaves
     .slice()
@@ -2016,7 +2006,6 @@ function renderAll() {
   renderStudentReport();
   renderActiveLeaves();
   renderLateBoard();
-  renderRecentHistory();
   renderManageLists();
   renderHistory();
 }
