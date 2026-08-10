@@ -639,6 +639,11 @@ legend {
   margin: 1rem 0;
 }
 
+.compact-actions {
+  margin: 0;
+  justify-content: flex-end;
+}
+
 .link-button,
 .file-button {
   display: inline-flex;

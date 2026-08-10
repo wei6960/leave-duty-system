@@ -952,6 +952,12 @@ function viewExamReport(exam) {
   renderClassReport(exam);
 }
 
+function returnCurrentClassReport() {
+  selectedClassReportExamId = null;
+  renderClassReport();
+  $("#classReport")?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
 function saveExam(event) {
   event.preventDefault();
   captureScoreDraft();
@@ -1580,6 +1586,13 @@ function setupDashboardFilter() {
 }
 
 function setupForms() {
+  const onInputChange = (id, handler) => {
+    const element = $(`#${id}`);
+    if (!element) return;
+    element.addEventListener("input", handler);
+    element.addEventListener("change", handler);
+  };
+
   $("#studentForm").addEventListener("submit", (event) => {
     event.preventDefault();
     const payload = {
@@ -1661,13 +1674,14 @@ function setupForms() {
     flashButton(event.currentTarget, "已儲存");
   });
   $("#printClassReport").addEventListener("click", printClassReportPdf);
+  $("#returnCurrentClassReport").addEventListener("click", returnCurrentClassReport);
   $("#printStudentReport").addEventListener("click", printStudentReportPdf);
 
   ["examDate", "examGrade", "examSubject", "examScope", "examPaperCount", "examNoTest", "scoreStudentSearch", "scoreStudentFilter"].forEach((id) => {
-    $(`#${id}`).addEventListener("input", captureScoreDraft);
+    onInputChange(id, captureScoreDraft);
   });
   ["examDate", "examGrade", "examSubject"].forEach((id) => {
-    $(`#${id}`).addEventListener("input", () => {
+    onInputChange(id, () => {
       if (!editingExamId) selectedClassReportExamId = null;
     });
   });
@@ -1694,7 +1708,7 @@ function setupForms() {
   });
 
   ["studentFilter", "studentSearch", "lateGrade", "historyType", "historySearch", "scheduleGrade", "examGrade", "examSubject", "examPaperCount", "examNoTest", "scoreStudentSearch", "scoreStudentFilter", "careerGrade", "careerStudent", "careerQueryDate"].forEach((id) => {
-    $(`#${id}`).addEventListener("input", renderAll);
+    onInputChange(id, renderAll);
   });
 
   $("#careerSubjectButtons")?.addEventListener("click", (event) => {
@@ -1742,11 +1756,15 @@ function renderStudentOptions() {
 
   const renderOptions = (gradeSelector, studentSelector) => {
     const grade = $(gradeSelector).value;
+    const previous = $(studentSelector).value;
     const options = state.students
       .filter((student) => student.grade === grade)
       .map((student) => `<option value="${student.id}">${student.name}</option>`)
       .join("");
     $(studentSelector).innerHTML = options || `<option value="">請先建立學生檔案</option>`;
+    if (previous && state.students.some((student) => student.id === previous && student.grade === grade)) {
+      $(studentSelector).value = previous;
+    }
   };
   renderLeaveOptions();
   renderOptions("#lateGrade", "#lateStudent");
