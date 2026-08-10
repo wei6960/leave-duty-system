@@ -1383,8 +1383,9 @@ function downloadTermReportImage() {
   const width = 1380;
   const topSafe = 56;
   const rowHeight = 54;
-  const headerHeight = 224;
-  const height = topSafe + headerHeight + Math.max(rows.length, 1) * rowHeight + 70;
+  const headerBandHeight = 282;
+  const tableY = 306;
+  const height = topSafe + tableY + Math.max(rows.length, 1) * rowHeight + 70;
   const canvas = document.createElement("canvas");
   canvas.width = width * scale;
   canvas.height = height * scale;
@@ -1398,7 +1399,7 @@ function downloadTermReportImage() {
   gradient.addColorStop(.62, "#20242b");
   gradient.addColorStop(1, "#8a6424");
   ctx.fillStyle = gradient;
-  ctx.fillRect(0, 0, width, 160 + topSafe);
+  ctx.fillRect(0, 0, width, headerBandHeight + topSafe);
 
   ctx.save();
   ctx.translate(0, topSafe);
@@ -1411,16 +1412,15 @@ function downloadTermReportImage() {
   canvasText(ctx, `列印日期：${new Date().toLocaleDateString("zh-TW")}`, 1120, 104, 220);
 
   ctx.fillStyle = "rgba(255,255,255,.08)";
-  drawRoundRect(ctx, 54, 126, 1272, 66, 10);
+  drawRoundRect(ctx, 54, 132, 1272, 78, 10);
   ctx.fill();
   ctx.fillStyle = "#fff7df";
   ctx.font = "bold 20px Microsoft JhengHei, Arial";
-  canvasText(ctx, `${meta.year}${meta.semester}`, 82, 166, 180);
-  canvasText(ctx, `班平均 ${scoreDisplay(average)}`, 288, 166, 180);
-  canvasText(ctx, `${rows.length} 筆成績`, 492, 166, 150);
+  canvasText(ctx, `${meta.year}${meta.semester}`, 82, 180, 180);
+  canvasText(ctx, `班平均 ${scoreDisplay(average)}`, 288, 180, 180);
+  canvasText(ctx, `${rows.length} 筆成績`, 492, 180, 150);
 
   const tableX = 54;
-  const tableY = 244;
   const columns = [
     { label: "排名", width: 90 },
     { label: "班級", width: 110 },
@@ -1981,10 +1981,11 @@ function downloadClassReportImage() {
   const width = 1180;
   const topSafe = 56;
   const rowHeight = 54;
-  const headerHeight = 238;
+  const headerBandHeight = 300;
+  const tableY = 322;
   const footerHeight = 54;
   const tableRows = Math.max(rows.length, 1);
-  const height = topSafe + headerHeight + 56 + tableRows * rowHeight + footerHeight;
+  const height = topSafe + tableY + 48 + tableRows * rowHeight + footerHeight;
   const canvas = document.createElement("canvas");
   canvas.width = width * scale;
   canvas.height = height * scale;
@@ -1998,7 +1999,7 @@ function downloadClassReportImage() {
   gradient.addColorStop(.55, "#20242b");
   gradient.addColorStop(1, "#8a6424");
   ctx.fillStyle = gradient;
-  ctx.fillRect(0, 0, width, 170 + topSafe);
+  ctx.fillRect(0, 0, width, headerBandHeight + topSafe);
 
   ctx.save();
   ctx.translate(0, topSafe);
@@ -2011,17 +2012,16 @@ function downloadClassReportImage() {
   canvasText(ctx, `列印日期：${new Date().toLocaleDateString("zh-TW")}`, 890, 106, 230);
 
   ctx.fillStyle = "rgba(255,255,255,.08)";
-  drawRoundRect(ctx, 54, 132, 1072, 72, 10);
+  drawRoundRect(ctx, 54, 138, 1072, 82, 10);
   ctx.fill();
   ctx.fillStyle = "#fff7df";
   ctx.font = "bold 20px Microsoft JhengHei, Arial";
-  canvasText(ctx, `班平均 ${scoreDisplay(average)}`, 82, 176, 180);
-  canvasText(ctx, `${paperCount} 份考卷`, 270, 176, 160);
+  canvasText(ctx, `班平均 ${scoreDisplay(average)}`, 82, 188, 180);
+  canvasText(ctx, `${paperCount} 份考卷`, 270, 188, 160);
   ctx.font = "18px Microsoft JhengHei, Arial";
-  canvasText(ctx, `重點：${exam.scope || "未填考試重點"}`, 438, 176, 650);
+  canvasText(ctx, `重點：${exam.scope || "未填考試重點"}`, 438, 188, 650);
 
   const tableX = 54;
-  const tableY = 258;
   const tableWidth = 1072;
   const columns = [
     { key: "rank", label: "排名", width: 78 },
