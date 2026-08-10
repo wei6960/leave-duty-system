@@ -874,7 +874,7 @@ function captureScoreDraft() {
   $$("[data-score-absent]").forEach((input) => {
     const studentId = input.dataset.scoreAbsent;
     draft.absences = draft.absences.filter((id) => id !== studentId);
-    if (input.checked) draft.absences.push(studentId);
+    if (input.classList.contains("active")) draft.absences.push(studentId);
   });
   scoreDraft = draft;
   saveScoreDraft();
@@ -903,7 +903,19 @@ function applyScoreDraftToRows() {
     if (value !== undefined) input.value = value;
   });
   $$("[data-score-absent]").forEach((input) => {
-    input.checked = (scoreDraft.absences || []).includes(input.dataset.scoreAbsent);
+    setScoreAbsentButton(input, (scoreDraft.absences || []).includes(input.dataset.scoreAbsent));
+  });
+}
+
+function setScoreAbsentButton(button, active) {
+  if (!button) return;
+  button.classList.toggle("active", active);
+  button.setAttribute("aria-pressed", active ? "true" : "false");
+  button.textContent = active ? "已缺考" : "缺考";
+  const row = button.closest(".score-row");
+  row?.classList.toggle("is-absent", active);
+  row?.querySelectorAll("[data-score-student]").forEach((input) => {
+    input.disabled = active;
   });
 }
 
@@ -924,7 +936,7 @@ function renderScoreEntryList() {
           ${Array.from({ length: paperCount }, (_, index) => `
             <input type="number" min="0" max="100" step="0.1" data-score-student="${student.id}" data-score-paper="${index}" placeholder="卷${index + 1}">
           `).join("")}
-          <label class="absent-check"><input type="checkbox" data-score-absent="${student.id}">缺考</label>
+          <button class="absent-check" type="button" data-score-absent="${student.id}" aria-pressed="false">缺考</button>
         </div>
       </label>
     `).join("")
@@ -955,7 +967,7 @@ function applyEditingExamScores() {
   const paperCount = Math.max(1, Number($("#examPaperCount")?.value) || 1);
   studentsForGradeAndSubject(exam.grade, exam.subject).forEach((student) => {
     const absentInput = document.querySelector(`[data-score-absent="${student.id}"]`);
-    if (absentInput) absentInput.checked = (exam.absences || []).includes(student.id);
+    if (absentInput) setScoreAbsentButton(absentInput, (exam.absences || []).includes(student.id));
     const values = scoreValuesForStudent(exam, student.id);
     Array.from({ length: paperCount }, (_, index) => {
       const input = document.querySelector(`[data-score-student="${student.id}"][data-score-paper="${index}"]`);
@@ -1101,7 +1113,7 @@ function saveExam(event) {
   const scores = {};
   const absences = [];
   studentsForGradeAndSubject($("#examGrade").value, $("#examSubject").value).forEach((student) => {
-    const absent = (scoreDraft?.absences || []).includes(student.id) || document.querySelector(`[data-score-absent="${student.id}"]`)?.checked;
+    const absent = (scoreDraft?.absences || []).includes(student.id) || document.querySelector(`[data-score-absent="${student.id}"]`)?.classList.contains("active");
     if (absent) {
       absences.push(student.id);
       return;
@@ -2657,6 +2669,12 @@ function setupForms() {
   });
   $("#scoreEntryList").addEventListener("input", captureScoreDraft);
   $("#scoreEntryList").addEventListener("change", captureScoreDraft);
+  $("#scoreEntryList").addEventListener("click", (event) => {
+    const button = event.target.closest("[data-score-absent]");
+    if (!button) return;
+    setScoreAbsentButton(button, !button.classList.contains("active"));
+    captureScoreDraft();
+  });
 
   $("#leaveGrade").addEventListener("change", () => {
     $("#leaveStudentPicker").value = "";

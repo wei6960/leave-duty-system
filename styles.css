@@ -798,12 +798,33 @@ legend {
   border-radius: .36rem;
   background: rgba(223, 93, 84, .1);
   color: #ffd9d6;
+  font-weight: 800;
+  cursor: pointer;
+  transition: background .15s ease, border-color .15s ease, color .15s ease, box-shadow .15s ease;
 }
 
-.absent-check input {
-  width: auto;
-  min-height: auto;
-  accent-color: var(--red);
+.absent-check:hover {
+  border-color: rgba(223, 93, 84, .68);
+  background: rgba(223, 93, 84, .16);
+}
+
+.absent-check.active {
+  border-color: rgba(255, 155, 147, .78);
+  background: linear-gradient(135deg, #df5d54, #8f2b26);
+  color: #fff5f4;
+  box-shadow: 0 0 0 3px rgba(223, 93, 84, .16), 0 .6rem 1.2rem rgba(0, 0, 0, .22);
+}
+
+.score-row.is-absent {
+  border-color: rgba(223, 93, 84, .36);
+  background:
+    linear-gradient(90deg, rgba(223, 93, 84, .12), transparent 42%),
+    rgba(0, 0, 0, .14);
+}
+
+.score-row.is-absent [data-score-student] {
+  opacity: .48;
+  cursor: not-allowed;
 }
 
 .report-head {
