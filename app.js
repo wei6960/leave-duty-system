@@ -16,6 +16,7 @@ const parentMode = new URLSearchParams(location.search).get("parent") === "1" ||
 let dashboardGrade = "全體";
 let dashboardMode = "today";
 let editingStudentId = null;
+let editingExamId = null;
 let currentBranch = sessionStorage.getItem(SESSION_KEY) || "";
 let state = currentBranch ? loadState() : emptyState();
 let syncReady = false;
@@ -726,6 +727,7 @@ function renderScoreEntryList() {
       </label>
     `).join("")
     : `<div class="empty">此年級尚無補 ${subject} 的學生。</div>`;
+  applyEditingExamScores();
 }
 
 function scoreValuesForStudent(exam, studentId) {
@@ -737,6 +739,26 @@ function scoreValuesForStudent(exam, studentId) {
 
 function averageScore(values) {
   return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : NaN;
+}
+
+function updateExamFormMode() {
+  const submit = $("#examForm button[type='submit']");
+  if (submit) submit.textContent = editingExamId ? "更新成績單" : "儲存成績單";
+}
+
+function applyEditingExamScores() {
+  const exam = editingExamId ? state.exams.find((item) => item.id === editingExamId) : null;
+  if (!exam || exam.grade !== $("#examGrade")?.value || exam.subject !== $("#examSubject")?.value) return;
+  const paperCount = Math.max(1, Number($("#examPaperCount")?.value) || 1);
+  studentsForGradeAndSubject(exam.grade, exam.subject).forEach((student) => {
+    const absentInput = document.querySelector(`[data-score-absent="${student.id}"]`);
+    if (absentInput) absentInput.checked = (exam.absences || []).includes(student.id);
+    const values = scoreValuesForStudent(exam, student.id);
+    Array.from({ length: paperCount }, (_, index) => {
+      const input = document.querySelector(`[data-score-student="${student.id}"][data-score-paper="${index}"]`);
+      if (input && values[index] !== undefined) input.value = values[index];
+    });
+  });
 }
 
 function currentScoreRows(exam) {
@@ -830,8 +852,9 @@ function saveExam(event) {
     }).filter((value) => value !== null && Number.isFinite(value));
     if (values.length) scores[student.id] = values;
   });
+  const existing = editingExamId ? state.exams.find((item) => item.id === editingExamId) : null;
   const exam = normalizeExam({
-    id: crypto.randomUUID(),
+    id: existing?.id || crypto.randomUUID(),
     date: $("#examDate").value,
     grade: $("#examGrade").value,
     subject: $("#examSubject").value,
@@ -840,21 +863,52 @@ function saveExam(event) {
     paperCount,
     scores,
     absences,
-    createdAt: new Date().toISOString(),
+    createdAt: existing?.createdAt || new Date().toISOString(),
+    updatedAt: existing ? new Date().toISOString() : undefined,
   });
-  state.exams.push(exam);
+  if (existing) {
+    state.exams = state.exams.map((item) => item.id === existing.id ? exam : item);
+  } else {
+    state.exams.push(exam);
+  }
+  editingExamId = null;
+  updateExamFormMode();
   saveState();
   renderAll();
-  flashButton(event.submitter, "已儲存");
+  flashButton(event.submitter, existing ? "已更新" : "已儲存");
 }
 
 function resetExamForm() {
   if (!confirm("確定重設當天成績輸入？尚未儲存的分數會清空。")) return;
+  editingExamId = null;
   $("#examDate").value = todayISO();
   $("#examScope").value = "";
   $("#examPaperCount").value = 1;
   $("#examNoTest").checked = false;
+  $("#scoreStudentSearch").value = "";
+  $("#scoreStudentFilter").value = "全部";
+  updateExamFormMode();
   renderScoreEntryList();
+}
+
+function fillExamForm(exam) {
+  editingExamId = exam.id;
+  $("#examDate").value = exam.date;
+  $("#examGrade").value = exam.grade;
+  renderExamSubjectOptions();
+  if (!Array.from($("#examSubject").options).some((option) => option.value === exam.subject)) {
+    $("#examSubject").insertAdjacentHTML("beforeend", `<option value="${exam.subject}">${exam.subject}</option>`);
+  }
+  $("#examSubject").value = exam.subject;
+  $("#examScope").value = exam.scope || "";
+  $("#examPaperCount").value = Math.max(1, Number(exam.paperCount) || 1);
+  $("#examNoTest").checked = Boolean(exam.noExam);
+  $("#scoreStudentSearch").value = "";
+  $("#scoreStudentFilter").value = "全部";
+  updateExamFormMode();
+  renderScoreStudentFilter();
+  renderScoreEntryList();
+  renderClassReport(exam);
 }
 
 function renderExamHistory() {
@@ -870,6 +924,10 @@ function renderExamHistory() {
           ${exam.scope ? `<span class="badge gold">${exam.scope}</span>` : ""}
         </div>
       </article>
+      <div class="action-row">
+        <button class="ghost" data-edit-exam="${exam.id}">編輯成績單</button>
+        <button class="ghost danger" data-delete-exam="${exam.id}">刪除成績單</button>
+      </div>
     `;
   }).join("") || `<div class="empty">尚無成績歷史。</div>`;
 }
@@ -1705,6 +1763,8 @@ function setupActions() {
     const dismissLeaveId = event.target.dataset.dismissLeave;
     const deleteLeaveId = event.target.dataset.deleteLeave;
     const removeLateId = event.target.dataset.removeLate;
+    const editExamId = event.target.dataset.editExam;
+    const deleteExamId = event.target.dataset.deleteExam;
 
     if (pickLeaveStudentId) {
       const student = getStudent(pickLeaveStudentId);
@@ -1739,8 +1799,23 @@ function setupActions() {
       const late = state.lateRecords.find((record) => record.id === removeLateId);
       if (late) late.dismissedAt = new Date().toISOString();
     }
+    if (editExamId) {
+      const exam = state.exams.find((record) => record.id === editExamId);
+      if (exam) {
+        fillExamForm(exam);
+        document.querySelector('[data-tab="scores"]').click();
+        $("#examDate").focus();
+      }
+    }
+    if (deleteExamId && confirm("確定刪除這份成績單？刪除後家長端與生涯檔案也不會再顯示這次考試。")) {
+      state.exams = state.exams.filter((record) => record.id !== deleteExamId);
+      if (editingExamId === deleteExamId) {
+        editingExamId = null;
+        updateExamFormMode();
+      }
+    }
 
-    if (deleteStudentId || dismissLeaveId || deleteLeaveId || removeLateId) {
+    if (deleteStudentId || dismissLeaveId || deleteLeaveId || removeLateId || deleteExamId) {
       saveState();
       renderAll();
     }
