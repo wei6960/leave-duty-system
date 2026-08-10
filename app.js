@@ -1855,8 +1855,10 @@ async function loadParentBranchState(branch) {
   }
 }
 
-function studentScoreSummary(student) {
-  return courses.map((subject) => {
+function studentScoreSummary(student, subjectFilter = "全部") {
+  return courses
+    .filter((subject) => subjectFilter === "全部" || subject === subjectFilter)
+    .map((subject) => {
     const exams = state.exams.filter((exam) => !exam.noExam && exam.subject === subject && exam.scores?.[student.id] !== undefined);
     if (!exams.length) return "";
     const scores = exams.map((exam) => averageScore(scoreValuesForStudent(exam, student.id))).filter(Number.isFinite);
@@ -1876,6 +1878,9 @@ function studentScoreSummary(student) {
 function studentAvailableSubjects(student) {
   const subjects = new Set(student.courses || []);
   studentExamRows(student).forEach((row) => subjects.add(row.exam.subject));
+  state.termScores
+    .filter((item) => item.studentId === student.id)
+    .forEach((item) => subjects.add(normalizeCourseName(item.subject)));
   return courses.filter((subject) => subjects.has(subject));
 }
 
@@ -1894,11 +1899,21 @@ function renderParentScoreHistory(student) {
     .filter((row) => subject === "全部" || row.exam.subject === subject)
     .slice()
     .sort((a, b) => b.exam.date.localeCompare(a.exam.date));
+  const termRows = state.termScores
+    .filter((item) => item.studentId === student.id)
+    .filter((item) => subject === "全部" || normalizeCourseName(item.subject) === subject)
+    .slice()
+    .sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
 
-  if (!rows.length) return `<div class="empty">尚無此科目的歷史考試分數。</div>`;
+  if (!rows.length && !termRows.length) return `<div class="empty">尚無此科目的歷史成績。</div>`;
 
   return `
-    ${studentScoreSummary(student)}
+    <div class="parent-history-head">
+      <strong>${subject === "全部" ? "全部科目歷史成績" : `${subject} 歷史成績`}</strong>
+      <span>可調閱週考、段考與排名紀錄</span>
+    </div>
+    ${studentScoreSummary(student, subject)}
+    <h3 class="subhead">週考歷史</h3>
     <div class="table-wrap parent-score-history">
       <table>
         <thead>
@@ -1920,7 +1935,26 @@ function renderParentScoreHistory(student) {
                 <td>${scoreDisplay(classAverage)}</td>
               </tr>
             `;
-          }).join("")}
+          }).join("") || `<tr><td colspan="7">尚無週考歷史</td></tr>`}
+        </tbody>
+      </table>
+    </div>
+    <h3 class="subhead">段考歷史</h3>
+    <div class="table-wrap parent-score-history">
+      <table>
+        <thead>
+          <tr><th>學期</th><th>段別</th><th>科目</th><th>成績</th><th>建立日期</th></tr>
+        </thead>
+        <tbody>
+          ${termRows.map((item) => `
+            <tr>
+              <td>${item.term || "-"}</td>
+              <td>${item.stage || "-"}</td>
+              <td>${item.subject || "-"}</td>
+              <td class="${scoreClass(Number(item.score))}">${scoreDisplay(Number(item.score))}</td>
+              <td>${item.createdAt ? dateLabel(item.createdAt.slice(0, 10)) : "-"}</td>
+            </tr>
+          `).join("") || `<tr><td colspan="5">尚無段考歷史</td></tr>`}
         </tbody>
       </table>
     </div>

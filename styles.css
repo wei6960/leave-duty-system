@@ -839,6 +839,27 @@ legend {
   min-width: 54rem;
 }
 
+.parent-history-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: .5rem;
+  margin: .2rem 0 .85rem;
+  color: var(--muted);
+}
+
+.parent-history-head strong {
+  color: var(--gold-2);
+  font-size: 1.08rem;
+}
+
+.subhead {
+  margin: 1rem 0 .45rem;
+  color: #fff4d2;
+  font-size: .98rem;
+}
+
 .table-wrap {
   overflow: auto;
 }
