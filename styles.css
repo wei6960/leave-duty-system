@@ -411,6 +411,16 @@ h2 {
   display: block;
 }
 
+.term-entry-table input {
+  min-width: 4.6rem;
+  text-align: center;
+}
+
+.term-entry-table th,
+.term-entry-table td {
+  white-space: nowrap;
+}
+
 .grade-button,
 .mode-button {
   min-height: 2.75rem;

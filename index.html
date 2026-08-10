@@ -444,6 +444,18 @@
           </div>
           <div id="careerScoreLookup"></div>
         </section>
+        <section class="panel career-query-panel">
+          <div class="panel-title">
+            <h2>段考變化</h2>
+            <span>依學年查看歷史段考成績紀錄</span>
+          </div>
+          <div class="toolbar compact-toolbar">
+            <label>學年
+              <select id="careerTermYear"></select>
+            </label>
+          </div>
+          <div id="careerTermTrend"></div>
+        </section>
         <div class="board-layout">
           <section class="panel large-panel">
             <div class="panel-title">
@@ -470,6 +482,11 @@
           </div>
           <button class="ghost back-button" type="button" data-back-tab="management">返回班務管理</button>
         </header>
+        <div class="mode-switch score-section-switch" id="termSectionSwitch" aria-label="段考成績分區">
+          <button class="mode-button active" data-term-section="entry" type="button">登記段考成績</button>
+          <button class="mode-button" data-term-section="history" type="button">歷史段考成績單放置</button>
+        </div>
+        <div class="score-section active" id="termEntrySection">
         <form class="form-grid panel" id="termScoreForm">
           <label>學年
             <input id="termYear" placeholder="例：114">
@@ -487,18 +504,12 @@
               <option value="國三">國三</option>
             </select>
           </label>
-          <label>考試日期
-            <input id="termDate" type="date" required>
-          </label>
           <label>段考
             <select id="termStage">
               <option value="一段">一段</option>
               <option value="二段">二段</option>
               <option value="三段">三段</option>
             </select>
-          </label>
-          <label>科目
-            <select id="termSubject"></select>
           </label>
           <button class="primary" type="submit">儲存段考成績</button>
           <button class="ghost" id="archiveTerm" type="button">學期末結算並刷新</button>
@@ -510,6 +521,8 @@
           </div>
           <div id="termScoreEntryList" class="score-entry-list"></div>
         </section>
+        </div>
+        <div class="score-section" id="termHistorySection">
         <section class="panel list-panel">
           <div class="panel-title">
             <h2>段考成績單</h2>
@@ -522,6 +535,8 @@
           </div>
           <div id="termReportBody"></div>
         </section>
+        <div class="record-list panel list-panel" id="termHistoryList"></div>
+        </div>
       </section>
 
       <section class="page" id="leave">

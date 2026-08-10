@@ -9,7 +9,7 @@ const grades = ["國一", "國二", "國三"];
 const weekdays = ["一", "二", "三", "四", "五", "六", "日"];
 const periods = ["上午", "下午", "晚上"];
 const courses = ["國文", "英文", "數A", "數B", "數學", "自然", "總複習", "素養課", "讀書班"];
-const termSubjects = ["國文", "英文", "數學", "社會", "自然", "歷史", "地理", "公民"];
+const termSubjects = ["國文", "英文", "數學", "自然", "歷史", "地理", "公民"];
 const reportSubjects = [...new Set([...courses, ...termSubjects])];
 const scheduleCourses = [...courses, "考加"];
 const leavePeriods = ["上午", "下午", "晚上"];
@@ -21,6 +21,7 @@ let editingStudentId = null;
 let editingExamId = null;
 let selectedClassReportExamId = null;
 let scoreSection = "entry";
+let termSection = "entry";
 let scoreDraft = null;
 let careerSubject = "全部";
 let currentBranch = sessionStorage.getItem(SESSION_KEY) || "";
@@ -938,6 +939,14 @@ function renderScoreSections() {
   });
 }
 
+function renderTermSections() {
+  $("#termEntrySection")?.classList.toggle("active", termSection === "entry");
+  $("#termHistorySection")?.classList.toggle("active", termSection === "history");
+  $$("[data-term-section]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.termSection === termSection);
+  });
+}
+
 function renderClassReport(exam = displayedClassReportExam()) {
   if (!exam) {
     $("#classReportBody").innerHTML = `<div class="empty">尚無成績單。</div>`;
@@ -1111,22 +1120,20 @@ function saveTermScore(event) {
   const year = $("#termYear").value.trim() || "未填學年";
   const semester = $("#termSemester").value;
   const grade = $("#termGrade").value;
-  const date = $("#termDate").value || todayISO();
   const stage = $("#termStage").value;
-  const subject = $("#termSubject").value;
   const term = `${year}${semester}`;
-  const inputs = $$("[data-term-score-student]");
+  const inputs = $$("[data-term-score-student][data-term-score-subject]");
   let saved = 0;
   inputs.forEach((input) => {
     if (input.value === "") return;
     const studentId = input.dataset.termScoreStudent;
+    const subject = input.dataset.termScoreSubject;
     const score = Number(input.value);
     if (!Number.isFinite(score)) return;
     const existing = state.termScores.find((item) =>
       item.studentId === studentId &&
       item.year === year &&
       item.semester === semester &&
-      item.date === date &&
       item.stage === stage &&
       item.subject === subject
     );
@@ -1136,7 +1143,7 @@ function saveTermScore(event) {
       semester,
       term,
       grade,
-      date,
+      date: existing?.date || "",
       stage,
       subject,
       score,
@@ -1148,6 +1155,7 @@ function saveTermScore(event) {
     saved += 1;
   });
   if (!saved) return alert("請至少輸入一位學生的段考成績");
+  termSection = "history";
   saveState();
   renderAll();
   flashButton(event.submitter, "已儲存");
@@ -1166,9 +1174,7 @@ function currentTermMeta() {
     year: $("#termYear")?.value.trim() || "未填學年",
     semester: $("#termSemester")?.value || "上學期",
     grade: $("#termGrade")?.value || "國一",
-    date: $("#termDate")?.value || todayISO(),
     stage: $("#termStage")?.value || "一段",
-    subject: $("#termSubject")?.value || "國文",
   };
 }
 
@@ -1178,9 +1184,8 @@ function termRowsForMeta(meta = currentTermMeta()) {
       item.year === meta.year &&
       item.semester === meta.semester &&
       item.grade === meta.grade &&
-      (item.date || item.createdAt?.slice(0, 10) || "") === meta.date &&
       item.stage === meta.stage &&
-      item.subject === meta.subject
+      (!meta.subject || item.subject === meta.subject)
     )
     .map((item) => ({ ...item, student: getStudent(item.studentId) }))
     .filter((item) => item.student && Number.isFinite(Number(item.score)))
@@ -1196,52 +1201,122 @@ function renderTermScoreEntryList() {
   if (!target) return;
   const meta = currentTermMeta();
   const students = state.students.filter((student) => student.grade === meta.grade);
-  const existing = new Map(termRowsForMeta(meta).map((row) => [row.studentId, row]));
+  const existing = new Map(termRowsForMeta(meta).map((row) => [`${row.studentId}|${row.subject}`, row]));
   target.innerHTML = students.length
-    ? students.map((student) => `
-      <label class="score-row term-score-row">
-        <span>${student.name}</span>
-        <input type="number" min="0" max="100" step="0.1" data-term-score-student="${student.id}" value="${existing.get(student.id)?.score ?? ""}" placeholder="輸入成績">
-      </label>
-    `).join("")
+    ? `<div class="table-wrap">
+      <table class="term-entry-table">
+        <thead><tr><th>班級</th><th>姓名</th>${termSubjects.map((subject) => `<th>${subject}</th>`).join("")}</tr></thead>
+        <tbody>${students.map((student) => `
+          <tr>
+            <td>${student.grade}</td>
+            <td>${student.name}</td>
+            ${termSubjects.map((subject) => `<td><input type="number" min="0" max="100" step="0.1" data-term-score-student="${student.id}" data-term-score-subject="${subject}" value="${existing.get(`${student.id}|${subject}`)?.score ?? ""}" placeholder="-"></td>`).join("")}
+          </tr>
+        `).join("")}</tbody>
+      </table>
+    </div>`
     : `<div class="empty">此年級尚無學生。</div>`;
+}
+
+function termReportRows(meta = currentTermMeta()) {
+  const rows = termRowsForMeta(meta);
+  const byStudent = new Map();
+  rows.forEach((row) => {
+    if (!byStudent.has(row.studentId)) byStudent.set(row.studentId, { student: row.student, scores: {}, values: [] });
+    const item = byStudent.get(row.studentId);
+    item.scores[row.subject] = Number(row.score);
+    item.values.push(Number(row.score));
+  });
+  return [...byStudent.values()]
+    .map((item) => {
+      const average = item.values.length ? item.values.reduce((sum, score) => sum + score, 0) / item.values.length : NaN;
+      return { ...item, average };
+    })
+    .filter((item) => Number.isFinite(item.average))
+    .sort((a, b) => b.average - a.average)
+    .map((item, index, rows) => ({
+      ...item,
+      rank: rows.findIndex((row) => row.average === item.average) + 1,
+    }));
 }
 
 function renderTermReport() {
   const target = $("#termReportBody");
   if (!target) return;
   const meta = currentTermMeta();
-  const rows = termRowsForMeta(meta);
-  const average = rows.length ? rows.reduce((sum, row) => sum + Number(row.score), 0) / rows.length : NaN;
+  const rows = termReportRows(meta);
+  const average = rows.length ? rows.reduce((sum, row) => sum + row.average, 0) / rows.length : NaN;
   target.innerHTML = `
     <div class="report-head">
-      <strong>${meta.year}${meta.semester} ${meta.grade} ${meta.stage} ${meta.subject}</strong>
-      <span>${dateLabel(meta.date)}</span>
+      <strong>${meta.year}${meta.semester} ${meta.grade} ${meta.stage}</strong>
       <span>班平均 ${scoreDisplay(average)}</span>
-      <span>${rows.length} 筆成績</span>
+      <span>${rows.length} 位學生</span>
     </div>
     <table>
-      <thead><tr><th>排名</th><th>姓名</th><th>班級</th><th>科目</th><th>成績</th></tr></thead>
-      <tbody>${rows.map((row) => `<tr><td>${row.rank}</td><td>${row.student.name}</td><td>${row.grade}</td><td>${row.subject}</td><td class="${scoreClass(Number(row.score))}">${scoreDisplay(Number(row.score))}</td></tr>`).join("") || `<tr><td colspan="5">尚無段考成績</td></tr>`}</tbody>
+      <thead><tr><th>排名</th><th>班級</th><th>姓名</th>${termSubjects.map((subject) => `<th>${subject}</th>`).join("")}<th>平均</th></tr></thead>
+      <tbody>${rows.map((row) => `<tr><td>${row.rank}</td><td>${row.student.grade}</td><td>${row.student.name}</td>${termSubjects.map((subject) => `<td class="${scoreClass(row.scores[subject])}">${scoreDisplay(row.scores[subject])}</td>`).join("")}<td class="${scoreClass(row.average)}">${scoreDisplay(row.average)}</td></tr>`).join("") || `<tr><td colspan="${4 + termSubjects.length}">尚無段考成績</td></tr>`}</tbody>
     </table>
   `;
 }
 
+function termReportGroups() {
+  const groups = new Map();
+  state.termScores.forEach((item) => {
+    const key = [item.year || "", item.semester || "", item.grade || "", item.stage || ""].join("|");
+    if (!groups.has(key)) {
+      groups.set(key, {
+        key,
+        year: item.year || "",
+        semester: item.semester || "",
+        grade: item.grade || "",
+        stage: item.stage || "",
+        count: 0,
+        updatedAt: "",
+      });
+    }
+    const group = groups.get(key);
+    group.count += 1;
+    group.updatedAt = [group.updatedAt, item.updatedAt || item.createdAt || ""].sort().pop();
+  });
+  return [...groups.values()].sort((a, b) =>
+    (b.year + b.semester + b.stage + b.grade).localeCompare(a.year + a.semester + a.stage + a.grade, "zh-Hant")
+  );
+}
+
+function renderTermHistoryList() {
+  const target = $("#termHistoryList");
+  if (!target) return;
+  const groups = termReportGroups();
+  target.innerHTML = groups.map((group) => `
+    <article class="record-card">
+      <strong>${group.year}${group.semester} ${group.grade} ${group.stage}</strong>
+      <div class="meta">
+        <span class="badge">${group.count} 筆科目成績</span>
+        <span class="badge">${group.updatedAt ? `更新 ${dateLabel(group.updatedAt.slice(0, 10))}` : "尚無更新時間"}</span>
+      </div>
+      <div class="action-row">
+        <button class="ghost" data-view-term-report="${group.key}">查看段考成績單</button>
+      </div>
+    </article>
+  `).join("") || `<div class="empty">尚無歷史段考成績單。</div>`;
+}
+
 function termReportFileName(meta, ext) {
-  return `${meta.date}_${meta.grade}_${meta.stage}_${meta.subject}_段考成績單.${ext}`;
+  return `${meta.year}${meta.semester}_${meta.grade}_${meta.stage}_段考成績單.${ext}`;
 }
 
 function termReportExportRows(meta = currentTermMeta()) {
-  const rows = termRowsForMeta(meta).map((row) => ({
+  const reportRows = termReportRows(meta);
+  const rows = reportRows.map((row) => ({
     rank: row.rank,
     name: row.student.name,
-    grade: row.grade,
-    subject: row.subject,
-    score: scoreDisplay(Number(row.score)),
-    failing: Number(row.score) < 60,
+    grade: row.student.grade,
+    scores: Object.fromEntries(termSubjects.map((subject) => [subject, scoreDisplay(row.scores[subject])])),
+    average: scoreDisplay(row.average),
+    failing: row.average < 60,
   }));
   const average = rows.length
-    ? termRowsForMeta(meta).reduce((sum, row) => sum + Number(row.score), 0) / rows.length
+    ? reportRows.reduce((sum, row) => sum + row.average, 0) / rows.length
     : NaN;
   return { meta, rows, average };
 }
@@ -1249,9 +1324,9 @@ function termReportExportRows(meta = currentTermMeta()) {
 function printTermReportPdf() {
   const { meta, rows, average } = termReportExportRows();
   if (!rows.length) return alert("尚無段考成績單可輸出。");
-  pdfDocument(`${meta.grade} ${meta.stage} ${meta.subject} 段考成績單`, `
+  pdfDocument(`${meta.grade} ${meta.stage} 段考成績單`, `
     <header class="doc-head">
-      <div class="brand"><img src="assets/logo.png" alt=""><div><h1>金牌躍騰教育集團 段考成績單</h1><div>${escapeHtml(dateLabel(meta.date))} ${escapeHtml(meta.grade)} ${escapeHtml(meta.stage)} ${escapeHtml(meta.subject)}</div></div></div>
+      <div class="brand"><img src="assets/logo.png" alt=""><div><h1>金牌躍騰教育集團 段考成績單</h1><div>${escapeHtml(meta.year)}${escapeHtml(meta.semester)} ${escapeHtml(meta.grade)} ${escapeHtml(meta.stage)}</div></div></div>
       <div>列印日期：${escapeHtml(new Date().toLocaleDateString("zh-TW"))}</div>
     </header>
     <div class="meta">
@@ -1260,10 +1335,10 @@ function printTermReportPdf() {
       <span class="pill">${rows.length} 筆成績</span>
     </div>
     <table>
-      <thead><tr><th>排名</th><th class="left">姓名</th><th>班級</th><th>科目</th><th>成績</th></tr></thead>
-      <tbody>${rows.map((row) => `<tr><td>${row.rank}</td><td class="left">${escapeHtml(row.name)}</td><td>${escapeHtml(row.grade)}</td><td>${escapeHtml(row.subject)}</td><td class="${row.failing ? "fail-score" : ""}">${escapeHtml(row.score)}</td></tr>`).join("")}</tbody>
+      <thead><tr><th>排名</th><th>班級</th><th class="left">姓名</th>${termSubjects.map((subject) => `<th>${escapeHtml(subject)}</th>`).join("")}<th>平均</th></tr></thead>
+      <tbody>${rows.map((row) => `<tr><td>${row.rank}</td><td>${escapeHtml(row.grade)}</td><td class="left">${escapeHtml(row.name)}</td>${termSubjects.map((subject) => `<td class="${Number(row.scores[subject]) < 60 ? "fail-score" : ""}">${escapeHtml(row.scores[subject])}</td>`).join("")}<td class="${row.failing ? "fail-score" : ""}">${escapeHtml(row.average)}</td></tr>`).join("")}</tbody>
     </table>
-  `, "portrait");
+  `, "landscape");
 }
 
 function downloadTermReportExcel() {
@@ -1271,10 +1346,10 @@ function downloadTermReportExcel() {
   if (!rows.length) return alert("尚無段考成績單可匯出。");
   const html = `<!doctype html><html><head><meta charset="utf-8"></head><body>
     <table border="1">
-      <tr><th colspan="5">金牌躍騰教育集團 段考成績單</th></tr>
-      <tr><td colspan="5">${escapeHtml(dateLabel(meta.date))} ${escapeHtml(meta.grade)} ${escapeHtml(meta.stage)} ${escapeHtml(meta.subject)}　${escapeHtml(meta.year)}${escapeHtml(meta.semester)}　班平均 ${scoreDisplay(average)}</td></tr>
-      <tr><th>排名</th><th>姓名</th><th>班級</th><th>科目</th><th>成績</th></tr>
-      ${rows.map((row) => `<tr><td>${row.rank}</td><td>${escapeHtml(row.name)}</td><td>${escapeHtml(row.grade)}</td><td>${escapeHtml(row.subject)}</td><td style="${row.failing ? "color:#e60012;font-weight:bold;" : ""}">${escapeHtml(row.score)}</td></tr>`).join("")}
+      <tr><th colspan="${4 + termSubjects.length}">金牌躍騰教育集團 段考成績單</th></tr>
+      <tr><td colspan="${4 + termSubjects.length}">${escapeHtml(meta.year)}${escapeHtml(meta.semester)} ${escapeHtml(meta.grade)} ${escapeHtml(meta.stage)}　班平均 ${scoreDisplay(average)}</td></tr>
+      <tr><th>排名</th><th>班級</th><th>姓名</th>${termSubjects.map((subject) => `<th>${escapeHtml(subject)}</th>`).join("")}<th>平均</th></tr>
+      ${rows.map((row) => `<tr><td>${row.rank}</td><td>${escapeHtml(row.grade)}</td><td>${escapeHtml(row.name)}</td>${termSubjects.map((subject) => `<td style="${Number(row.scores[subject]) < 60 ? "color:#e60012;font-weight:bold;" : ""}">${escapeHtml(row.scores[subject])}</td>`).join("")}<td style="${row.failing ? "color:#e60012;font-weight:bold;" : ""}">${escapeHtml(row.average)}</td></tr>`).join("")}
     </table>
   </body></html>`;
   downloadBlob(`\ufeff${html}`, "application/vnd.ms-excel;charset=utf-8", termReportFileName(meta, "xls"));
@@ -1284,7 +1359,7 @@ function downloadTermReportImage() {
   const { meta, rows, average } = termReportExportRows();
   if (!rows.length) return alert("尚無段考成績單可匯出。");
   const scale = 2;
-  const width = 1080;
+  const width = 1380;
   const topSafe = 56;
   const rowHeight = 54;
   const headerHeight = 224;
@@ -1308,14 +1383,14 @@ function downloadTermReportImage() {
   ctx.translate(0, topSafe);
   ctx.fillStyle = "#f5d47a";
   ctx.font = "bold 34px Microsoft JhengHei, Arial";
-  canvasText(ctx, "金牌躍騰教育集團 段考成績單", 54, 64, 720);
+  canvasText(ctx, "金牌躍騰教育集團 段考成績單", 54, 64, 820);
   ctx.fillStyle = "#fff7df";
   ctx.font = "20px Microsoft JhengHei, Arial";
-  canvasText(ctx, `${dateLabel(meta.date)}　${meta.grade}　${meta.stage}　${meta.subject}`, 56, 104, 660);
-  canvasText(ctx, `列印日期：${new Date().toLocaleDateString("zh-TW")}`, 820, 104, 220);
+  canvasText(ctx, `${meta.year}${meta.semester}　${meta.grade}　${meta.stage}`, 56, 104, 660);
+  canvasText(ctx, `列印日期：${new Date().toLocaleDateString("zh-TW")}`, 1120, 104, 220);
 
   ctx.fillStyle = "rgba(255,255,255,.08)";
-  drawRoundRect(ctx, 54, 126, 972, 66, 10);
+  drawRoundRect(ctx, 54, 126, 1272, 66, 10);
   ctx.fill();
   ctx.fillStyle = "#fff7df";
   ctx.font = "bold 20px Microsoft JhengHei, Arial";
@@ -1327,13 +1402,13 @@ function downloadTermReportImage() {
   const tableY = 244;
   const columns = [
     { label: "排名", width: 90 },
-    { label: "姓名", width: 300 },
-    { label: "班級", width: 150 },
-    { label: "科目", width: 200 },
-    { label: "成績", width: 232 },
+    { label: "班級", width: 110 },
+    { label: "姓名", width: 180 },
+    ...termSubjects.map((subject) => ({ label: subject, width: 110 })),
+    { label: "平均", width: 120 },
   ];
   ctx.fillStyle = "#171b21";
-  drawRoundRect(ctx, tableX, tableY - 48, 972, 48, 8);
+  drawRoundRect(ctx, tableX, tableY - 48, 1272, 48, 8);
   ctx.fill();
   ctx.font = "bold 18px Microsoft JhengHei, Arial";
   ctx.fillStyle = "#f5d47a";
@@ -1345,17 +1420,17 @@ function downloadTermReportImage() {
   rows.forEach((row, rowIndex) => {
     const y = tableY + rowIndex * rowHeight;
     ctx.fillStyle = rowIndex % 2 ? "#f4ead2" : "#fffaf0";
-    ctx.fillRect(tableX, y, 972, rowHeight);
+    ctx.fillRect(tableX, y, 1272, rowHeight);
     ctx.strokeStyle = "#dfd0aa";
     ctx.beginPath();
     ctx.moveTo(tableX, y + rowHeight);
-    ctx.lineTo(tableX + 972, y + rowHeight);
+    ctx.lineTo(tableX + 1272, y + rowHeight);
     ctx.stroke();
     cursor = tableX;
-    const values = [row.rank, row.name, row.grade, row.subject, row.score];
+    const values = [row.rank, row.grade, row.name, ...termSubjects.map((subject) => row.scores[subject]), row.average];
     ctx.font = row.rank === 1 ? "bold 18px Microsoft JhengHei, Arial" : "17px Microsoft JhengHei, Arial";
     values.forEach((value, index) => {
-      ctx.fillStyle = index === 4 && row.failing ? "#e60012" : "#1e2329";
+      ctx.fillStyle = index >= 3 && Number(value) < 60 ? "#e60012" : "#1e2329";
       canvasText(ctx, value, cursor + 14, y + 34, columns[index].width - 18);
       cursor += columns[index].width;
     });
@@ -1496,6 +1571,31 @@ function scoreLineChart(rows) {
   `;
 }
 
+function termScoreLineChart(rows) {
+  const chartRows = rows.slice(-12);
+  if (chartRows.length < 2) return `<div class="empty small-empty">至少需要 2 次段考成績才會形成折線圖。</div>`;
+  const width = 640;
+  const height = 220;
+  const pad = 28;
+  const points = chartRows.map((row, index) => {
+    const x = pad + (index * (width - pad * 2)) / Math.max(1, chartRows.length - 1);
+    const y = height - pad - (Math.max(0, Math.min(100, Number(row.score))) / 100) * (height - pad * 2);
+    return { x, y, row };
+  });
+  const polyline = points.map((point) => `${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(" ");
+  return `
+    <svg class="score-line-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="段考成績起伏折線圖">
+      <line x1="${pad}" y1="${pad}" x2="${pad}" y2="${height - pad}" class="chart-axis"></line>
+      <line x1="${pad}" y1="${height - pad}" x2="${width - pad}" y2="${height - pad}" class="chart-axis"></line>
+      <line x1="${pad}" y1="${height - pad - .6 * (height - pad * 2)}" x2="${width - pad}" y2="${height - pad - .6 * (height - pad * 2)}" class="chart-pass"></line>
+      <polyline points="${polyline}" class="chart-line"></polyline>
+      ${points.map((point) => `<g><circle cx="${point.x.toFixed(1)}" cy="${point.y.toFixed(1)}" r="4.5" class="chart-dot"></circle><title>${point.row.term} ${point.row.stage} ${point.row.subject} ${scoreDisplay(Number(point.row.score))}</title></g>`).join("")}
+      ${points.map((point) => `<text x="${point.x.toFixed(1)}" y="${height - 8}" text-anchor="middle" class="chart-label">${point.row.stage}</text>`).join("")}
+      <text x="${pad + 4}" y="${height - pad - .6 * (height - pad * 2) - 6}" class="chart-mark">60</text>
+    </svg>
+  `;
+}
+
 function renderCareerSubjectButtons(student) {
   const target = $("#careerSubjectButtons");
   if (!target) return;
@@ -1543,11 +1643,77 @@ function renderCareerScoreLookup(student) {
   `;
 }
 
+function renderCareerTermYearOptions(student) {
+  const target = $("#careerTermYear");
+  if (!target) return;
+  const previous = target.value;
+  const years = [...new Set(state.termScores
+    .filter((item) => item.studentId === student?.id)
+    .map((item) => item.year)
+    .filter(Boolean))]
+    .sort((a, b) => String(b).localeCompare(String(a), "zh-Hant"));
+  target.innerHTML = years.map((year) => `<option value="${year}">${year}</option>`).join("") || `<option value="">尚無段考</option>`;
+  target.value = previous && years.includes(previous) ? previous : years[0] || "";
+}
+
+function renderCareerTermTrend(student) {
+  const target = $("#careerTermTrend");
+  if (!target) return;
+  if (!student) {
+    target.innerHTML = `<div class="empty">請先選擇學生。</div>`;
+    return;
+  }
+  renderCareerTermYearOptions(student);
+  const year = $("#careerTermYear")?.value;
+  const rows = state.termScores
+    .filter((item) => item.studentId === student.id)
+    .filter((item) => !year || item.year === year)
+    .sort((a, b) => `${a.year}${a.semester}${a.stage}${a.subject}`.localeCompare(`${b.year}${b.semester}${b.stage}${b.subject}`, "zh-Hant"));
+  if (!rows.length) {
+    target.innerHTML = `<div class="empty">尚無段考成績紀錄。</div>`;
+    return;
+  }
+  const bySubject = termSubjects
+    .map((subject) => ({
+      subject,
+      rows: rows.filter((item) => normalizeCourseName(item.subject) === subject),
+    }))
+    .filter((item) => item.rows.length);
+  const groups = new Map();
+  rows.forEach((row) => {
+    const key = `${row.year}${row.semester} ${row.stage}`;
+    if (!groups.has(key)) groups.set(key, { label: key, scores: {} });
+    groups.get(key).scores[normalizeCourseName(row.subject)] = Number(row.score);
+  });
+  target.innerHTML = `
+    <div class="analysis-grid">
+      ${bySubject.map((item) => {
+        const avg = item.rows.reduce((sum, row) => sum + Number(row.score), 0) / item.rows.length;
+        return `<article class="analysis-card">
+          <div class="analysis-card-head">
+            <strong>${item.subject}</strong>
+            <b class="level-badge">${levelFromScore(avg)}</b>
+          </div>
+          <span>段考平均 ${scoreDisplay(avg)}｜共 ${item.rows.length} 次</span>
+          ${termScoreLineChart(item.rows)}
+        </article>`;
+      }).join("")}
+    </div>
+    <div class="table-wrap career-history-table">
+      <table>
+        <thead><tr><th>學期段別</th>${termSubjects.map((subject) => `<th>${subject}</th>`).join("")}</tr></thead>
+        <tbody>${[...groups.values()].map((group) => `<tr><td>${group.label}</td>${termSubjects.map((subject) => `<td class="${scoreClass(group.scores[subject])}">${scoreDisplay(group.scores[subject])}</td>`).join("")}</tr>`).join("")}</tbody>
+      </table>
+    </div>
+  `;
+}
+
 function renderStudentReport() {
   const student = getStudent($("#careerStudent")?.value);
   if (!student) {
     renderCareerSubjectButtons(null);
     renderCareerScoreLookup(null);
+    renderCareerTermTrend(null);
     $("#studentReport").innerHTML = `<div class="empty">請先選擇學生。</div>`;
     $("#archiveList").innerHTML = `<div class="empty">尚無歷年紀錄。</div>`;
     return;
@@ -1555,6 +1721,7 @@ function renderStudentReport() {
   if (careerSubject !== "全部" && !careerSubjectsForStudent(student).includes(careerSubject)) careerSubject = "全部";
   renderCareerSubjectButtons(student);
   renderCareerScoreLookup(student);
+  renderCareerTermTrend(student);
   $("#studentReport").innerHTML = renderStudentReportHtml(student);
   $("#archiveList").innerHTML = state.archives
     .filter((item) => item.studentId === student.id)
@@ -2178,6 +2345,12 @@ function setupForms() {
   $("#printTermReport").addEventListener("click", printTermReportPdf);
   $("#downloadTermReportImage").addEventListener("click", downloadTermReportImage);
   $("#downloadTermReportExcel").addEventListener("click", downloadTermReportExcel);
+  $$("#termSectionSwitch [data-term-section]").forEach((button) => {
+    button.addEventListener("click", () => {
+      termSection = button.dataset.termSection;
+      renderAll();
+    });
+  });
   $$("#scoreSectionSwitch [data-score-section]").forEach((button) => {
     button.addEventListener("click", () => {
       if (scoreSection === "entry") captureScoreDraft();
@@ -2220,7 +2393,7 @@ function setupForms() {
     }
   });
 
-  ["studentFilter", "studentSearch", "lateGrade", "historyType", "historySearch", "scheduleGrade", "examGrade", "examSubject", "examPaperCount", "examNoTest", "scoreStudentSearch", "scoreStudentFilter", "careerGrade", "careerStudent", "careerQueryDate", "termYear", "termSemester", "termGrade", "termDate", "termStage", "termSubject"].forEach((id) => {
+  ["studentFilter", "studentSearch", "lateGrade", "historyType", "historySearch", "scheduleGrade", "examGrade", "examSubject", "examPaperCount", "examNoTest", "scoreStudentSearch", "scoreStudentFilter", "careerGrade", "careerStudent", "careerQueryDate", "careerTermYear", "termYear", "termSemester", "termGrade", "termStage"].forEach((id) => {
     onInputChange(id, renderAll);
   });
 
@@ -2613,6 +2786,7 @@ function setupActions() {
     const viewExamId = event.target.dataset.viewExam;
     const editExamId = event.target.dataset.editExam;
     const deleteExamId = event.target.dataset.deleteExam;
+    const viewTermReportKey = event.target.dataset.viewTermReport;
 
     if (pickLeaveStudentId) {
       const student = getStudent(pickLeaveStudentId);
@@ -2670,6 +2844,17 @@ function setupActions() {
         editingExamId = null;
         updateExamFormMode();
       }
+    }
+    if (viewTermReportKey) {
+      const [year, semester, grade, stage] = viewTermReportKey.split("|");
+      $("#termYear").value = year;
+      $("#termSemester").value = semester;
+      $("#termGrade").value = grade;
+      $("#termStage").value = stage;
+      termSection = "history";
+      navigateToTab("term");
+      renderAll();
+      $("#termReportBody")?.scrollIntoView({ behavior: "smooth", block: "start" });
     }
 
     if (deleteStudentId || dismissLeaveId || deleteLeaveId || removeLateId || deleteExamId) {
@@ -2939,8 +3124,10 @@ function renderAll() {
   renderClassReport();
   renderExamHistory();
   renderStudentReport();
+  renderTermSections();
   renderTermScoreEntryList();
   renderTermReport();
+  renderTermHistoryList();
   renderActiveLeaves();
   renderLateBoard();
   renderManageLists();
@@ -2951,12 +3138,10 @@ function boot() {
   renderCourseInputs("studentCourses", "studentCourse");
   renderWeekdayInputs("studentFixedLeave", "fixedLeave");
   renderFixedLateInputs();
-  renderSubjectOptions("termSubject", false);
   resetLeaveForm();
   $("#examDate").value = todayISO();
   $("#careerQueryDate").value = todayISO();
   $("#parentScoreDate").value = todayISO();
-  $("#termDate").value = todayISO();
   $("#termYear").value = String(new Date().getFullYear() - 1911);
   renderExamSubjectOptions();
   $("#lateDate").value = todayISO();
