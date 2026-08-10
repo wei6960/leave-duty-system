@@ -202,7 +202,15 @@ function normalizeCourseName(value) {
 }
 
 function generateParentCode() {
-  return Math.random().toString(36).slice(2, 8).toUpperCase();
+  return String(Math.floor(1000 + Math.random() * 9000));
+}
+
+function generateUniqueParentCode(excludeStudentId = "") {
+  for (let index = 0; index < 200; index += 1) {
+    const code = generateParentCode();
+    if (!parentCodeTaken(code, excludeStudentId)) return code;
+  }
+  return crypto.randomUUID().slice(0, 8).toUpperCase();
 }
 
 function normalizeExam(exam) {
@@ -284,6 +292,14 @@ function queueRemoteSave() {
   }, 350);
 }
 
+function renderSyncedState() {
+  if (parentStudentId && !$("#parentShell")?.hidden) {
+    renderParentPortal();
+    return;
+  }
+  if (!$("#appShell")?.hidden) renderAll();
+}
+
 function hasSupabaseConfig() {
   const config = window.SUPABASE_CONFIG;
   return Boolean(config && config.url && config.anonKey);
@@ -333,13 +349,13 @@ async function setupSupabaseSync() {
       state = normalizeState(remote.data || emptyState());
       lastRemoteUpdatedAt = remote.updatedAt || "";
       localStorage.setItem(storageKey(), JSON.stringify(state));
-      renderAll();
+      renderSyncedState();
     }
 
     syncReady = true;
     setSyncStatus("同步中");
     if (!remote) await saveSupabaseState();
-    supabasePollTimer = setInterval(checkSupabaseState, 5000);
+    supabasePollTimer = setInterval(checkSupabaseState, 3000);
   } catch (error) {
     syncReady = false;
     setSyncStatus("同步失敗");
@@ -386,7 +402,7 @@ async function checkSupabaseState() {
       state = normalizeState(remote.data || emptyState());
       lastRemoteUpdatedAt = remote.updatedAt;
       localStorage.setItem(storageKey(), JSON.stringify(state));
-      renderAll();
+      renderSyncedState();
     }
     setSyncStatus("同步中");
   } catch (error) {
@@ -432,7 +448,7 @@ async function setupFirebaseSync() {
       if (remote && !snapshot.metadata.hasPendingWrites) {
         state = normalizeState(remote);
         localStorage.setItem(storageKey(), JSON.stringify(state));
-        renderAll();
+        renderSyncedState();
       }
       syncLoading = false;
       syncReady = true;
@@ -2482,6 +2498,7 @@ function setupForms() {
       state.students.push({
         id: crypto.randomUUID(),
         ...payload,
+        parentCode: generateUniqueParentCode(),
       });
     }
     clearStudentForm();
@@ -3213,6 +3230,59 @@ async function loadParentBranchState(branch) {
   }
 }
 
+function normalizeParentCodeInput(value) {
+  return cleanCellText(value).toUpperCase().replace(/\s+/g, "");
+}
+
+function parentCodeTaken(code, ownStudentId) {
+  return state.students.some((student) =>
+    student.id !== ownStudentId &&
+    normalizeParentCodeInput(student.parentCode) === code
+  );
+}
+
+async function updateParentOwnCode(event) {
+  event.preventDefault();
+  const student = getStudent(parentStudentId);
+  if (!student) return;
+  const errorBox = $("#parentCodeUpdateError");
+  const nextCode = normalizeParentCodeInput($("#parentOwnCode").value);
+  if (!/^[A-Z0-9]{4,12}$/.test(nextCode)) {
+    errorBox.textContent = "代碼請輸入 4 到 12 碼英文或數字。";
+    errorBox.hidden = false;
+    return;
+  }
+  try {
+    const remote = supabaseClient ? await loadSupabaseState() : null;
+    if (remote) {
+      state = normalizeState(remote.data || emptyState());
+      lastRemoteUpdatedAt = remote.updatedAt || lastRemoteUpdatedAt;
+    }
+    const latestStudent = getStudent(parentStudentId);
+    if (!latestStudent) {
+      errorBox.textContent = "找不到學生資料，請重新登入。";
+      errorBox.hidden = false;
+      return;
+    }
+    if (parentCodeTaken(nextCode, latestStudent.id)) {
+      errorBox.textContent = "這個代碼已經有人使用，請換一組。";
+      errorBox.hidden = false;
+      $("#parentOwnCode").select();
+      return;
+    }
+    latestStudent.parentCode = nextCode;
+    errorBox.hidden = true;
+    localStorage.setItem(storageKey(), JSON.stringify(state));
+    if (remoteSave) await remoteSave();
+    else saveState();
+    renderParentPortal();
+    flashButton(event.submitter, "已更新");
+  } catch (error) {
+    errorBox.textContent = "更新失敗，請稍後再試。";
+    errorBox.hidden = false;
+  }
+}
+
 function studentScoreSummary(student, subjectFilter = "全部") {
   return reportSubjects
     .filter((subject) => subjectFilter === "全部" || subject === subjectFilter)
@@ -3356,6 +3426,8 @@ function renderParentPortal() {
   const student = getStudent(parentStudentId);
   if (!student) return;
   $("#parentStudentTitle").textContent = `${student.name} 生涯檔案`;
+  $("#parentOwnCode").value = student.parentCode || "";
+  $("#parentCodeUpdateError").hidden = true;
   $("#parentEventList").innerHTML = sortedEvents(state.events.filter((record) => eventVisibleToStudent(record, student)))
     .map((record) => renderEventCard(record))
     .join("") || `<div class="empty">目前尚無重大行事曆公告。</div>`;
@@ -3404,6 +3476,7 @@ function setupLogin() {
 
   $("#parentLoginForm").addEventListener("submit", async (event) => {
     event.preventDefault();
+    cleanupCloudSync();
     await loadParentBranchState($("#parentBranch").value);
     const code = cleanCellText($("#parentCode").value).toUpperCase();
     const student = state.students.find((item) => cleanCellText(item.parentCode).toUpperCase() === code);
@@ -3416,9 +3489,16 @@ function setupLogin() {
     $("#parentLoginError").hidden = true;
     showParentShell();
     renderParentPortal();
+    setupCloudSync();
   });
 
-  $("#parentLogout").addEventListener("click", showParentLogin);
+  $("#parentCodeForm")?.addEventListener("submit", updateParentOwnCode);
+
+  $("#parentLogout").addEventListener("click", () => {
+    parentStudentId = null;
+    cleanupCloudSync();
+    showParentLogin();
+  });
   $("#backTeacherLogin").addEventListener("click", () => {
     history.replaceState(null, "", location.pathname);
     showLogin();

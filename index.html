@@ -59,6 +59,19 @@
       <button class="logout-button" id="parentLogout" type="button">離開家長端</button>
     </header>
     <main class="parent-main">
+      <section class="panel">
+        <div class="panel-title">
+          <h2>家長登入代碼</h2>
+          <span>可自行更改，不能與其他學生重複</span>
+        </div>
+        <form class="toolbar compact-toolbar" id="parentCodeForm">
+          <label>目前代碼
+            <input id="parentOwnCode" maxlength="12" placeholder="例：1234">
+          </label>
+          <button class="primary" type="submit">更新代碼</button>
+        </form>
+        <p class="login-error" id="parentCodeUpdateError" hidden></p>
+      </section>
       <section class="panel large-panel">
         <div class="panel-title">
           <h2>重大行事曆公告</h2>
