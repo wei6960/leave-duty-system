@@ -1693,6 +1693,7 @@ function renderCareerScoreLookup(student) {
     .filter((row) => studentTakesSubject(student, row.exam.subject))
     .filter((row) => selectedSubject === "全部" || row.exam.subject === selectedSubject)
     .sort((a, b) => b.exam.date.localeCompare(a.exam.date));
+  const subjectCardTitle = selectedSubject === "全部" ? "各科週考紀錄" : `${selectedSubject}週考紀錄`;
   target.innerHTML = `
     <div class="lookup-result">
       <strong>${dateLabel(queryDate)} ${scheduledSubjectLabel(dateSubjects)}</strong>
@@ -1700,6 +1701,28 @@ function renderCareerScoreLookup(student) {
         ${dayRows.map((row) => `<article class="score-result-card"><b>${row.exam.subject}</b><span>${row.exam.scope || "未填重點"}</span><strong class="${scoreClass(row.score)}">${scoreDisplay(row.score)}</strong><small>各卷 ${row.papers.map(scoreDisplay).join(" / ")}</small></article>`).join("") || `<div class="empty small-empty">當日此科暫時沒有成績。</div>`}
       </div>
     </div>
+    <section class="career-score-browser">
+      <div class="browser-head">
+        <strong>${subjectCardTitle}</strong>
+        <span>${subjectHistoryRows.length} 筆</span>
+      </div>
+      <div class="score-card-rail" aria-label="${subjectCardTitle}">
+        ${subjectHistoryRows.map((row) => {
+          const rank = currentScoreRows(row.exam).find((item) => item.student.id === student.id)?.rank || "-";
+          return `<article class="exam-mini-card">
+            <div class="mini-card-top">
+              <b>${row.exam.subject}</b>
+              <strong class="${scoreClass(row.score)}">${scoreDisplay(row.score)}</strong>
+            </div>
+            <span>${row.exam.scope || "未填考試單元"}</span>
+            <div class="mini-card-meta">
+              <small>${dateLabel(row.exam.date)}</small>
+              <small>排名 ${rank}</small>
+            </div>
+          </article>`;
+        }).join("") || `<div class="empty small-empty">尚無此科週考紀錄。</div>`}
+      </div>
+    </section>
     <div class="table-wrap career-history-table">
       <table>
         <thead><tr><th>日期</th><th>科目</th><th>重點</th><th>各卷</th><th>平均</th><th>排名</th></tr></thead>
