@@ -1742,7 +1742,7 @@ function renderParentCareerSubjectButtons(student) {
   target.innerHTML = careerSubjectButtonsHtml(student, selectedParentCareerSubject(student), "data-parent-career-subject");
 }
 
-function careerScoreLookupHtml(student, queryDate, selectedSubject) {
+function careerScoreLookupHtml(student, queryDate, selectedSubject, options = {}) {
   if (!student) {
     return `<div class="empty">請先選擇學生。</div>`;
   }
@@ -1788,7 +1788,7 @@ function careerScoreLookupHtml(student, queryDate, selectedSubject) {
         }).join("") || `<div class="empty small-empty">尚無此科週考紀錄。</div>`}
       </div>
     </section>
-    <div class="table-wrap career-history-table">
+    ${options.hideDateHistory ? "" : `<div class="table-wrap career-history-table">
       <table>
         <thead><tr><th>日期</th><th>科目</th><th>重點</th><th>各卷</th><th>平均</th><th>排名</th></tr></thead>
         <tbody>${rows.map((row) => {
@@ -1796,7 +1796,7 @@ function careerScoreLookupHtml(student, queryDate, selectedSubject) {
           return `<tr><td>${dateLabel(row.exam.date)}</td><td>${row.exam.subject}</td><td>${row.exam.scope || "-"}</td><td>${row.papers.map(scoreDisplay).join(" / ")}</td><td class="${scoreClass(row.score)}">${scoreDisplay(row.score)}</td><td>${rank}</td></tr>`;
         }).join("") || `<tr><td colspan="6">尚無歷史成績</td></tr>`}</tbody>
       </table>
-    </div>
+    </div>`}
     <div class="table-wrap career-history-table">
       <table>
         <thead><tr><th colspan="6">${selectedSubject === "全部" ? "各科" : selectedSubject} 歷史週考單元與成績</th></tr></thead>
@@ -3567,7 +3567,7 @@ function renderParentPortal() {
     .join("") || `<div class="empty">尚無請假紀錄。</div>`;
   if (parentCareerSubject !== "全部" && !careerSubjectsForStudent(student).includes(parentCareerSubject)) parentCareerSubject = "全部";
   renderParentCareerSubjectButtons(student);
-  $("#parentScoreList").innerHTML = careerScoreLookupHtml(student, $("#parentScoreDate")?.value || todayISO(), selectedParentCareerSubject(student));
+  $("#parentScoreList").innerHTML = careerScoreLookupHtml(student, $("#parentScoreDate")?.value || todayISO(), selectedParentCareerSubject(student), { hideDateHistory: true });
   renderParentTermTrend(student);
   renderParentTermAnalysisReport(student);
   $("#parentReport").innerHTML = renderStudentReportHtml(student, selectedParentCareerSubject(student));
