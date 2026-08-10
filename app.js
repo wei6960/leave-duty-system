@@ -17,6 +17,7 @@ let dashboardGrade = "全體";
 let dashboardMode = "today";
 let editingStudentId = null;
 let editingExamId = null;
+let selectedClassReportExamId = null;
 let scoreDraft = null;
 let currentBranch = sessionStorage.getItem(SESSION_KEY) || "";
 let state = currentBranch ? loadState() : emptyState();
@@ -899,7 +900,12 @@ function classReportData(exam) {
   return { rows, average, paperCount, reportRows };
 }
 
-function renderClassReport(exam = latestExamForForm()) {
+function displayedClassReportExam() {
+  const selected = selectedClassReportExamId ? state.exams.find((exam) => exam.id === selectedClassReportExamId) : null;
+  return selected || latestExamForForm();
+}
+
+function renderClassReport(exam = displayedClassReportExam()) {
   if (!exam) {
     $("#classReportBody").innerHTML = `<div class="empty">尚無成績單。</div>`;
     return;
@@ -929,6 +935,20 @@ function latestExamForForm() {
   return state.exams
     .filter((exam) => exam.grade === grade && exam.subject === subject)
     .sort((a, b) => b.date.localeCompare(a.date))[0];
+}
+
+function viewExamReport(exam) {
+  selectedClassReportExamId = exam.id;
+  $("#examDate").value = exam.date;
+  $("#examGrade").value = exam.grade;
+  renderExamSubjectOptions();
+  if (!Array.from($("#examSubject").options).some((option) => option.value === exam.subject)) {
+    $("#examSubject").insertAdjacentHTML("beforeend", `<option value="${exam.subject}">${exam.subject}</option>`);
+  }
+  $("#examSubject").value = exam.subject;
+  renderScoreStudentFilter();
+  renderScoreEntryList();
+  renderClassReport(exam);
 }
 
 function saveExam(event) {
@@ -971,6 +991,7 @@ function saveExam(event) {
   } else {
     state.exams.push(exam);
   }
+  selectedClassReportExamId = exam.id;
   editingExamId = null;
   updateExamFormMode();
   clearScoreDraft();
@@ -982,6 +1003,7 @@ function saveExam(event) {
 function resetExamForm() {
   if (!confirm("確定重設當天成績輸入？尚未儲存的分數會清空。")) return;
   editingExamId = null;
+  selectedClassReportExamId = null;
   clearScoreDraft();
   $("#examDate").value = todayISO();
   $("#examScope").value = "";
@@ -995,6 +1017,7 @@ function resetExamForm() {
 
 function fillExamForm(exam) {
   clearScoreDraft();
+  selectedClassReportExamId = exam.id;
   editingExamId = exam.id;
   $("#examDate").value = exam.date;
   $("#examGrade").value = exam.grade;
@@ -1028,6 +1051,7 @@ function renderExamHistory() {
         </div>
       </article>
       <div class="action-row">
+        <button class="ghost" data-view-exam="${exam.id}">查看當天成績單</button>
         <button class="ghost" data-edit-exam="${exam.id}">編輯成績單</button>
         <button class="ghost danger" data-delete-exam="${exam.id}">刪除成績單</button>
       </div>
@@ -1234,7 +1258,7 @@ function pdfDocument(title, body, layout = "portrait") {
 }
 
 function printClassReportPdf() {
-  const exam = latestExamForForm();
+  const exam = displayedClassReportExam();
   if (!exam) {
     alert("尚無成績單可輸出。");
     return;
@@ -1537,6 +1561,11 @@ function setupForms() {
 
   ["examDate", "examGrade", "examSubject", "examScope", "examPaperCount", "examNoTest", "scoreStudentSearch", "scoreStudentFilter"].forEach((id) => {
     $(`#${id}`).addEventListener("input", captureScoreDraft);
+  });
+  ["examDate", "examGrade", "examSubject"].forEach((id) => {
+    $(`#${id}`).addEventListener("input", () => {
+      if (!editingExamId) selectedClassReportExamId = null;
+    });
   });
   $("#scoreEntryList").addEventListener("input", captureScoreDraft);
   $("#scoreEntryList").addEventListener("change", captureScoreDraft);
@@ -1930,6 +1959,7 @@ function setupActions() {
     const dismissLeaveId = event.target.dataset.dismissLeave;
     const deleteLeaveId = event.target.dataset.deleteLeave;
     const removeLateId = event.target.dataset.removeLate;
+    const viewExamId = event.target.dataset.viewExam;
     const editExamId = event.target.dataset.editExam;
     const deleteExamId = event.target.dataset.deleteExam;
 
@@ -1966,6 +1996,14 @@ function setupActions() {
       const late = state.lateRecords.find((record) => record.id === removeLateId);
       if (late) late.dismissedAt = new Date().toISOString();
     }
+    if (viewExamId) {
+      const exam = state.exams.find((record) => record.id === viewExamId);
+      if (exam) {
+        viewExamReport(exam);
+        document.querySelector('[data-tab="scores"]').click();
+        $("#classReport")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    }
     if (editExamId) {
       const exam = state.exams.find((record) => record.id === editExamId);
       if (exam) {
@@ -1976,6 +2014,7 @@ function setupActions() {
     }
     if (deleteExamId && confirm("確定刪除這份成績單？刪除後家長端與生涯檔案也不會再顯示這次考試。")) {
       state.exams = state.exams.filter((record) => record.id !== deleteExamId);
+      if (selectedClassReportExamId === deleteExamId) selectedClassReportExamId = null;
       if (editingExamId === deleteExamId) {
         editingExamId = null;
         updateExamFormMode();
