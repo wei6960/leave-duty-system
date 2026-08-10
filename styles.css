@@ -662,21 +662,28 @@ legend {
 
 .score-entry-list {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: .65rem;
+  gap: .55rem;
 }
 
 .score-row {
-  grid-template-columns: minmax(0, 1fr) 7rem;
+  display: grid;
+  grid-template-columns: minmax(9rem, .7fr) minmax(0, 1.6fr);
   align-items: center;
   border: 1px solid rgba(241, 211, 124, .14);
   border-radius: .38rem;
-  padding: .55rem;
-  background: rgba(0, 0, 0, .14);
+  padding: .7rem .8rem;
+  background:
+    linear-gradient(90deg, rgba(198, 151, 53, .08), transparent 42%),
+    rgba(0, 0, 0, .14);
+}
+
+.score-row span {
+  color: #fff7df;
+  font-weight: 800;
 }
 
 .score-row.multi-paper {
-  grid-template-columns: 1fr;
+  grid-template-columns: minmax(9rem, .7fr) minmax(0, 1.6fr);
 }
 
 .paper-score-grid {
@@ -691,6 +698,10 @@ legend {
   align-items: center;
   gap: .55rem;
   margin-bottom: .75rem;
+  padding: .75rem;
+  border: 1px solid rgba(241, 211, 124, .14);
+  border-radius: .38rem;
+  background: rgba(0, 0, 0, .14);
 }
 
 .report-head strong {
@@ -716,7 +727,9 @@ legend {
   border: 1px solid rgba(241, 211, 124, .16);
   border-radius: .38rem;
   padding: .75rem;
-  background: rgba(0, 0, 0, .14);
+  background:
+    linear-gradient(180deg, rgba(241, 211, 124, .06), transparent),
+    rgba(0, 0, 0, .14);
 }
 
 .mini-bars {
@@ -926,9 +939,13 @@ tbody tr:hover {
   .mode-switch,
   .board-layout,
   .form-grid,
-  .score-entry-list,
   .analysis-grid,
   .parent-main {
+    grid-template-columns: 1fr;
+  }
+
+  .score-row,
+  .score-row.multi-paper {
     grid-template-columns: 1fr;
   }
 

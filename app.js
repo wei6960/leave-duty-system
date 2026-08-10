@@ -6,7 +6,7 @@ const FIREBASE_SDK_VERSION = "12.17.1";
 const SUPABASE_SDK_VERSION = "2.86.0";
 const SUPABASE_COLLECTION = "leaveDutyBranches";
 const grades = ["國一", "國二", "國三"];
-const weekdays = ["一", "二", "三", "四", "五"];
+const weekdays = ["一", "二", "三", "四", "五", "六", "日"];
 const periods = ["上午", "下午", "晚上"];
 const courses = ["國文", "英文", "數A", "數B", "數學", "自然", "總複習", "素養課", "讀書班"];
 const scheduleCourses = [...courses, "考加"];
@@ -606,6 +606,38 @@ function renderSubjectOptions(targetId, includeExamPlus = false) {
   const target = $(`#${targetId}`);
   if (!target) return;
   target.innerHTML = list.map((course) => `<option value="${course}">${course}</option>`).join("");
+}
+
+function mathCoursesForGrade(grade) {
+  const mathGroup = ["數A", "數B", "數學"];
+  return mathGroup.filter((course) => state.students.some((student) => student.grade === grade && student.courses.includes(course)));
+}
+
+function examSubjectsForDateAndGrade(date, grade) {
+  const day = weekdayFromDate(date);
+  const scheduled = periods
+    .map((period) => state.schedule?.[grade]?.[day]?.[period])
+    .filter((course) => course && course !== "考加");
+  if (!scheduled.length || !gradeScheduleHasAnyCourse(grade)) return courses;
+  const subjects = [];
+  scheduled.forEach((course) => {
+    if (["數A", "數B", "數學"].includes(course)) {
+      const mathSubjects = mathCoursesForGrade(grade);
+      subjects.push(...(mathSubjects.length ? mathSubjects : [course]));
+    } else {
+      subjects.push(course);
+    }
+  });
+  return [...new Set(subjects)].filter((course) => courses.includes(course));
+}
+
+function renderExamSubjectOptions() {
+  const target = $("#examSubject");
+  if (!target) return;
+  const previous = target.value;
+  const subjects = examSubjectsForDateAndGrade($("#examDate").value || todayISO(), $("#examGrade").value || "國一");
+  target.innerHTML = subjects.map((course) => `<option value="${course}">${course}</option>`).join("");
+  target.value = subjects.includes(previous) ? previous : subjects[0] || "國文";
 }
 
 function courseSelect(value = "") {
@@ -1344,7 +1376,7 @@ function renderLeaveCard(record) {
         <span class="badge">${leaveDateLabel(record)}</span>
         <span class="badge">${leavePeriodLabel(record)}</span>
         <span class="badge">${dayCount} 天</span>
-        <span class="badge">上課：${classDaysLabel(student)}</span>
+        <span class="badge">課程：${studentCoursesLabel(student)}</span>
         <span class="badge">${student.meal}</span>
         ${record.note ? `<span class="badge gold">${record.note}</span>` : ""}
       </div>
@@ -1454,7 +1486,7 @@ function renderHistory() {
         <div class="meta">
           <span class="badge">${item.type}</span>
           <span class="badge">${item.type === "請假" ? leaveDateLabel(item) : dateLabel(item.date)}</span>
-          ${item.type === "請假" ? `<span class="badge">${leavePeriodLabel(item)}</span><span class="badge">${leaveDayCount(item, student)} 天</span><span class="badge">上課：${classDaysLabel(student)}</span>` : ""}
+          ${item.type === "請假" ? `<span class="badge">${leavePeriodLabel(item)}</span><span class="badge">${leaveDayCount(item, student)} 天</span><span class="badge">課程：${studentCoursesLabel(student)}</span>` : ""}
           <span class="badge">${item.type === "請假" ? leaveStatus(item).label : item.type}</span>
           ${item.note ? `<span class="badge gold">${item.note}</span>` : ""}
         </div>
@@ -1648,6 +1680,7 @@ function setupLogin() {
 
 function renderAll() {
   $("#studentCount").textContent = dashboardStudents().length;
+  renderExamSubjectOptions();
   renderExpectedAttendance();
   renderStudentOptions();
   renderStudents();
@@ -1667,10 +1700,10 @@ function boot() {
   renderCourseInputs("studentCourses", "studentCourse");
   renderWeekdayInputs("studentFixedLeave", "fixedLeave");
   renderFixedLateInputs();
-  renderSubjectOptions("examSubject", true);
   renderSubjectOptions("termSubject", false);
   resetLeaveForm();
   $("#examDate").value = todayISO();
+  renderExamSubjectOptions();
   $("#lateDate").value = todayISO();
   setupTabs();
   mobileQuery.addEventListener("change", enforceMobilePages);
