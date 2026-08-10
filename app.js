@@ -1317,9 +1317,20 @@ function renderTermHistoryList() {
       </div>
       <div class="action-row">
         <button class="ghost" data-view-term-report="${group.key}">查看段考成績單</button>
+        <button class="ghost" data-edit-term-report="${group.key}">編輯段考成績</button>
+        <button class="ghost danger" data-delete-term-report="${group.key}">刪除段考成績單</button>
       </div>
     </article>
   `).join("") || `<div class="empty">尚無歷史段考成績單。</div>`;
+}
+
+function applyTermReportKey(key) {
+  const [year, semester, grade, stage] = key.split("|");
+  $("#termYear").value = year;
+  $("#termSemester").value = semester;
+  $("#termGrade").value = grade;
+  $("#termStage").value = stage;
+  return { year, semester, grade, stage };
 }
 
 function termReportFileName(meta, ext) {
@@ -2808,6 +2819,8 @@ function setupActions() {
     const editExamId = event.target.dataset.editExam;
     const deleteExamId = event.target.dataset.deleteExam;
     const viewTermReportKey = event.target.dataset.viewTermReport;
+    const editTermReportKey = event.target.dataset.editTermReport;
+    const deleteTermReportKey = event.target.dataset.deleteTermReport;
 
     if (pickLeaveStudentId) {
       const student = getStudent(pickLeaveStudentId);
@@ -2867,15 +2880,29 @@ function setupActions() {
       }
     }
     if (viewTermReportKey) {
-      const [year, semester, grade, stage] = viewTermReportKey.split("|");
-      $("#termYear").value = year;
-      $("#termSemester").value = semester;
-      $("#termGrade").value = grade;
-      $("#termStage").value = stage;
+      applyTermReportKey(viewTermReportKey);
       termSection = "history";
       navigateToTab("term");
       renderAll();
       $("#termReportBody")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+    if (editTermReportKey) {
+      applyTermReportKey(editTermReportKey);
+      termSection = "entry";
+      navigateToTab("term");
+      renderAll();
+      $("#termScoreEntryList")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+    if (deleteTermReportKey) {
+      const { year, semester, grade, stage } = applyTermReportKey(deleteTermReportKey);
+      if (confirm(`確定刪除 ${year}${semester} ${grade} ${stage} 段考成績單？刪除後家長端與生涯檔案也不會再顯示這次段考。`)) {
+        state.termScores = state.termScores.filter((item) =>
+          !(item.year === year && item.semester === semester && item.grade === grade && item.stage === stage)
+        );
+        termSection = "history";
+        saveState();
+        renderAll();
+      }
     }
 
     if (deleteStudentId || dismissLeaveId || deleteLeaveId || removeLateId || deleteExamId) {
