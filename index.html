@@ -92,6 +92,16 @@
         </div>
         <div class="career-subject-buttons" id="parentCareerSubjectButtons"></div>
         <div class="toolbar parent-score-toolbar">
+          <label>學年
+            <select id="parentExamYear"></select>
+          </label>
+          <label>學期
+            <select id="parentExamSemester">
+              <option value="全部">全部</option>
+              <option value="上學期">上學期</option>
+              <option value="下學期">下學期</option>
+            </select>
+          </label>
           <label>查詢日期
             <input id="parentScoreDate" type="date">
           </label>
@@ -164,6 +174,7 @@
         <button class="tab-button active" data-tab="dashboard">主頁看板</button>
         <button class="tab-button" data-tab="attendance">出缺勤</button>
         <button class="tab-button" data-tab="management">班務管理</button>
+        <button class="tab-button" data-tab="academic">學年設定</button>
       </nav>
       <button class="logout-button" id="logoutButton" type="button">登出 / 切換分校</button>
     </aside>
@@ -289,6 +300,29 @@
             <span>固定與臨時重大事件張貼</span>
           </button>
         </div>
+      </section>
+
+      <section class="page" id="academic">
+        <header class="section-head">
+          <div>
+            <p class="eyebrow">學年設定</p>
+            <h1>週考學年與學期</h1>
+          </div>
+          <button class="ghost back-button" type="button" data-back-tab="dashboard">返回主頁</button>
+        </header>
+        <form class="form-grid panel" id="academicForm">
+          <label>目前學年
+            <input id="academicYear" placeholder="例：115" required>
+          </label>
+          <label>目前學期
+            <select id="academicSemester">
+              <option value="上學期">上學期</option>
+              <option value="下學期">下學期</option>
+            </select>
+          </label>
+          <button class="primary" type="submit">儲存學年設定</button>
+          <p class="hint form-span-2">新登記的週考會自動歸到這個學年學期；舊週考依考試日期自動保留在原本年度。</p>
+        </form>
       </section>
 
       <section class="page" id="events">
@@ -480,6 +514,9 @@
           <label>日期
             <input id="examDate" type="date" required>
           </label>
+          <label>學年學期
+            <span class="readonly-pill" id="examAcademicLabel">目前學年</span>
+          </label>
           <label>年級
             <select id="examGrade">
               <option value="國一">國一</option>
@@ -521,6 +558,18 @@
         </div>
         </div>
         <div class="score-section" id="scoreHistorySection">
+        <div class="toolbar compact-toolbar panel">
+          <label>週考學年
+            <select id="scoreHistoryYear"></select>
+          </label>
+          <label>學期
+            <select id="scoreHistorySemester">
+              <option value="全部">全部</option>
+              <option value="上學期">上學期</option>
+              <option value="下學期">下學期</option>
+            </select>
+          </label>
+        </div>
         <div class="panel list-panel print-area" id="classReport">
           <div class="panel-title">
             <h2>班級成績單</h2>
@@ -568,6 +617,16 @@
           </div>
           <div class="career-subject-buttons" id="careerSubjectButtons"></div>
           <div class="toolbar compact-toolbar">
+            <label>學年
+              <select id="careerExamYear"></select>
+            </label>
+            <label>學期
+              <select id="careerExamSemester">
+                <option value="全部">全部</option>
+                <option value="上學期">上學期</option>
+                <option value="下學期">下學期</option>
+              </select>
+            </label>
             <label>查詢日期
               <input id="careerQueryDate" type="date">
             </label>

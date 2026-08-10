@@ -435,6 +435,18 @@ h2 {
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .06);
 }
 
+.readonly-pill {
+  display: flex;
+  align-items: center;
+  min-height: 2.75rem;
+  padding: .72rem .9rem;
+  border: 1px solid rgba(241, 211, 124, .22);
+  border-radius: .45rem;
+  background: rgba(245, 212, 122, .09);
+  color: #ffe7a0;
+  font-weight: 800;
+}
+
 .metric {
   position: relative;
   overflow: hidden;

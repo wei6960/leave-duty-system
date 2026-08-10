@@ -56,12 +56,36 @@ const parentTabs = {
   events: "management",
 };
 
+function academicPeriodForDate(date = todayISO()) {
+  const value = date || todayISO();
+  const [yearText, monthText] = value.split("-");
+  const year = Number(yearText) || new Date().getFullYear();
+  const month = Number(monthText) || new Date().getMonth() + 1;
+  return {
+    academicYear: String(month >= 8 ? year - 1911 : year - 1912),
+    semester: month >= 8 || month === 1 ? "上學期" : "下學期",
+  };
+}
+
+function defaultAcademicSettings() {
+  return academicPeriodForDate();
+}
+
+function normalizeAcademicSettings(settings = {}) {
+  const fallback = defaultAcademicSettings();
+  return {
+    academicYear: String(settings.academicYear || settings.year || fallback.academicYear),
+    semester: ["上學期", "下學期"].includes(settings.semester) ? settings.semester : fallback.semester,
+  };
+}
+
 function emptyState() {
   return {
     students: [],
     leaves: [],
     lateRecords: [],
     schedule: defaultSchedule(),
+    settings: defaultAcademicSettings(),
     exams: [],
     termScores: [],
     termPeriods: {},
@@ -133,6 +157,7 @@ function normalizeState(raw) {
     leaves: normalizeLeaves(raw.leaves || []),
     lateRecords: raw.lateRecords || [],
     schedule: baseSchedule,
+    settings: normalizeAcademicSettings(raw.settings),
     exams: (raw.exams || []).map(normalizeExam),
     termScores: (raw.termScores || []).map((item) => ({
       ...item,
@@ -214,9 +239,12 @@ function generateUniqueParentCode(excludeStudentId = "") {
 }
 
 function normalizeExam(exam) {
+  const inferredPeriod = academicPeriodForDate(exam.date || todayISO());
   return {
     id: exam.id || crypto.randomUUID(),
     date: exam.date || todayISO(),
+    academicYear: String(exam.academicYear || exam.year || inferredPeriod.academicYear),
+    semester: ["上學期", "下學期"].includes(exam.semester) ? exam.semester : inferredPeriod.semester,
     grade: grades.includes(exam.grade) ? exam.grade : "國一",
     subject: courses.includes(normalizeCourseName(exam.subject)) ? normalizeCourseName(exam.subject) : "國文",
     scope: exam.scope || "",
@@ -741,6 +769,56 @@ function renderExamSubjectOptions() {
   target.value = subjects.includes(previous) ? previous : subjects[0] || "國文";
 }
 
+function activeAcademicPeriod() {
+  return normalizeAcademicSettings(state.settings);
+}
+
+function academicPeriodLabel(period = activeAcademicPeriod()) {
+  return `${period.academicYear}${period.semester}`;
+}
+
+function renderAcademicSettings() {
+  const settings = activeAcademicPeriod();
+  if ($("#academicYear")) $("#academicYear").value = settings.academicYear;
+  if ($("#academicSemester")) $("#academicSemester").value = settings.semester;
+  if ($("#examAcademicLabel")) $("#examAcademicLabel").textContent = academicPeriodLabel(settings);
+}
+
+function weeklyExamYears(student = null) {
+  const ids = student ? new Set([student.id]) : null;
+  const current = activeAcademicPeriod().academicYear;
+  const years = new Set([current]);
+  state.exams.forEach((exam) => {
+    if (ids && exam.scores?.[student.id] === undefined) return;
+    if (exam.academicYear) years.add(String(exam.academicYear));
+  });
+  return [...years].filter(Boolean).sort((a, b) => String(b).localeCompare(String(a), "zh-Hant"));
+}
+
+function renderWeeklyYearOptions(targetId, student = null) {
+  const target = $(`#${targetId}`);
+  if (!target) return;
+  const previous = target.value;
+  const years = weeklyExamYears(student);
+  target.innerHTML = years.map((year) => `<option value="${year}">${year}</option>`).join("");
+  const currentYear = activeAcademicPeriod().academicYear;
+  target.value = previous && years.includes(previous) ? previous : (years.includes(currentYear) ? currentYear : years[0] || "");
+}
+
+function weeklyPeriodFilter(prefix, student = null) {
+  renderWeeklyYearOptions(`${prefix}Year`, student);
+  return {
+    academicYear: $(`#${prefix}Year`)?.value || activeAcademicPeriod().academicYear,
+    semester: $(`#${prefix}Semester`)?.value || "全部",
+  };
+}
+
+function examMatchesWeeklyPeriod(exam, period) {
+  if (!period) return true;
+  return String(exam.academicYear || "") === String(period.academicYear || "") &&
+    (period.semester === "全部" || exam.semester === period.semester);
+}
+
 function courseSelect(value = "") {
   return `<select data-schedule-course>
     <option value="">無課</option>
@@ -1127,9 +1205,14 @@ function saveExam(event) {
     if (values.length) scores[student.id] = values;
   });
   const existing = editingExamId ? state.exams.find((item) => item.id === editingExamId) : null;
+  const period = existing
+    ? { academicYear: existing.academicYear, semester: existing.semester }
+    : activeAcademicPeriod();
   const exam = normalizeExam({
     id: existing?.id || crypto.randomUUID(),
     date: $("#examDate").value,
+    academicYear: period.academicYear,
+    semester: period.semester,
     grade: $("#examGrade").value,
     subject: $("#examSubject").value,
     scope: $("#examScope").value.trim(),
@@ -1195,7 +1278,11 @@ function fillExamForm(exam) {
 }
 
 function renderExamHistory() {
-  const items = state.exams.slice().sort((a, b) => b.date.localeCompare(a.date)).slice(0, 20);
+  const period = weeklyPeriodFilter("scoreHistory");
+  const items = state.exams
+    .filter((exam) => examMatchesWeeklyPeriod(exam, period))
+    .sort((a, b) => b.date.localeCompare(a.date))
+    .slice(0, 40);
   $("#examHistoryList").innerHTML = items.map((exam) => {
     const rows = currentScoreRows(exam);
     const average = rows.length ? (rows.reduce((sum, row) => sum + row.score, 0) / rows.length).toFixed(1) : "-";
@@ -1203,6 +1290,7 @@ function renderExamHistory() {
       <article class="record-card">
         <strong>${dateLabel(exam.date)} ${exam.grade} ${exam.subject}</strong>
         <div class="meta">
+          <span class="badge">${academicPeriodLabel(exam)}</span>
           <span class="badge">${exam.noExam ? "無考試" : `班平均 ${average}`}</span>
           ${exam.scope ? `<span class="badge gold">${exam.scope}</span>` : ""}
         </div>
@@ -1265,9 +1353,10 @@ function saveTermScore(event) {
   flashButton(event.submitter, saved ? "已儲存" : "已儲存日期");
 }
 
-function studentExamRows(student) {
+function studentExamRows(student, period = null) {
   return state.exams
     .filter((exam) => !exam.noExam && exam.scores && exam.scores[student.id] !== undefined)
+    .filter((exam) => examMatchesWeeklyPeriod(exam, period))
     .map((exam) => ({ exam, papers: scoreValuesForStudent(exam, student.id), score: averageScore(scoreValuesForStudent(exam, student.id)) }))
     .filter((row) => Number.isFinite(row.score))
     .sort((a, b) => a.exam.date.localeCompare(b.exam.date));
@@ -1746,15 +1835,16 @@ function careerScoreLookupHtml(student, queryDate, selectedSubject, options = {}
   if (!student) {
     return `<div class="empty">請先選擇學生。</div>`;
   }
+  const period = options.period || null;
   const dateSubjects = scheduledSubjectsForStudentDate(student, queryDate);
-  const rows = studentExamRows(student)
+  const rows = studentExamRows(student, period)
     .filter((row) => !dateSubjects.length || dateSubjects.includes(row.exam.subject))
     .sort((a, b) => b.exam.date.localeCompare(a.exam.date));
   const dayRows = rows.filter((row) => row.exam.date === queryDate);
   const termRows = state.termScores
     .filter((item) => item.studentId === student.id)
     .filter((item) => !dateSubjects.length || dateSubjects.includes(normalizeCourseName(item.subject)));
-  const subjectHistoryRows = studentExamRows(student)
+  const subjectHistoryRows = studentExamRows(student, period)
     .filter((row) => studentTakesSubject(student, row.exam.subject))
     .filter((row) => selectedSubject === "全部" || row.exam.subject === selectedSubject)
     .sort((a, b) => b.exam.date.localeCompare(a.exam.date));
@@ -1762,6 +1852,7 @@ function careerScoreLookupHtml(student, queryDate, selectedSubject, options = {}
   return `
     <div class="lookup-result">
       <strong>${dateLabel(queryDate)} ${scheduledSubjectLabel(dateSubjects)}</strong>
+      ${period ? `<span class="badge">${academicPeriodLabel(period)}</span>` : ""}
       <div class="lookup-list">
         ${dayRows.map((row) => `<article class="score-result-card"><b>${row.exam.subject}</b><span>${row.exam.scope || "未填重點"}</span><strong class="${scoreClass(row.score)}">${scoreDisplay(row.score)}</strong><small>各卷 ${row.papers.map(scoreDisplay).join(" / ")}</small></article>`).join("") || `<div class="empty small-empty">當日此科暫時沒有成績。</div>`}
       </div>
@@ -1814,7 +1905,8 @@ function careerScoreLookupHtml(student, queryDate, selectedSubject, options = {}
 function renderCareerScoreLookup(student) {
   const target = $("#careerScoreLookup");
   if (!target) return;
-  target.innerHTML = careerScoreLookupHtml(student, $("#careerQueryDate")?.value || todayISO(), selectedCareerSubject(student));
+  const period = weeklyPeriodFilter("careerExam", student);
+  target.innerHTML = careerScoreLookupHtml(student, $("#careerQueryDate")?.value || todayISO(), selectedCareerSubject(student), { period });
 }
 
 function renderTermYearOptions(student, targetId) {
@@ -2466,7 +2558,7 @@ function setupTabs() {
 function enforceMobilePages() {
   if (!mobileQuery.matches) return;
   const activePage = $(".page.active");
-  if (activePage && !["dashboard", "attendance", "management", ...Object.keys(parentTabs)].includes(activePage.id)) navigateToTab("dashboard");
+  if (activePage && !["dashboard", "attendance", "management", "academic", ...Object.keys(parentTabs)].includes(activePage.id)) navigateToTab("dashboard");
 }
 
 function setupDashboardFilter() {
@@ -2624,6 +2716,17 @@ function setupForms() {
     renderAll();
   });
 
+  $("#academicForm")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    state.settings = normalizeAcademicSettings({
+      academicYear: $("#academicYear").value.trim(),
+      semester: $("#academicSemester").value,
+    });
+    saveState();
+    renderAll();
+    flashButton(event.submitter, "已儲存");
+  });
+
   $("#examForm").addEventListener("submit", saveExam);
   $("#resetExamForm").addEventListener("click", resetExamForm);
   $("#termScoreForm").addEventListener("submit", saveTermScore);
@@ -2725,7 +2828,7 @@ function setupForms() {
     }
   });
 
-  ["studentFilter", "studentSearch", "lateGrade", "historyType", "historySearch", "scheduleGrade", "examGrade", "examSubject", "examPaperCount", "examNoTest", "careerQueryDate", "careerTermYear", "careerTermAnalysisYear", "careerTermAnalysisSemester", "careerTermAnalysisStage", "termYear", "termSemester", "termGrade", "termStage"].forEach((id) => {
+  ["studentFilter", "studentSearch", "lateGrade", "historyType", "historySearch", "scheduleGrade", "examGrade", "examSubject", "examPaperCount", "examNoTest", "scoreHistoryYear", "scoreHistorySemester", "careerQueryDate", "careerExamYear", "careerExamSemester", "careerTermYear", "careerTermAnalysisYear", "careerTermAnalysisSemester", "careerTermAnalysisStage", "termYear", "termSemester", "termGrade", "termStage"].forEach((id) => {
     onInputChange(id, renderAll);
   });
 
@@ -2742,7 +2845,7 @@ function setupForms() {
     parentCareerSubject = subject;
     if (parentStudentId) renderParentPortal();
   });
-  ["parentScoreDate", "parentTermYear", "parentTermAnalysisYear", "parentTermAnalysisSemester", "parentTermAnalysisStage"].forEach((id) => {
+  ["parentScoreDate", "parentExamYear", "parentExamSemester", "parentTermYear", "parentTermAnalysisYear", "parentTermAnalysisSemester", "parentTermAnalysisStage"].forEach((id) => {
     onInputChange(id, () => {
       if (parentStudentId) renderParentPortal();
     });
@@ -3567,7 +3670,8 @@ function renderParentPortal() {
     .join("") || `<div class="empty">尚無請假紀錄。</div>`;
   if (parentCareerSubject !== "全部" && !careerSubjectsForStudent(student).includes(parentCareerSubject)) parentCareerSubject = "全部";
   renderParentCareerSubjectButtons(student);
-  $("#parentScoreList").innerHTML = careerScoreLookupHtml(student, $("#parentScoreDate")?.value || todayISO(), selectedParentCareerSubject(student), { hideDateHistory: true });
+  const period = weeklyPeriodFilter("parentExam", student);
+  $("#parentScoreList").innerHTML = careerScoreLookupHtml(student, $("#parentScoreDate")?.value || todayISO(), selectedParentCareerSubject(student), { hideDateHistory: true, period });
   renderParentTermTrend(student);
   renderParentTermAnalysisReport(student);
   $("#parentReport").innerHTML = renderStudentReportHtml(student, selectedParentCareerSubject(student));
@@ -3636,6 +3740,7 @@ function setupLogin() {
 
 function renderAll() {
   $("#studentCount").textContent = dashboardStudents().length;
+  renderAcademicSettings();
   renderExamSubjectOptions();
   renderScoreStudentFilter();
   renderExpectedAttendance();
@@ -3670,6 +3775,8 @@ function boot() {
   $("#termYear").value = String(new Date().getFullYear() - 1911);
   $("#careerTermAnalysisYear").value = String(new Date().getFullYear() - 1911);
   $("#parentTermAnalysisYear").value = String(new Date().getFullYear() - 1911);
+  state.settings = normalizeAcademicSettings(state.settings);
+  renderAcademicSettings();
   renderExamSubjectOptions();
   $("#lateDate").value = todayISO();
   $("#eventDate").value = todayISO();
