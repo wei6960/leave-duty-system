@@ -158,6 +158,7 @@ function normalizeExam(exam) {
     noExam: Boolean(exam.noExam),
     paperCount: Math.max(1, Number(exam.paperCount) || 1),
     scores: exam.scores || {},
+    absences: Array.isArray(exam.absences) ? exam.absences : [],
     createdAt: exam.createdAt || new Date().toISOString(),
   };
 }
@@ -674,15 +675,31 @@ function saveSchedule() {
 function studentsForGradeAndSubject(grade, subject) {
   return state.students
     .filter((student) => student.grade === grade)
-    .filter((student) => studentMatchesCourse(student, subject));
+    .filter((student) => student.courses.includes(subject));
+}
+
+function visibleScoreStudents() {
+  const keyword = $("#scoreStudentSearch")?.value.trim() || "";
+  const selected = $("#scoreStudentFilter")?.value || "全部";
+  return studentsForGradeAndSubject($("#examGrade")?.value || "國一", $("#examSubject")?.value || "國文")
+    .filter((student) => selected === "全部" || student.id === selected)
+    .filter((student) => !keyword || student.name.includes(keyword));
+}
+
+function renderScoreStudentFilter() {
+  const target = $("#scoreStudentFilter");
+  if (!target) return;
+  const previous = target.value || "全部";
+  const students = studentsForGradeAndSubject($("#examGrade")?.value || "國一", $("#examSubject")?.value || "國文");
+  target.innerHTML = `<option value="全部">全部學生</option>${students.map((student) => `<option value="${student.id}">${student.name}</option>`).join("")}`;
+  target.value = previous === "全部" || students.some((student) => student.id === previous) ? previous : "全部";
 }
 
 function renderScoreEntryList() {
-  const grade = $("#examGrade")?.value || "國一";
   const subject = $("#examSubject")?.value || "國文";
   const noExam = $("#examNoTest")?.checked;
   const paperCount = Math.max(1, Number($("#examPaperCount")?.value) || 1);
-  const students = studentsForGradeAndSubject(grade, subject);
+  const students = visibleScoreStudents();
   if (noExam) {
     $("#scoreEntryList").innerHTML = `<div class="empty">已選擇無考試，儲存後會保留當天無考試紀錄。</div>`;
     return;
@@ -695,6 +712,7 @@ function renderScoreEntryList() {
           ${Array.from({ length: paperCount }, (_, index) => `
             <input type="number" min="0" max="100" step="0.1" data-score-student="${student.id}" data-score-paper="${index}" placeholder="卷${index + 1}">
           `).join("")}
+          <label class="absent-check"><input type="checkbox" data-score-absent="${student.id}">缺考</label>
         </div>
       </label>
     `).join("")
@@ -715,6 +733,7 @@ function averageScore(values) {
 function currentScoreRows(exam) {
   const students = studentsForGradeAndSubject(exam.grade, exam.subject);
   return students
+    .filter((student) => !(exam.absences || []).includes(student.id))
     .map((student) => {
       const papers = scoreValuesForStudent(exam, student.id);
       return { student, papers, score: averageScore(papers) };
@@ -739,6 +758,12 @@ function renderClassReport(exam = latestExamForForm()) {
   const rows = currentScoreRows(exam);
   const average = rows.length ? (rows.reduce((sum, row) => sum + row.score, 0) / rows.length).toFixed(1) : "-";
   const paperCount = Math.max(1, Number(exam.paperCount) || 1);
+  const rankedById = new Map(rows.map((row) => [row.student.id, row]));
+  const reportRows = studentsForGradeAndSubject(exam.grade, exam.subject).map((student) => ({
+    student,
+    ranked: rankedById.get(student.id),
+    absent: (exam.absences || []).includes(student.id),
+  }));
   $("#classReportBody").innerHTML = `
     <div class="report-head">
       <strong>${dateLabel(exam.date)} ${exam.grade} ${exam.subject}</strong>
@@ -748,7 +773,7 @@ function renderClassReport(exam = latestExamForForm()) {
     </div>
     <table>
       <thead><tr><th>排名</th><th>姓名</th><th>班級</th><th>科目</th>${Array.from({ length: paperCount }, (_, index) => `<th>卷${index + 1}</th>`).join("")}<th>平均</th></tr></thead>
-      <tbody>${rows.map((row) => `<tr><td>${row.rank}</td><td>${row.student.name}</td><td>${row.student.grade}</td><td>${exam.subject}</td>${Array.from({ length: paperCount }, (_, index) => `<td>${row.papers[index] ?? "-"}</td>`).join("")}<td>${row.score.toFixed(1)}</td></tr>`).join("") || `<tr><td colspan="${5 + paperCount}">尚無成績</td></tr>`}</tbody>
+      <tbody>${reportRows.map(({ student, ranked, absent }) => `<tr><td>${ranked ? ranked.rank : "-"}</td><td>${student.name}</td><td>${student.grade}</td><td>${exam.subject}</td>${Array.from({ length: paperCount }, (_, index) => `<td>${absent ? "缺考" : ranked?.papers[index] ?? "-"}</td>`).join("")}<td>${absent ? "缺考" : ranked ? ranked.score.toFixed(1) : "-"}</td></tr>`).join("") || `<tr><td colspan="${5 + paperCount}">尚無成績</td></tr>`}</tbody>
     </table>
   `;
 }
@@ -766,7 +791,12 @@ function saveExam(event) {
   const noExam = $("#examNoTest").checked;
   const paperCount = Math.max(1, Number($("#examPaperCount").value) || 1);
   const scores = {};
+  const absences = [];
   studentsForGradeAndSubject($("#examGrade").value, $("#examSubject").value).forEach((student) => {
+    if (document.querySelector(`[data-score-absent="${student.id}"]`)?.checked) {
+      absences.push(student.id);
+      return;
+    }
     const values = Array.from({ length: paperCount }, (_, index) => {
       const input = document.querySelector(`[data-score-student="${student.id}"][data-score-paper="${index}"]`);
       return input && input.value !== "" ? Number(input.value) : null;
@@ -782,6 +812,7 @@ function saveExam(event) {
     noExam,
     paperCount,
     scores,
+    absences,
     createdAt: new Date().toISOString(),
   });
   state.exams.push(exam);
@@ -1127,7 +1158,7 @@ function setupForms() {
     }
   });
 
-  ["studentFilter", "studentSearch", "lateGrade", "historyType", "historySearch", "scheduleGrade", "examGrade", "examSubject", "examPaperCount", "examNoTest", "careerGrade", "careerStudent"].forEach((id) => {
+  ["studentFilter", "studentSearch", "lateGrade", "historyType", "historySearch", "scheduleGrade", "examGrade", "examSubject", "examPaperCount", "examNoTest", "scoreStudentSearch", "scoreStudentFilter", "careerGrade", "careerStudent"].forEach((id) => {
     $(`#${id}`).addEventListener("input", renderAll);
   });
 }
@@ -1681,6 +1712,7 @@ function setupLogin() {
 function renderAll() {
   $("#studentCount").textContent = dashboardStudents().length;
   renderExamSubjectOptions();
+  renderScoreStudentFilter();
   renderExpectedAttendance();
   renderStudentOptions();
   renderStudents();
