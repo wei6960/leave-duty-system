@@ -514,7 +514,7 @@
         <section class="panel career-query-panel">
           <div class="panel-title">
             <h2>段考分析報告</h2>
-            <span>依段考截止日期抓該段前週考弱點</span>
+            <span>截止日在段考成績登記設定</span>
           </div>
           <div class="toolbar compact-toolbar">
             <label>學年
@@ -533,10 +533,6 @@
                 <option value="三段">三段</option>
               </select>
             </label>
-            <label>段考截止日
-              <input id="careerTermAnalysisEndDate" type="date">
-            </label>
-            <button class="primary" id="saveTermAnalysisPeriod" type="button">儲存段考時間</button>
           </div>
           <div id="termAnalysisReport"></div>
         </section>
@@ -548,13 +544,6 @@
             </div>
             <div id="studentReport"></div>
           </section>
-          <section class="panel">
-            <div class="panel-title">
-              <h2>歷年紀錄</h2>
-              <span>學期結算保留</span>
-            </div>
-            <div id="archiveList" class="record-list compact"></div>
-          </section>
         </div>
       </section>
 
@@ -562,7 +551,7 @@
         <header class="section-head">
           <div>
             <p class="eyebrow">段考成績</p>
-            <h1>段考登記、排名與學期結算</h1>
+            <h1>段考登記、排名與歷史成績單</h1>
           </div>
           <button class="ghost back-button" type="button" data-back-tab="management">返回班務管理</button>
         </header>
@@ -595,8 +584,10 @@
               <option value="三段">三段</option>
             </select>
           </label>
-          <button class="primary" type="submit">儲存段考成績</button>
-          <button class="ghost" id="archiveTerm" type="button">學期末結算並刷新</button>
+          <label>段考截止日
+            <input id="termEndDate" type="date">
+          </label>
+          <button class="primary" type="submit">儲存段考成績 / 截止日</button>
         </form>
         <section class="panel list-panel">
           <div class="panel-title">

@@ -1168,6 +1168,9 @@ function saveTermScore(event) {
   const grade = $("#termGrade").value;
   const stage = $("#termStage").value;
   const term = `${year}${semester}`;
+  const meta = { year, semester, grade, stage };
+  const endDate = $("#termEndDate")?.value || "";
+  if (endDate) state.termPeriods[termPeriodKey(meta)] = endDate;
   const inputs = $$("[data-term-score-student][data-term-score-subject]");
   let saved = 0;
   inputs.forEach((input) => {
@@ -1200,11 +1203,11 @@ function saveTermScore(event) {
     else state.termScores.push({ id: crypto.randomUUID(), ...payload });
     saved += 1;
   });
-  if (!saved) return alert("請至少輸入一位學生的段考成績");
-  termSection = "history";
+  if (!saved && !endDate) return alert("請至少輸入一位學生的段考成績，或設定段考截止日");
+  if (saved) termSection = "history";
   saveState();
   renderAll();
-  flashButton(event.submitter, "已儲存");
+  flashButton(event.submitter, saved ? "已儲存" : "已儲存日期");
 }
 
 function studentExamRows(student) {
@@ -1222,6 +1225,12 @@ function currentTermMeta() {
     grade: $("#termGrade")?.value || "國一",
     stage: $("#termStage")?.value || "一段",
   };
+}
+
+function syncTermEndDateInput() {
+  const target = $("#termEndDate");
+  if (!target) return;
+  target.value = state.termPeriods?.[termPeriodKey(currentTermMeta())] || "";
 }
 
 function termRowsForMeta(meta = currentTermMeta()) {
@@ -1792,13 +1801,6 @@ function termPeriodKey(meta) {
   return [meta.year, meta.semester, meta.grade, meta.stage].join("|");
 }
 
-function syncTermAnalysisEndDate(student) {
-  const target = $("#careerTermAnalysisEndDate");
-  if (!target || !student) return;
-  const meta = currentTermAnalysisMeta(student);
-  target.value = state.termPeriods?.[termPeriodKey(meta)] || "";
-}
-
 function previousTermStage(meta) {
   const index = termStages.indexOf(meta.stage);
   return index > 0 ? termStages[index - 1] : "";
@@ -1827,7 +1829,6 @@ function renderTermAnalysisReport(student) {
     target.innerHTML = `<div class="empty">請先選擇學生。</div>`;
     return;
   }
-  syncTermAnalysisEndDate(student);
   const meta = currentTermAnalysisMeta(student);
   const { endDate, previousDate, rows } = termAnalysisRows(student, meta);
   if (!endDate) {
@@ -1881,19 +1882,6 @@ function renderTermAnalysisReport(student) {
   `;
 }
 
-function saveTermAnalysisPeriod(event) {
-  const student = getStudent($("#careerStudent")?.value);
-  if (!student) return alert("請先選擇學生");
-  const meta = currentTermAnalysisMeta(student);
-  const endDate = $("#careerTermAnalysisEndDate")?.value || "";
-  if (!meta.year) return alert("請先輸入學年");
-  if (!endDate) return alert("請先選擇段考截止日期");
-  state.termPeriods[termPeriodKey(meta)] = endDate;
-  saveState();
-  renderAll();
-  flashButton(event.currentTarget, "已儲存");
-}
-
 function renderStudentReport() {
   const student = getStudent($("#careerStudent")?.value);
   if (!student) {
@@ -1902,7 +1890,7 @@ function renderStudentReport() {
     renderCareerTermTrend(null);
     renderTermAnalysisReport(null);
     $("#studentReport").innerHTML = `<div class="empty">請先選擇學生。</div>`;
-    $("#archiveList").innerHTML = `<div class="empty">尚無歷年紀錄。</div>`;
+    if ($("#archiveList")) $("#archiveList").innerHTML = `<div class="empty">尚無歷年紀錄。</div>`;
     return;
   }
   if (careerSubject !== "全部" && !careerSubjectsForStudent(student).includes(careerSubject)) careerSubject = "全部";
@@ -1911,10 +1899,12 @@ function renderStudentReport() {
   renderCareerTermTrend(student);
   renderTermAnalysisReport(student);
   $("#studentReport").innerHTML = renderStudentReportHtml(student);
-  $("#archiveList").innerHTML = state.archives
-    .filter((item) => item.studentId === student.id)
-    .map((item) => `<article class="record-card done"><strong>${item.term}</strong><div class="meta"><span class="badge">${item.summary}</span></div></article>`)
-    .join("") || `<div class="empty">尚無歷年紀錄。</div>`;
+  if ($("#archiveList")) {
+    $("#archiveList").innerHTML = state.archives
+      .filter((item) => item.studentId === student.id)
+      .map((item) => `<article class="record-card done"><strong>${item.term}</strong><div class="meta"><span class="badge">${item.summary}</span></div></article>`)
+      .join("") || `<div class="empty">尚無歷年紀錄。</div>`;
+  }
 }
 
 function renderStudentReportHtml(student, subjectOverride = null) {
@@ -2229,7 +2219,6 @@ function printStudentReportPdf() {
   const analyses = subjectPerformanceRows(student);
   const levelSummary = analyses.length ? analyses.map((item) => `${item.subject} ${item.level}`).join("、") : "資料不足";
   const termRows = state.termScores.filter((item) => item.studentId === student.id);
-  const historyRows = state.archives.filter((item) => item.studentId === student.id);
   const weeklyRows = examRows.slice().reverse().map((row) => {
     const rank = currentScoreRows(row.exam).find((item) => item.student.id === student.id)?.rank || "-";
     return `<tr><td>${escapeHtml(dateLabel(row.exam.date))}</td><td>${escapeHtml(row.exam.subject)}</td><td class="left">${escapeHtml(row.exam.scope || "-")}</td><td>${escapeHtml(row.papers.map(scoreDisplay).join(" / "))}</td><td class="${scoreClass(row.score)}">${scoreDisplay(row.score)}</td><td>${rank}</td></tr>`;
@@ -2250,35 +2239,7 @@ function printStudentReportPdf() {
     <table><thead><tr><th>日期</th><th>科目</th><th class="left">重點/單元</th><th>各卷</th><th>平均</th><th>班排名</th></tr></thead><tbody>${weeklyRows || `<tr><td colspan="6">尚無週考紀錄</td></tr>`}</tbody></table>
     <h2>段考紀錄</h2>
     <table><thead><tr><th>學期</th><th>段別</th><th>科目</th><th>成績</th></tr></thead><tbody>${termRows.map((item) => `<tr><td>${escapeHtml(item.term)}</td><td>${escapeHtml(item.stage)}</td><td>${escapeHtml(item.subject)}</td><td class="${scoreClass(Number(item.score))}">${scoreDisplay(Number(item.score))}</td></tr>`).join("") || `<tr><td colspan="4">尚無段考紀錄</td></tr>`}</tbody></table>
-    <h2>歷年結算</h2>
-    <table><thead><tr><th>學期</th><th class="left">摘要</th></tr></thead><tbody>${historyRows.map((item) => `<tr><td>${escapeHtml(item.term)}</td><td class="left">${escapeHtml(item.summary)}</td></tr>`).join("") || `<tr><td colspan="2">尚無歷年紀錄</td></tr>`}</tbody></table>
   `, "portrait");
-}
-
-function archiveCurrentTerm() {
-  const meta = currentTermMeta();
-  const term = `${meta.year}${meta.semester}`;
-  const students = state.students.filter((student) => student.grade === meta.grade);
-  if (!students.length) return alert("此年級尚無學生");
-  if (!confirm(`確定結算 ${term} ${meta.grade}？結算後會寫入歷年紀錄並清除該學期段考表格。`)) return;
-  students.forEach((student) => {
-    const rows = state.termScores.filter((item) =>
-      item.studentId === student.id &&
-      item.year === meta.year &&
-      item.semester === meta.semester
-    );
-    const avg = rows.length ? rows.reduce((sum, row) => sum + Number(row.score), 0) / rows.length : NaN;
-    state.archives.push({
-      id: crypto.randomUUID(),
-      studentId: student.id,
-      term,
-      summary: rows.length ? `段考平均 ${avg.toFixed(1)}，共 ${rows.length} 筆` : "本學期尚無段考成績",
-      createdAt: new Date().toISOString(),
-    });
-  });
-  state.termScores = state.termScores.filter((item) => !(item.year === meta.year && item.semester === meta.semester && item.grade === meta.grade));
-  saveState();
-  renderAll();
 }
 
 function selectedValues(name) {
@@ -2544,7 +2505,6 @@ function setupForms() {
   $("#examForm").addEventListener("submit", saveExam);
   $("#resetExamForm").addEventListener("click", resetExamForm);
   $("#termScoreForm").addEventListener("submit", saveTermScore);
-  $("#archiveTerm").addEventListener("click", archiveCurrentTerm);
   $("#saveSchedule").addEventListener("click", (event) => {
     saveSchedule();
     flashButton(event.currentTarget, "已儲存");
@@ -2554,7 +2514,6 @@ function setupForms() {
   $("#downloadClassReportImage").addEventListener("click", downloadClassReportImage);
   $("#downloadClassReportExcel").addEventListener("click", downloadClassReportExcel);
   $("#printStudentReport").addEventListener("click", printStudentReportPdf);
-  $("#saveTermAnalysisPeriod")?.addEventListener("click", saveTermAnalysisPeriod);
   $("#printTermReport").addEventListener("click", printTermReportPdf);
   $("#downloadTermReportImage").addEventListener("click", downloadTermReportImage);
   $("#downloadTermReportExcel").addEventListener("click", downloadTermReportExcel);
@@ -3416,6 +3375,7 @@ function renderAll() {
   renderExamHistory();
   renderStudentReport();
   renderTermSections();
+  syncTermEndDateInput();
   renderTermScoreEntryList();
   renderTermReport();
   renderTermHistoryList();
