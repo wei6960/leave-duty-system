@@ -3628,7 +3628,7 @@ function setupLogin() {
     cleanupCloudSync();
     showParentLogin();
   });
-  $("#backTeacherLogin").addEventListener("click", () => {
+  $("#backTeacherLogin")?.addEventListener("click", () => {
     history.replaceState(null, "", location.pathname);
     showLogin();
   });
