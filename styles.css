@@ -675,6 +675,16 @@ legend {
   background: rgba(0, 0, 0, .14);
 }
 
+.score-row.multi-paper {
+  grid-template-columns: 1fr;
+}
+
+.paper-score-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(5.6rem, 1fr));
+  gap: .45rem;
+}
+
 .report-head {
   display: flex;
   flex-wrap: wrap;

@@ -8,7 +8,7 @@ const SUPABASE_COLLECTION = "leaveDutyBranches";
 const grades = ["國一", "國二", "國三"];
 const weekdays = ["一", "二", "三", "四", "五"];
 const periods = ["上午", "下午", "晚上"];
-const courses = ["國文", "英文", "數A", "數B", "自然", "總複習", "素養課", "讀書班"];
+const courses = ["國文", "英文", "數A", "數B", "數學", "自然", "總複習", "素養課", "讀書班"];
 const scheduleCourses = [...courses, "考加"];
 const leavePeriods = ["上午", "下午", "晚上"];
 const parentMode = new URLSearchParams(location.search).get("parent") === "1" || location.hash === "#parent";
@@ -129,6 +129,7 @@ function normalizeCourseName(value) {
     數: "數A",
     數A: "數A",
     數B: "數B",
+    數學: "數學",
     社: "社會",
     社會: "社會",
     自: "自然",
@@ -155,6 +156,7 @@ function normalizeExam(exam) {
     subject: courses.includes(normalizeCourseName(exam.subject)) ? normalizeCourseName(exam.subject) : "國文",
     scope: exam.scope || "",
     noExam: Boolean(exam.noExam),
+    paperCount: Math.max(1, Number(exam.paperCount) || 1),
     scores: exam.scores || {},
     createdAt: exam.createdAt || new Date().toISOString(),
   };
@@ -496,7 +498,13 @@ function studentClassesOnDay(student, day) {
   const daySchedule = state.schedule?.[student.grade]?.[day] || {};
   return periods
     .map((period) => daySchedule[period])
-    .filter((course) => course && (course === "考加" || student.courses.includes(course)));
+    .filter((course) => course && (course === "考加" || studentMatchesCourse(student, course)));
+}
+
+function studentMatchesCourse(student, course) {
+  if (student.courses.includes(course)) return true;
+  const mathGroup = ["數A", "數B", "數學"];
+  return mathGroup.includes(course) && student.courses.some((item) => mathGroup.includes(item));
 }
 
 function gradeScheduleHasAnyCourse(grade) {
@@ -634,13 +642,14 @@ function saveSchedule() {
 function studentsForGradeAndSubject(grade, subject) {
   return state.students
     .filter((student) => student.grade === grade)
-    .filter((student) => student.courses.includes(subject));
+    .filter((student) => studentMatchesCourse(student, subject));
 }
 
 function renderScoreEntryList() {
   const grade = $("#examGrade")?.value || "國一";
   const subject = $("#examSubject")?.value || "國文";
   const noExam = $("#examNoTest")?.checked;
+  const paperCount = Math.max(1, Number($("#examPaperCount")?.value) || 1);
   const students = studentsForGradeAndSubject(grade, subject);
   if (noExam) {
     $("#scoreEntryList").innerHTML = `<div class="empty">已選擇無考試，儲存後會保留當天無考試紀錄。</div>`;
@@ -648,21 +657,36 @@ function renderScoreEntryList() {
   }
   $("#scoreEntryList").innerHTML = students.length
     ? students.map((student) => `
-      <label class="score-row">
+      <label class="score-row ${paperCount > 1 ? "multi-paper" : ""}">
         <span>${student.name}</span>
-        <input type="number" min="0" max="100" step="0.1" data-score-student="${student.id}" placeholder="分數">
+        <div class="paper-score-grid">
+          ${Array.from({ length: paperCount }, (_, index) => `
+            <input type="number" min="0" max="100" step="0.1" data-score-student="${student.id}" data-score-paper="${index}" placeholder="卷${index + 1}">
+          `).join("")}
+        </div>
       </label>
     `).join("")
     : `<div class="empty">此年級尚無補 ${subject} 的學生。</div>`;
 }
 
+function scoreValuesForStudent(exam, studentId) {
+  const raw = exam.scores?.[studentId];
+  if (Array.isArray(raw)) return raw.map(Number).filter(Number.isFinite);
+  const value = Number(raw);
+  return Number.isFinite(value) ? [value] : [];
+}
+
+function averageScore(values) {
+  return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : NaN;
+}
+
 function currentScoreRows(exam) {
   const students = studentsForGradeAndSubject(exam.grade, exam.subject);
   return students
-    .map((student) => ({
-      student,
-      score: Number(exam.scores?.[student.id]),
-    }))
+    .map((student) => {
+      const papers = scoreValuesForStudent(exam, student.id);
+      return { student, papers, score: averageScore(papers) };
+    })
     .filter((row) => Number.isFinite(row.score))
     .sort((a, b) => b.score - a.score)
     .map((row, index, rows) => ({
@@ -682,15 +706,17 @@ function renderClassReport(exam = latestExamForForm()) {
   }
   const rows = currentScoreRows(exam);
   const average = rows.length ? (rows.reduce((sum, row) => sum + row.score, 0) / rows.length).toFixed(1) : "-";
+  const paperCount = Math.max(1, Number(exam.paperCount) || 1);
   $("#classReportBody").innerHTML = `
     <div class="report-head">
       <strong>${dateLabel(exam.date)} ${exam.grade} ${exam.subject}</strong>
       <span>班平均 ${average}</span>
+      <span>${paperCount} 份考卷</span>
       <span>${exam.scope ? `重點：${exam.scope}` : "未填考試重點"}</span>
     </div>
     <table>
-      <thead><tr><th>排名</th><th>姓名</th><th>班級</th><th>科目</th><th>成績</th></tr></thead>
-      <tbody>${rows.map((row) => `<tr><td>${row.rank}</td><td>${row.student.name}</td><td>${row.student.grade}</td><td>${exam.subject}</td><td>${row.score}</td></tr>`).join("") || `<tr><td colspan="5">尚無成績</td></tr>`}</tbody>
+      <thead><tr><th>排名</th><th>姓名</th><th>班級</th><th>科目</th>${Array.from({ length: paperCount }, (_, index) => `<th>卷${index + 1}</th>`).join("")}<th>平均</th></tr></thead>
+      <tbody>${rows.map((row) => `<tr><td>${row.rank}</td><td>${row.student.name}</td><td>${row.student.grade}</td><td>${exam.subject}</td>${Array.from({ length: paperCount }, (_, index) => `<td>${row.papers[index] ?? "-"}</td>`).join("")}<td>${row.score.toFixed(1)}</td></tr>`).join("") || `<tr><td colspan="${5 + paperCount}">尚無成績</td></tr>`}</tbody>
     </table>
   `;
 }
@@ -706,9 +732,14 @@ function latestExamForForm() {
 function saveExam(event) {
   event.preventDefault();
   const noExam = $("#examNoTest").checked;
+  const paperCount = Math.max(1, Number($("#examPaperCount").value) || 1);
   const scores = {};
-  $$("[data-score-student]").forEach((input) => {
-    if (input.value !== "") scores[input.dataset.scoreStudent] = Number(input.value);
+  studentsForGradeAndSubject($("#examGrade").value, $("#examSubject").value).forEach((student) => {
+    const values = Array.from({ length: paperCount }, (_, index) => {
+      const input = document.querySelector(`[data-score-student="${student.id}"][data-score-paper="${index}"]`);
+      return input && input.value !== "" ? Number(input.value) : null;
+    }).filter((value) => value !== null && Number.isFinite(value));
+    if (values.length) scores[student.id] = values;
   });
   const exam = normalizeExam({
     id: crypto.randomUUID(),
@@ -717,6 +748,7 @@ function saveExam(event) {
     subject: $("#examSubject").value,
     scope: $("#examScope").value.trim(),
     noExam,
+    paperCount,
     scores,
     createdAt: new Date().toISOString(),
   });
@@ -730,6 +762,7 @@ function resetExamForm() {
   if (!confirm("確定重設當天成績輸入？尚未儲存的分數會清空。")) return;
   $("#examDate").value = todayISO();
   $("#examScope").value = "";
+  $("#examPaperCount").value = 1;
   $("#examNoTest").checked = false;
   renderScoreEntryList();
 }
@@ -774,7 +807,8 @@ function saveTermScore(event) {
 function studentExamRows(student) {
   return state.exams
     .filter((exam) => !exam.noExam && exam.scores && exam.scores[student.id] !== undefined)
-    .map((exam) => ({ exam, score: Number(exam.scores[student.id]) }))
+    .map((exam) => ({ exam, papers: scoreValuesForStudent(exam, student.id), score: averageScore(scoreValuesForStudent(exam, student.id)) }))
+    .filter((row) => Number.isFinite(row.score))
     .sort((a, b) => a.exam.date.localeCompare(b.exam.date));
 }
 
@@ -1061,7 +1095,7 @@ function setupForms() {
     }
   });
 
-  ["studentFilter", "studentSearch", "lateGrade", "historyType", "historySearch", "scheduleGrade", "examGrade", "examSubject", "examNoTest", "careerGrade", "careerStudent"].forEach((id) => {
+  ["studentFilter", "studentSearch", "lateGrade", "historyType", "historySearch", "scheduleGrade", "examGrade", "examSubject", "examPaperCount", "examNoTest", "careerGrade", "careerStudent"].forEach((id) => {
     $(`#${id}`).addEventListener("input", renderAll);
   });
 }
@@ -1526,11 +1560,11 @@ function studentScoreSummary(student) {
   return courses.map((subject) => {
     const exams = state.exams.filter((exam) => !exam.noExam && exam.subject === subject && exam.scores?.[student.id] !== undefined);
     if (!exams.length) return "";
-    const scores = exams.map((exam) => Number(exam.scores[student.id])).filter(Number.isFinite);
+    const scores = exams.map((exam) => averageScore(scoreValuesForStudent(exam, student.id))).filter(Number.isFinite);
     const avg = scores.reduce((sum, score) => sum + score, 0) / scores.length;
     const classRows = state.exams
       .filter((exam) => !exam.noExam && exam.subject === subject)
-      .flatMap((exam) => Object.values(exam.scores || {}).map(Number))
+      .flatMap((exam) => Object.keys(exam.scores || {}).map((studentId) => averageScore(scoreValuesForStudent(exam, studentId))))
       .filter(Number.isFinite);
     const classAvg = classRows.length ? classRows.reduce((sum, score) => sum + score, 0) / classRows.length : NaN;
     const latest = exams.sort((a, b) => b.date.localeCompare(a.date))[0];
