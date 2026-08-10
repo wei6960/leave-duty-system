@@ -650,6 +650,107 @@ legend {
   max-width: 10rem;
 }
 
+.hint {
+  color: var(--muted);
+  font-size: .9rem;
+  margin-top: .75rem;
+}
+
+.schedule-table select {
+  min-width: 7.5rem;
+}
+
+.score-entry-list {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: .65rem;
+}
+
+.score-row {
+  grid-template-columns: minmax(0, 1fr) 7rem;
+  align-items: center;
+  border: 1px solid rgba(241, 211, 124, .14);
+  border-radius: .38rem;
+  padding: .55rem;
+  background: rgba(0, 0, 0, .14);
+}
+
+.report-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .55rem;
+  margin-bottom: .75rem;
+}
+
+.report-head strong {
+  color: var(--gold-2);
+  font-size: 1.08rem;
+}
+
+.report-head span,
+.report-copy {
+  color: var(--muted);
+}
+
+.analysis-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: .75rem;
+  margin-bottom: 1rem;
+}
+
+.analysis-card {
+  display: grid;
+  gap: .45rem;
+  border: 1px solid rgba(241, 211, 124, .16);
+  border-radius: .38rem;
+  padding: .75rem;
+  background: rgba(0, 0, 0, .14);
+}
+
+.mini-bars {
+  display: flex;
+  align-items: end;
+  gap: .22rem;
+  height: 4.2rem;
+  padding-top: .4rem;
+}
+
+.mini-bars i {
+  display: block;
+  width: .55rem;
+  min-height: .35rem;
+  border-radius: .2rem .2rem 0 0;
+  background: linear-gradient(180deg, var(--gold-2), var(--gold-3));
+}
+
+.parent-shell {
+  min-height: 100vh;
+  padding: 1.5rem;
+}
+
+.parent-main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: .9rem;
+  padding: 0;
+}
+
+.parent-main .large-panel {
+  grid-column: 1 / -1;
+}
+
+.parent-topbar {
+  max-width: 80rem;
+  margin-inline: auto;
+}
+
+.parent-main {
+  max-width: 80rem;
+  margin-inline: auto;
+}
+
 .table-wrap {
   overflow: auto;
 }
@@ -673,6 +774,20 @@ th {
   color: var(--gold-2);
   font-weight: 800;
   background: rgba(198, 151, 53, .06);
+}
+
+code {
+  color: var(--gold-2);
+  font-family: "Microsoft JhengHei", monospace;
+  font-weight: 800;
+}
+
+td small {
+  display: block;
+  max-width: 16rem;
+  color: var(--muted);
+  word-break: break-all;
+  margin-top: .25rem;
 }
 
 tbody tr:hover {
@@ -800,7 +915,10 @@ tbody tr:hover {
   .grade-switch,
   .mode-switch,
   .board-layout,
-  .form-grid {
+  .form-grid,
+  .score-entry-list,
+  .analysis-grid,
+  .parent-main {
     grid-template-columns: 1fr;
   }
 
@@ -860,7 +978,7 @@ tbody tr:hover {
   }
 
   #students table {
-    min-width: 54rem;
+    min-width: 66rem;
   }
 }
 

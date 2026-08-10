@@ -29,6 +29,60 @@
     </form>
   </section>
 
+  <section class="login-screen" id="parentLoginScreen" hidden>
+    <form class="login-card" id="parentLoginForm">
+      <img src="assets/logo.png" alt="金牌躍騰教育集團 logo">
+      <p class="eyebrow">家長端</p>
+      <h1>學生生涯檔案查詢</h1>
+      <label>選擇分校
+        <select id="parentBranch" required>
+          <option value="平鎮">平鎮</option>
+          <option value="平興">平興</option>
+          <option value="東興">東興</option>
+        </select>
+      </label>
+      <label>家長登入碼
+        <input id="parentCode" placeholder="請輸入老師提供的代碼" required>
+      </label>
+      <p class="login-error" id="parentLoginError" hidden>查無學生，請確認分校與登入碼。</p>
+      <button class="primary" type="submit">進入家長端</button>
+      <button class="ghost" id="backTeacherLogin" type="button">回老師登入</button>
+    </form>
+  </section>
+
+  <section class="parent-shell" id="parentShell" hidden>
+    <header class="topbar parent-topbar">
+      <div>
+        <p class="eyebrow">家長端網頁</p>
+        <h1 id="parentStudentTitle">學生生涯檔案</h1>
+      </div>
+      <button class="logout-button" id="parentLogout" type="button">離開家長端</button>
+    </header>
+    <main class="parent-main">
+      <section class="panel">
+        <div class="panel-title">
+          <h2>請假紀錄</h2>
+          <span>保留歷史</span>
+        </div>
+        <div id="parentLeaveList" class="record-list"></div>
+      </section>
+      <section class="panel">
+        <div class="panel-title">
+          <h2>各科成績與排名</h2>
+          <span>班平均 / 個人排名</span>
+        </div>
+        <div id="parentScoreList"></div>
+      </section>
+      <section class="panel large-panel">
+        <div class="panel-title">
+          <h2>學習分析</h2>
+          <span>僅顯示該學生</span>
+        </div>
+        <div id="parentReport"></div>
+      </section>
+    </main>
+  </section>
+
   <div class="app-shell" id="appShell" hidden>
     <aside class="sidebar">
       <div class="brand">
@@ -43,6 +97,9 @@
       <nav class="tabs" aria-label="系統分頁">
         <button class="tab-button active" data-tab="dashboard">主頁看板</button>
         <button class="tab-button" data-tab="students">學生檔案</button>
+        <button class="tab-button" data-tab="schedule">課表設定</button>
+        <button class="tab-button" data-tab="scores">班務成績</button>
+        <button class="tab-button" data-tab="career">生涯檔案</button>
         <button class="tab-button" data-tab="leave">請假登記</button>
         <button class="tab-button" data-tab="late">晚到登記</button>
         <button class="tab-button desktop-only" data-tab="history">歷史紀錄</button>
@@ -147,8 +204,8 @@
             </select>
           </label>
           <fieldset>
-            <legend>上課星期</legend>
-            <div class="weekday-group" id="studentWeekdays"></div>
+            <legend>課程選擇</legend>
+            <div class="weekday-group" id="studentCourses"></div>
           </fieldset>
           <fieldset>
             <legend>固定請假</legend>
@@ -177,16 +234,153 @@
               <tr>
                 <th>年級</th>
                 <th>姓名</th>
-                <th>上課日</th>
+                <th>課程</th>
                 <th>訂餐</th>
                 <th>累積</th>
                 <th>固定請假</th>
                 <th>固定晚到</th>
+                <th>家長登入碼</th>
                 <th>操作</th>
               </tr>
             </thead>
             <tbody id="studentTable"></tbody>
           </table>
+        </div>
+      </section>
+
+      <section class="page" id="schedule">
+        <header class="section-head">
+          <div>
+            <p class="eyebrow">課表層</p>
+            <h1>國一到國三課表設定</h1>
+          </div>
+        </header>
+        <div class="panel schedule-panel">
+          <div class="toolbar">
+            <select id="scheduleGrade">
+              <option value="國一">國一</option>
+              <option value="國二">國二</option>
+              <option value="國三">國三</option>
+            </select>
+            <button class="primary" id="saveSchedule" type="button">儲存課表</button>
+          </div>
+          <div class="table-wrap">
+            <table class="schedule-table">
+              <thead>
+                <tr>
+                  <th>時段</th>
+                  <th>星期一</th>
+                  <th>星期二</th>
+                  <th>星期三</th>
+                  <th>星期四</th>
+                  <th>星期五</th>
+                </tr>
+              </thead>
+              <tbody id="scheduleTable"></tbody>
+            </table>
+          </div>
+          <p class="hint">課程選「考加」時，該年級學生預設全體到班。</p>
+        </div>
+      </section>
+
+      <section class="page" id="scores">
+        <header class="section-head">
+          <div>
+            <p class="eyebrow">班務層</p>
+            <h1>登記成績與輸出班級成績單</h1>
+          </div>
+        </header>
+        <form class="form-grid panel" id="examForm">
+          <label>日期
+            <input id="examDate" type="date" required>
+          </label>
+          <label>年級
+            <select id="examGrade">
+              <option value="國一">國一</option>
+              <option value="國二">國二</option>
+              <option value="國三">國三</option>
+            </select>
+          </label>
+          <label>科目
+            <select id="examSubject"></select>
+          </label>
+          <label>考試重點 / 單元
+            <input id="examScope" placeholder="例：一元一次方程式、L3單字">
+          </label>
+          <fieldset class="form-span-2">
+            <legend>當天狀態</legend>
+            <label class="check-pill"><input id="examNoTest" type="checkbox">無考試</label>
+          </fieldset>
+          <button class="primary" type="submit">儲存成績單</button>
+          <button class="ghost danger" id="resetExamForm" type="button">重設當天輸入</button>
+        </form>
+        <div class="panel list-panel">
+          <div class="panel-title">
+            <h2>成績輸入</h2>
+            <span>排名會自動計算</span>
+          </div>
+          <div id="scoreEntryList" class="score-entry-list"></div>
+        </div>
+        <div class="panel list-panel print-area" id="classReport">
+          <div class="panel-title">
+            <h2>班級成績單</h2>
+            <button class="ghost" id="printClassReport" type="button">列印 / 另存 PDF</button>
+          </div>
+          <div id="classReportBody"></div>
+        </div>
+        <div class="record-list panel list-panel" id="examHistoryList"></div>
+      </section>
+
+      <section class="page" id="career">
+        <header class="section-head">
+          <div>
+            <p class="eyebrow">學生生涯檔案層</p>
+            <h1>週考、段考與家長報告</h1>
+          </div>
+        </header>
+        <div class="toolbar">
+          <select id="careerGrade">
+            <option value="國一">國一</option>
+            <option value="國二">國二</option>
+            <option value="國三">國三</option>
+          </select>
+          <select id="careerStudent"></select>
+        </div>
+        <form class="form-grid panel" id="termScoreForm">
+          <label>學期
+            <input id="termName" placeholder="例：114上">
+          </label>
+          <label>段考
+            <select id="termStage">
+              <option value="一段">一段</option>
+              <option value="二段">二段</option>
+              <option value="三段">三段</option>
+            </select>
+          </label>
+          <label>科目
+            <select id="termSubject"></select>
+          </label>
+          <label>成績
+            <input id="termScore" type="number" min="0" max="100" step="0.1">
+          </label>
+          <button class="primary" type="submit">新增段考成績</button>
+          <button class="ghost" id="archiveTerm" type="button">學期末結算並刷新</button>
+        </form>
+        <div class="board-layout">
+          <section class="panel large-panel">
+            <div class="panel-title">
+              <h2>學生分析報告</h2>
+              <button class="ghost" id="printStudentReport" type="button">列印家長報告</button>
+            </div>
+            <div id="studentReport"></div>
+          </section>
+          <section class="panel">
+            <div class="panel-title">
+              <h2>歷年紀錄</h2>
+              <span>學期結算保留</span>
+            </div>
+            <div id="archiveList" class="record-list compact"></div>
+          </section>
         </div>
       </section>
 

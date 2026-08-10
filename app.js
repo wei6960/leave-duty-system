@@ -7,7 +7,10 @@ const SUPABASE_SDK_VERSION = "2.86.0";
 const SUPABASE_COLLECTION = "leaveDutyBranches";
 const grades = ["國一", "國二", "國三"];
 const weekdays = ["一", "二", "三", "四", "五"];
+const periods = ["上午", "下午", "晚上"];
+const courses = ["國", "英", "數", "社", "自", "總複習", "考加"];
 const leavePeriods = ["上午", "下午", "晚上"];
+const parentMode = new URLSearchParams(location.search).get("parent") === "1" || location.hash === "#parent";
 
 let dashboardGrade = "全體";
 let dashboardMode = "today";
@@ -24,13 +27,32 @@ let remoteSave = null;
 let supabaseClient = null;
 let supabasePollTimer = null;
 let lastRemoteUpdatedAt = "";
+let parentStudentId = null;
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
 const mobileQuery = window.matchMedia("(max-width: 720px)");
 
 function emptyState() {
-  return { students: [], leaves: [], lateRecords: [] };
+  return {
+    students: [],
+    leaves: [],
+    lateRecords: [],
+    schedule: defaultSchedule(),
+    exams: [],
+    termScores: [],
+    archives: [],
+  };
+}
+
+function defaultSchedule() {
+  return Object.fromEntries(grades.map((grade) => [
+    grade,
+    Object.fromEntries(weekdays.map((day) => [
+      day,
+      Object.fromEntries(periods.map((period) => [period, ""])),
+    ])),
+  ]));
 }
 
 function storageKey() {
@@ -59,18 +81,56 @@ function loadState() {
 }
 
 function normalizeState(raw) {
+  const baseSchedule = defaultSchedule();
+  const rawSchedule = raw.schedule || {};
+  grades.forEach((grade) => {
+    weekdays.forEach((day) => {
+      periods.forEach((period) => {
+        baseSchedule[grade][day][period] = courses.includes(rawSchedule?.[grade]?.[day]?.[period])
+          ? rawSchedule[grade][day][period]
+          : "";
+      });
+    });
+  });
   return {
     students: (raw.students || []).map((student) => ({
       id: student.id || crypto.randomUUID(),
       grade: grades.includes(student.grade) ? student.grade : "國一",
       name: student.name || "",
       weekdays: student.weekdays || [],
+      courses: normalizeCourses(student.courses || student.subjects || []),
       meal: student.meal || "無訂餐",
       fixedLeave: student.fixedLeave || [],
       fixedLate: normalizeFixedLate(student.fixedLate || []),
+      parentCode: student.parentCode || generateParentCode(),
     })),
     leaves: normalizeLeaves(raw.leaves || []),
     lateRecords: raw.lateRecords || [],
+    schedule: baseSchedule,
+    exams: (raw.exams || []).map(normalizeExam),
+    termScores: raw.termScores || [],
+    archives: raw.archives || [],
+  };
+}
+
+function normalizeCourses(values) {
+  return [...new Set((values || []).filter((value) => courses.includes(value)))];
+}
+
+function generateParentCode() {
+  return Math.random().toString(36).slice(2, 8).toUpperCase();
+}
+
+function normalizeExam(exam) {
+  return {
+    id: exam.id || crypto.randomUUID(),
+    date: exam.date || todayISO(),
+    grade: grades.includes(exam.grade) ? exam.grade : "國一",
+    subject: courses.includes(exam.subject) ? exam.subject : "國",
+    scope: exam.scope || "",
+    noExam: Boolean(exam.noExam),
+    scores: exam.scores || {},
+    createdAt: exam.createdAt || new Date().toISOString(),
   };
 }
 
@@ -352,7 +412,7 @@ function getLeaveEnd(record) {
 function studentClassDatesForLeave(record, student = getStudent(record.studentId)) {
   if (!student) return datesBetween(getLeaveStart(record), getLeaveEnd(record));
   return datesBetween(getLeaveStart(record), getLeaveEnd(record))
-    .filter((date) => student.weekdays.includes(weekdayFromDate(date)));
+    .filter((date) => studentHasClassOnDate(student, date));
 }
 
 function leaveDayCount(record, student = getStudent(record.studentId)) {
@@ -371,7 +431,13 @@ function leavePeriodLabel(record) {
 }
 
 function classDaysLabel(student) {
-  return student.weekdays.length ? student.weekdays.map((day) => `星期${day}`).join("、") : "未設定";
+  const labels = weekdays
+    .map((day) => {
+      const items = studentClassesOnDay(student, day);
+      return items.length ? `星期${day} ${items.join("/")}` : "";
+    })
+    .filter(Boolean);
+  return labels.length ? labels.join("、") : "未設定課表";
 }
 
 function weekdayFromDate(isoDate) {
@@ -388,6 +454,25 @@ function getStudent(id) {
 
 function studentLabel(student) {
   return `${student.grade} ${student.name}`;
+}
+
+function studentCoursesLabel(student) {
+  return student.courses && student.courses.length ? student.courses.join("、") : "未設定";
+}
+
+function parentPortalUrl() {
+  return `${location.origin}${location.pathname}?parent=1`;
+}
+
+function studentClassesOnDay(student, day) {
+  const daySchedule = state.schedule?.[student.grade]?.[day] || {};
+  return periods
+    .map((period) => daySchedule[period])
+    .filter((course) => course && (course === "考加" || student.courses.includes(course)));
+}
+
+function studentHasClassOnDate(student, date) {
+  return studentClassesOnDay(student, weekdayFromDate(date)).length > 0;
 }
 
 function dashboardStudents() {
@@ -412,7 +497,7 @@ function todayLeaveStudentIds() {
   });
 
   state.students.forEach((student) => {
-    if (ids.has(student.id) && student.fixedLeave.includes(todayWeekday)) {
+    if (ids.has(student.id) && studentHasClassOnDate(student, today) && student.fixedLeave.includes(todayWeekday)) {
       leaveIds.add(student.id);
     }
   });
@@ -424,9 +509,22 @@ function renderExpectedAttendance() {
   const todayWeekday = weekdayFromDate(todayISO());
   const leaveIds = todayLeaveStudentIds();
   const expected = dashboardStudents()
-    .filter((student) => student.weekdays.includes(todayWeekday))
+    .filter((student) => studentHasClassOnDate(student, todayISO()))
     .filter((student) => !leaveIds.has(student.id)).length;
   $("#todayExpectedCount").textContent = expected;
+}
+
+function renderCourseInputs(targetId, name) {
+  const target = $(`#${targetId}`);
+  target.innerHTML = courses
+    .filter((course) => course !== "考加")
+    .map((course) => `
+      <label class="check-pill">
+        <input type="checkbox" name="${name}" value="${course}">
+        ${course}
+      </label>
+    `)
+    .join("");
 }
 
 function renderWeekdayInputs(targetId, name) {
@@ -454,6 +552,257 @@ function renderFixedLateInputs() {
       </label>
     `)
     .join("");
+}
+
+function renderSubjectOptions(targetId, includeExamPlus = false) {
+  const list = includeExamPlus ? courses : courses.filter((course) => course !== "考加");
+  const target = $(`#${targetId}`);
+  if (!target) return;
+  target.innerHTML = list.map((course) => `<option value="${course}">${course}</option>`).join("");
+}
+
+function courseSelect(value = "") {
+  return `<select data-schedule-course>
+    <option value="">無課</option>
+    ${courses.map((course) => `<option value="${course}" ${course === value ? "selected" : ""}>${course}</option>`).join("")}
+  </select>`;
+}
+
+function renderSchedule() {
+  const grade = $("#scheduleGrade")?.value || "國一";
+  const gradeSchedule = state.schedule?.[grade] || defaultSchedule()[grade];
+  $("#scheduleTable").innerHTML = periods.map((period) => `
+    <tr>
+      <th>${period}</th>
+      ${weekdays.map((day) => `<td data-schedule-cell="${day}|${period}">${courseSelect(gradeSchedule[day]?.[period] || "")}</td>`).join("")}
+    </tr>
+  `).join("");
+}
+
+function saveSchedule() {
+  const grade = $("#scheduleGrade").value;
+  if (!state.schedule) state.schedule = defaultSchedule();
+  weekdays.forEach((day) => {
+    periods.forEach((period) => {
+      const cell = document.querySelector(`[data-schedule-cell="${day}|${period}"] select`);
+      state.schedule[grade][day][period] = cell ? cell.value : "";
+    });
+  });
+  saveState();
+  renderAll();
+}
+
+function studentsForGradeAndSubject(grade, subject) {
+  return state.students
+    .filter((student) => student.grade === grade)
+    .filter((student) => subject === "考加" || student.courses.includes(subject));
+}
+
+function renderScoreEntryList() {
+  const grade = $("#examGrade")?.value || "國一";
+  const subject = $("#examSubject")?.value || "國";
+  const noExam = $("#examNoTest")?.checked;
+  const students = studentsForGradeAndSubject(grade, subject);
+  if (noExam) {
+    $("#scoreEntryList").innerHTML = `<div class="empty">已選擇無考試，儲存後會保留當天無考試紀錄。</div>`;
+    return;
+  }
+  $("#scoreEntryList").innerHTML = students.length
+    ? students.map((student) => `
+      <label class="score-row">
+        <span>${student.name}</span>
+        <input type="number" min="0" max="100" step="0.1" data-score-student="${student.id}" placeholder="分數">
+      </label>
+    `).join("")
+    : `<div class="empty">此年級尚無補 ${subject} 的學生。</div>`;
+}
+
+function currentScoreRows(exam) {
+  const students = studentsForGradeAndSubject(exam.grade, exam.subject);
+  return students
+    .map((student) => ({
+      student,
+      score: Number(exam.scores?.[student.id]),
+    }))
+    .filter((row) => Number.isFinite(row.score))
+    .sort((a, b) => b.score - a.score)
+    .map((row, index, rows) => ({
+      ...row,
+      rank: rows.findIndex((item) => item.score === row.score) + 1,
+    }));
+}
+
+function renderClassReport(exam = latestExamForForm()) {
+  if (!exam) {
+    $("#classReportBody").innerHTML = `<div class="empty">尚無成績單。</div>`;
+    return;
+  }
+  if (exam.noExam) {
+    $("#classReportBody").innerHTML = `<div class="empty">${dateLabel(exam.date)} ${exam.grade} ${exam.subject}：無考試。${exam.scope ? `重點：${exam.scope}` : ""}</div>`;
+    return;
+  }
+  const rows = currentScoreRows(exam);
+  const average = rows.length ? (rows.reduce((sum, row) => sum + row.score, 0) / rows.length).toFixed(1) : "-";
+  $("#classReportBody").innerHTML = `
+    <div class="report-head">
+      <strong>${dateLabel(exam.date)} ${exam.grade} ${exam.subject}</strong>
+      <span>班平均 ${average}</span>
+      <span>${exam.scope ? `重點：${exam.scope}` : "未填考試重點"}</span>
+    </div>
+    <table>
+      <thead><tr><th>排名</th><th>姓名</th><th>班級</th><th>科目</th><th>成績</th></tr></thead>
+      <tbody>${rows.map((row) => `<tr><td>${row.rank}</td><td>${row.student.name}</td><td>${row.student.grade}</td><td>${exam.subject}</td><td>${row.score}</td></tr>`).join("") || `<tr><td colspan="5">尚無成績</td></tr>`}</tbody>
+    </table>
+  `;
+}
+
+function latestExamForForm() {
+  const grade = $("#examGrade")?.value;
+  const subject = $("#examSubject")?.value;
+  return state.exams
+    .filter((exam) => exam.grade === grade && exam.subject === subject)
+    .sort((a, b) => b.date.localeCompare(a.date))[0];
+}
+
+function saveExam(event) {
+  event.preventDefault();
+  const noExam = $("#examNoTest").checked;
+  const scores = {};
+  $$("[data-score-student]").forEach((input) => {
+    if (input.value !== "") scores[input.dataset.scoreStudent] = Number(input.value);
+  });
+  const exam = normalizeExam({
+    id: crypto.randomUUID(),
+    date: $("#examDate").value,
+    grade: $("#examGrade").value,
+    subject: $("#examSubject").value,
+    scope: $("#examScope").value.trim(),
+    noExam,
+    scores,
+    createdAt: new Date().toISOString(),
+  });
+  state.exams.push(exam);
+  saveState();
+  renderAll();
+  flashButton(event.submitter, "已儲存");
+}
+
+function resetExamForm() {
+  if (!confirm("確定重設當天成績輸入？尚未儲存的分數會清空。")) return;
+  $("#examDate").value = todayISO();
+  $("#examScope").value = "";
+  $("#examNoTest").checked = false;
+  renderScoreEntryList();
+}
+
+function renderExamHistory() {
+  const items = state.exams.slice().sort((a, b) => b.date.localeCompare(a.date)).slice(0, 20);
+  $("#examHistoryList").innerHTML = items.map((exam) => {
+    const rows = currentScoreRows(exam);
+    const average = rows.length ? (rows.reduce((sum, row) => sum + row.score, 0) / rows.length).toFixed(1) : "-";
+    return `
+      <article class="record-card">
+        <strong>${dateLabel(exam.date)} ${exam.grade} ${exam.subject}</strong>
+        <div class="meta">
+          <span class="badge">${exam.noExam ? "無考試" : `班平均 ${average}`}</span>
+          ${exam.scope ? `<span class="badge gold">${exam.scope}</span>` : ""}
+        </div>
+      </article>
+    `;
+  }).join("") || `<div class="empty">尚無成績歷史。</div>`;
+}
+
+function saveTermScore(event) {
+  event.preventDefault();
+  const studentId = $("#careerStudent").value;
+  if (!studentId) return alert("請先選擇學生");
+  if ($("#termScore").value === "") return alert("請輸入成績");
+  state.termScores.push({
+    id: crypto.randomUUID(),
+    studentId,
+    term: $("#termName").value.trim() || "未命名學期",
+    stage: $("#termStage").value,
+    subject: $("#termSubject").value,
+    score: Number($("#termScore").value),
+    createdAt: new Date().toISOString(),
+  });
+  $("#termScore").value = "";
+  saveState();
+  renderAll();
+  flashButton(event.submitter, "已新增");
+}
+
+function studentExamRows(student) {
+  return state.exams
+    .filter((exam) => !exam.noExam && exam.scores && exam.scores[student.id] !== undefined)
+    .map((exam) => ({ exam, score: Number(exam.scores[student.id]) }))
+    .sort((a, b) => a.exam.date.localeCompare(b.exam.date));
+}
+
+function estimateLevel(avg) {
+  if (!Number.isFinite(avg)) return "資料不足";
+  if (avg >= 85) return "A 區間";
+  if (avg >= 70) return "B 區間";
+  return "C 區間";
+}
+
+function renderStudentReport() {
+  const student = getStudent($("#careerStudent")?.value);
+  if (!student) {
+    $("#studentReport").innerHTML = `<div class="empty">請先選擇學生。</div>`;
+    $("#archiveList").innerHTML = `<div class="empty">尚無歷年紀錄。</div>`;
+    return;
+  }
+  const examRows = studentExamRows(student);
+  const avg = examRows.length ? examRows.reduce((sum, row) => sum + row.score, 0) / examRows.length : NaN;
+  const weakUnits = examRows.filter((row) => row.score < 70).map((row) => `${row.exam.subject}｜${row.exam.scope || dateLabel(row.exam.date)}`);
+  const bySubject = courses.filter((course) => course !== "考加").map((subject) => {
+    const rows = examRows.filter((row) => row.exam.subject === subject);
+    const subjectAvg = rows.length ? rows.reduce((sum, row) => sum + row.score, 0) / rows.length : NaN;
+    return { subject, rows, avg: subjectAvg };
+  }).filter((item) => item.rows.length);
+  const termRows = state.termScores.filter((item) => item.studentId === student.id);
+  $("#studentReport").innerHTML = `
+    <div class="report-head">
+      <strong>${studentLabel(student)}</strong>
+      <span>補習科目：${studentCoursesLabel(student)}</span>
+      <span>會考推估：${estimateLevel(avg)}</span>
+    </div>
+    <div class="analysis-grid">
+      ${bySubject.map((item) => `
+        <article class="analysis-card">
+          <strong>${item.subject}</strong>
+          <span>週考平均 ${item.avg.toFixed(1)}</span>
+          <div class="mini-bars">${item.rows.slice(-8).map((row) => `<i style="height:${Math.max(8, row.score)}%" title="${dateLabel(row.exam.date)} ${row.score}"></i>`).join("")}</div>
+        </article>
+      `).join("") || `<div class="empty">尚無週考成績。</div>`}
+    </div>
+    <p class="report-copy">目前整體平均為 ${Number.isFinite(avg) ? avg.toFixed(1) : "資料不足"}，推估落在 ${estimateLevel(avg)}。${weakUnits.length ? `需要優先補強：${weakUnits.slice(-6).join("、")}。` : "目前沒有明顯低於 70 分的周考單元。"}</p>
+    <h2>段考紀錄</h2>
+    <div class="meta">${termRows.map((item) => `<span class="badge">${item.term} ${item.stage} ${item.subject} ${item.score}</span>`).join("") || `<span class="badge">尚無段考紀錄</span>`}</div>
+  `;
+  $("#archiveList").innerHTML = state.archives
+    .filter((item) => item.studentId === student.id)
+    .map((item) => `<article class="record-card done"><strong>${item.term}</strong><div class="meta"><span class="badge">${item.summary}</span></div></article>`)
+    .join("") || `<div class="empty">尚無歷年紀錄。</div>`;
+}
+
+function archiveCurrentTerm() {
+  const student = getStudent($("#careerStudent").value);
+  if (!student) return alert("請先選擇學生");
+  const term = $("#termName").value.trim() || "未命名學期";
+  const rows = state.termScores.filter((item) => item.studentId === student.id && item.term === term);
+  const avg = rows.length ? rows.reduce((sum, row) => sum + Number(row.score), 0) / rows.length : NaN;
+  state.archives.push({
+    id: crypto.randomUUID(),
+    studentId: student.id,
+    term,
+    summary: rows.length ? `段考平均 ${avg.toFixed(1)}，共 ${rows.length} 筆` : "本學期尚無段考成績",
+    createdAt: new Date().toISOString(),
+  });
+  state.termScores = state.termScores.filter((item) => !(item.studentId === student.id && item.term === term));
+  saveState();
+  renderAll();
 }
 
 function selectedValues(name) {
@@ -510,7 +859,7 @@ function resetLeaveForm() {
 function clearStudentForm() {
   editingStudentId = null;
   $("#studentForm").reset();
-  setCheckedValues("classWeekday", []);
+  setCheckedValues("studentCourse", []);
   setCheckedValues("fixedLeave", []);
   setFixedLateValues([]);
   $("#studentSubmitButton").textContent = "新增學生檔案";
@@ -522,7 +871,7 @@ function fillStudentForm(student) {
   $("#studentGrade").value = student.grade;
   $("#studentName").value = student.name;
   $("#studentMeal").value = student.meal;
-  setCheckedValues("classWeekday", student.weekdays);
+  setCheckedValues("studentCourse", student.courses || []);
   setCheckedValues("fixedLeave", student.fixedLeave);
   setFixedLateValues(student.fixedLate);
   $("#studentSubmitButton").textContent = "儲存學生修改";
@@ -576,7 +925,8 @@ function setupForms() {
     const payload = {
       grade: $("#studentGrade").value,
       name: $("#studentName").value.trim(),
-      weekdays: selectedValues("classWeekday"),
+      courses: selectedValues("studentCourse"),
+      weekdays: [],
       meal: $("#studentMeal").value,
       fixedLeave: selectedValues("fixedLeave"),
       fixedLate: selectedFixedLate(),
@@ -643,6 +993,17 @@ function setupForms() {
     renderAll();
   });
 
+  $("#examForm").addEventListener("submit", saveExam);
+  $("#resetExamForm").addEventListener("click", resetExamForm);
+  $("#termScoreForm").addEventListener("submit", saveTermScore);
+  $("#archiveTerm").addEventListener("click", archiveCurrentTerm);
+  $("#saveSchedule").addEventListener("click", (event) => {
+    saveSchedule();
+    flashButton(event.currentTarget, "已儲存");
+  });
+  $("#printClassReport").addEventListener("click", () => window.print());
+  $("#printStudentReport").addEventListener("click", () => window.print());
+
   $("#leaveGrade").addEventListener("change", () => {
     $("#leaveStudentPicker").value = "";
     $("#leaveStudent").value = "";
@@ -662,7 +1023,7 @@ function setupForms() {
     }
   });
 
-  ["studentFilter", "studentSearch", "lateGrade", "historyType", "historySearch"].forEach((id) => {
+  ["studentFilter", "studentSearch", "lateGrade", "historyType", "historySearch", "scheduleGrade", "examGrade", "examSubject", "examNoTest", "careerGrade", "careerStudent"].forEach((id) => {
     $(`#${id}`).addEventListener("input", renderAll);
   });
 }
@@ -708,6 +1069,7 @@ function renderStudentOptions() {
   };
   renderLeaveOptions();
   renderOptions("#lateGrade", "#lateStudent");
+  renderOptions("#careerGrade", "#careerStudent");
 }
 
 function leaveStudentMatches() {
@@ -839,11 +1201,12 @@ function renderStudents() {
         <tr>
           <td>${student.grade}</td>
           <td>${student.name}</td>
-          <td>${student.weekdays.map((day) => `星期${day}`).join("、") || "-"}</td>
+          <td>${studentCoursesLabel(student)}</td>
           <td>${student.meal}</td>
           <td>請假 ${leaveCount} / 晚到 ${lateCount}</td>
           <td>${student.fixedLeave.map((day) => `星期${day}`).join("、") || "-"}</td>
           <td>${student.fixedLate.map((item) => `星期${item.day}${item.time ? ` ${item.time}` : ""}${item.reason ? ` ${item.reason}` : ""}`).join("、") || "-"}</td>
+          <td><code>${student.parentCode}</code><br><small>${parentPortalUrl()}</small></td>
           <td>
             <div class="action-row">
               <button class="ghost" data-edit-student="${student.id}">編輯</button>
@@ -854,7 +1217,7 @@ function renderStudents() {
       `;
     })
     .join("");
-  $("#studentTable").innerHTML = rows || `<tr><td colspan="8">尚無學生資料</td></tr>`;
+  $("#studentTable").innerHTML = rows || `<tr><td colspan="9">尚無學生資料</td></tr>`;
 }
 
 function renderActiveLeaves() {
@@ -866,7 +1229,7 @@ function renderActiveLeaves() {
       if (!student || studentClassDatesForLeave(record, student).length === 0) return false;
       if (record.dismissedAt || !ids.has(record.studentId)) return false;
       if (dashboardMode === "today") {
-        return getLeaveStart(record) <= today && getLeaveEnd(record) >= today && student.weekdays.includes(weekdayFromDate(today));
+        return getLeaveStart(record) <= today && getLeaveEnd(record) >= today && studentHasClassOnDate(student, today);
       }
       return studentClassDatesForLeave(record, student).some((date) => date >= today);
     });
@@ -882,7 +1245,7 @@ function buildFixedLeaveRecords(today, ids) {
   return state.students
     .filter((student) => ids.has(student.id))
     .flatMap((student) => days
-      .filter((date) => student.weekdays.includes(weekdayFromDate(date)) && student.fixedLeave.includes(weekdayFromDate(date)))
+      .filter((date) => studentHasClassOnDate(student, date) && student.fixedLeave.includes(weekdayFromDate(date)))
       .map((date) => ({
         id: `fixed-leave-${student.id}-${date}`,
         studentId: student.id,
@@ -1080,6 +1443,8 @@ function setupActions() {
 
 function showLogin() {
   $("#loginScreen").hidden = false;
+  $("#parentLoginScreen").hidden = true;
+  $("#parentShell").hidden = true;
   $("#appShell").hidden = true;
   $("#loginPassword").value = "";
   $("#loginPassword").focus();
@@ -1087,8 +1452,75 @@ function showLogin() {
 
 function showApp() {
   $("#loginScreen").hidden = true;
+  $("#parentLoginScreen").hidden = true;
+  $("#parentShell").hidden = true;
   $("#appShell").hidden = false;
   $("#currentBranchLabel").textContent = `${currentBranch}分校`;
+}
+
+function showParentLogin() {
+  $("#loginScreen").hidden = true;
+  $("#appShell").hidden = true;
+  $("#parentShell").hidden = true;
+  $("#parentLoginScreen").hidden = false;
+  $("#parentCode").focus();
+}
+
+function showParentShell() {
+  $("#loginScreen").hidden = true;
+  $("#appShell").hidden = true;
+  $("#parentLoginScreen").hidden = true;
+  $("#parentShell").hidden = false;
+}
+
+async function loadParentBranchState(branch) {
+  currentBranch = branch;
+  state = loadState();
+  if (hasSupabaseConfig()) {
+    const { createClient } = await import(`https://esm.sh/@supabase/supabase-js@${SUPABASE_SDK_VERSION}`);
+    supabaseClient = createClient(window.SUPABASE_CONFIG.url, window.SUPABASE_CONFIG.anonKey);
+    const remote = await loadSupabaseState();
+    if (remote) state = normalizeState(remote.data || emptyState());
+  }
+}
+
+function studentScoreSummary(student) {
+  return courses.filter((course) => course !== "考加").map((subject) => {
+    const exams = state.exams.filter((exam) => !exam.noExam && exam.subject === subject && exam.scores?.[student.id] !== undefined);
+    if (!exams.length) return "";
+    const scores = exams.map((exam) => Number(exam.scores[student.id])).filter(Number.isFinite);
+    const avg = scores.reduce((sum, score) => sum + score, 0) / scores.length;
+    const classRows = state.exams
+      .filter((exam) => !exam.noExam && exam.subject === subject)
+      .flatMap((exam) => Object.values(exam.scores || {}).map(Number))
+      .filter(Number.isFinite);
+    const classAvg = classRows.length ? classRows.reduce((sum, score) => sum + score, 0) / classRows.length : NaN;
+    const latest = exams.sort((a, b) => b.date.localeCompare(a.date))[0];
+    const rankRows = currentScoreRows(latest);
+    const rank = rankRows.find((row) => row.student.id === student.id)?.rank || "-";
+    return `<article class="record-card"><strong>${subject}</strong><div class="meta"><span class="badge">個人平均 ${avg.toFixed(1)}</span><span class="badge">班平均 ${Number.isFinite(classAvg) ? classAvg.toFixed(1) : "-"}</span><span class="badge">最新排名 ${rank}</span></div></article>`;
+  }).filter(Boolean).join("") || `<div class="empty">尚無成績紀錄。</div>`;
+}
+
+function renderParentPortal() {
+  const student = getStudent(parentStudentId);
+  if (!student) return;
+  $("#parentStudentTitle").textContent = `${student.name} 生涯檔案`;
+  $("#parentLeaveList").innerHTML = state.leaves
+    .filter((record) => record.studentId === student.id)
+    .sort((a, b) => getLeaveStart(b).localeCompare(getLeaveStart(a)))
+    .map(renderLeaveCard)
+    .join("") || `<div class="empty">尚無請假紀錄。</div>`;
+  $("#parentScoreList").innerHTML = studentScoreSummary(student);
+  const previousCareer = $("#careerStudent")?.value;
+  if ($("#careerGrade") && $("#careerStudent")) {
+    $("#careerGrade").value = student.grade;
+    renderStudentOptions();
+    $("#careerStudent").value = student.id;
+    renderStudentReport();
+    $("#parentReport").innerHTML = $("#studentReport").innerHTML;
+    if (previousCareer) $("#careerStudent").value = previousCareer;
+  }
 }
 
 function setupLogin() {
@@ -1118,6 +1550,28 @@ function setupLogin() {
     setSyncStatus("本機模式");
     showLogin();
   });
+
+  $("#parentLoginForm").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    await loadParentBranchState($("#parentBranch").value);
+    const code = cleanCellText($("#parentCode").value).toUpperCase();
+    const student = state.students.find((item) => cleanCellText(item.parentCode).toUpperCase() === code);
+    if (!student) {
+      $("#parentLoginError").hidden = false;
+      $("#parentCode").select();
+      return;
+    }
+    parentStudentId = student.id;
+    $("#parentLoginError").hidden = true;
+    showParentShell();
+    renderParentPortal();
+  });
+
+  $("#parentLogout").addEventListener("click", showParentLogin);
+  $("#backTeacherLogin").addEventListener("click", () => {
+    history.replaceState(null, "", location.pathname);
+    showLogin();
+  });
 }
 
 function renderAll() {
@@ -1125,6 +1579,11 @@ function renderAll() {
   renderExpectedAttendance();
   renderStudentOptions();
   renderStudents();
+  renderSchedule();
+  renderScoreEntryList();
+  renderClassReport();
+  renderExamHistory();
+  renderStudentReport();
   renderActiveLeaves();
   renderLateBoard();
   renderRecentHistory();
@@ -1133,10 +1592,13 @@ function renderAll() {
 }
 
 function boot() {
-  renderWeekdayInputs("studentWeekdays", "classWeekday");
+  renderCourseInputs("studentCourses", "studentCourse");
   renderWeekdayInputs("studentFixedLeave", "fixedLeave");
   renderFixedLateInputs();
+  renderSubjectOptions("examSubject", true);
+  renderSubjectOptions("termSubject", false);
   resetLeaveForm();
+  $("#examDate").value = todayISO();
   $("#lateDate").value = todayISO();
   setupTabs();
   mobileQuery.addEventListener("change", enforceMobilePages);
@@ -1146,7 +1608,10 @@ function boot() {
   setupLogin();
   updateClock();
   setInterval(updateClock, 1000);
-  if (currentBranch) {
+  if (parentMode) {
+    cleanupCloudSync();
+    showParentLogin();
+  } else if (currentBranch) {
     showApp();
     setupCloudSync();
     saveState();
