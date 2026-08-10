@@ -8,7 +8,8 @@ const SUPABASE_COLLECTION = "leaveDutyBranches";
 const grades = ["國一", "國二", "國三"];
 const weekdays = ["一", "二", "三", "四", "五"];
 const periods = ["上午", "下午", "晚上"];
-const courses = ["國", "英", "數", "社", "自", "總複習", "考加"];
+const courses = ["國文", "英文", "數A", "數B", "自然", "總複習", "素養課", "讀書班"];
+const scheduleCourses = [...courses, "考加"];
 const leavePeriods = ["上午", "下午", "晚上"];
 const parentMode = new URLSearchParams(location.search).get("parent") === "1" || location.hash === "#parent";
 
@@ -86,8 +87,9 @@ function normalizeState(raw) {
   grades.forEach((grade) => {
     weekdays.forEach((day) => {
       periods.forEach((period) => {
-        baseSchedule[grade][day][period] = courses.includes(rawSchedule?.[grade]?.[day]?.[period])
-          ? rawSchedule[grade][day][period]
+        const course = normalizeCourseName(rawSchedule?.[grade]?.[day]?.[period]);
+        baseSchedule[grade][day][period] = scheduleCourses.includes(course)
+          ? course
           : "";
       });
     });
@@ -114,7 +116,31 @@ function normalizeState(raw) {
 }
 
 function normalizeCourses(values) {
-  return [...new Set((values || []).filter((value) => courses.includes(value)))];
+  return [...new Set((values || []).map(normalizeCourseName).filter((value) => courses.includes(value)))];
+}
+
+function normalizeCourseName(value) {
+  const text = String(value || "").trim().replace("數Ａ", "數A").replace("數Ｂ", "數B");
+  const map = {
+    國: "國文",
+    國文: "國文",
+    英: "英文",
+    英文: "英文",
+    數: "數A",
+    數A: "數A",
+    數B: "數B",
+    社: "社會",
+    社會: "社會",
+    自: "自然",
+    自然: "自然",
+    總複習: "總複習",
+    素養: "素養課",
+    素養課: "素養課",
+    讀書: "讀書班",
+    讀書班: "讀書班",
+    考加: "考加",
+  };
+  return map[text] || text;
 }
 
 function generateParentCode() {
@@ -126,7 +152,7 @@ function normalizeExam(exam) {
     id: exam.id || crypto.randomUUID(),
     date: exam.date || todayISO(),
     grade: grades.includes(exam.grade) ? exam.grade : "國一",
-    subject: courses.includes(exam.subject) ? exam.subject : "國",
+    subject: courses.includes(normalizeCourseName(exam.subject)) ? normalizeCourseName(exam.subject) : "國文",
     scope: exam.scope || "",
     noExam: Boolean(exam.noExam),
     scores: exam.scores || {},
@@ -431,6 +457,7 @@ function leavePeriodLabel(record) {
 }
 
 function classDaysLabel(student) {
+  if (!gradeScheduleHasAnyCourse(student.grade)) return "星期一到五皆有課";
   const labels = weekdays
     .map((day) => {
       const items = studentClassesOnDay(student, day);
@@ -472,12 +499,19 @@ function studentClassesOnDay(student, day) {
     .filter((course) => course && (course === "考加" || student.courses.includes(course)));
 }
 
+function gradeScheduleHasAnyCourse(grade) {
+  const gradeSchedule = state.schedule?.[grade];
+  if (!gradeSchedule) return false;
+  return weekdays.some((day) => periods.some((period) => Boolean(gradeSchedule[day]?.[period])));
+}
+
 function legacyStudentHasClassOnDay(student, day) {
   return (!student.courses || student.courses.length === 0) && Array.isArray(student.weekdays) && student.weekdays.includes(day);
 }
 
 function studentHasClassOnDate(student, date) {
   const day = weekdayFromDate(date);
+  if (weekdays.includes(day) && !gradeScheduleHasAnyCourse(student.grade)) return true;
   return studentClassesOnDay(student, day).length > 0 || legacyStudentHasClassOnDay(student, day);
 }
 
@@ -523,7 +557,6 @@ function renderExpectedAttendance() {
 function renderCourseInputs(targetId, name) {
   const target = $(`#${targetId}`);
   target.innerHTML = courses
-    .filter((course) => course !== "考加")
     .map((course) => `
       <label class="check-pill">
         <input type="checkbox" name="${name}" value="${course}">
@@ -561,7 +594,7 @@ function renderFixedLateInputs() {
 }
 
 function renderSubjectOptions(targetId, includeExamPlus = false) {
-  const list = includeExamPlus ? courses : courses.filter((course) => course !== "考加");
+  const list = courses;
   const target = $(`#${targetId}`);
   if (!target) return;
   target.innerHTML = list.map((course) => `<option value="${course}">${course}</option>`).join("");
@@ -570,7 +603,7 @@ function renderSubjectOptions(targetId, includeExamPlus = false) {
 function courseSelect(value = "") {
   return `<select data-schedule-course>
     <option value="">無課</option>
-    ${courses.map((course) => `<option value="${course}" ${course === value ? "selected" : ""}>${course}</option>`).join("")}
+    ${scheduleCourses.map((course) => `<option value="${course}" ${course === value ? "selected" : ""}>${course}</option>`).join("")}
   </select>`;
 }
 
@@ -601,12 +634,12 @@ function saveSchedule() {
 function studentsForGradeAndSubject(grade, subject) {
   return state.students
     .filter((student) => student.grade === grade)
-    .filter((student) => subject === "考加" || student.courses.includes(subject));
+    .filter((student) => student.courses.includes(subject));
 }
 
 function renderScoreEntryList() {
   const grade = $("#examGrade")?.value || "國一";
-  const subject = $("#examSubject")?.value || "國";
+  const subject = $("#examSubject")?.value || "國文";
   const noExam = $("#examNoTest")?.checked;
   const students = studentsForGradeAndSubject(grade, subject);
   if (noExam) {
@@ -762,7 +795,7 @@ function renderStudentReport() {
   const examRows = studentExamRows(student);
   const avg = examRows.length ? examRows.reduce((sum, row) => sum + row.score, 0) / examRows.length : NaN;
   const weakUnits = examRows.filter((row) => row.score < 70).map((row) => `${row.exam.subject}｜${row.exam.scope || dateLabel(row.exam.date)}`);
-  const bySubject = courses.filter((course) => course !== "考加").map((subject) => {
+  const bySubject = courses.map((subject) => {
     const rows = examRows.filter((row) => row.exam.subject === subject);
     const subjectAvg = rows.length ? rows.reduce((sum, row) => sum + row.score, 0) / rows.length : NaN;
     return { subject, rows, avg: subjectAvg };
@@ -1490,7 +1523,7 @@ async function loadParentBranchState(branch) {
 }
 
 function studentScoreSummary(student) {
-  return courses.filter((course) => course !== "考加").map((subject) => {
+  return courses.map((subject) => {
     const exams = state.exams.filter((exam) => !exam.noExam && exam.subject === subject && exam.scores?.[student.id] !== undefined);
     if (!exams.length) return "";
     const scores = exams.map((exam) => Number(exam.scores[student.id])).filter(Number.isFinite);
