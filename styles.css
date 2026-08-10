@@ -247,6 +247,57 @@ button.button-confirmed {
   box-shadow: inset .22rem 0 0 var(--gold), 0 .8rem 1.5rem rgba(0, 0, 0, .2);
 }
 
+.portal-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: .9rem;
+}
+
+.management-grid {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.portal-tile {
+  display: grid;
+  align-content: start;
+  gap: .55rem;
+  min-height: 9.5rem;
+  padding: 1rem;
+  text-align: left;
+  border: 1px solid rgba(241, 211, 124, .2);
+  border-radius: .45rem;
+  background:
+    linear-gradient(135deg, rgba(198, 151, 53, .14), transparent 54%),
+    linear-gradient(180deg, rgba(255, 255, 255, .04), rgba(0, 0, 0, .08)),
+    #131820;
+  color: var(--text);
+  box-shadow: 0 1rem 2.2rem rgba(0, 0, 0, .24), inset 0 1px 0 rgba(255, 255, 255, .04);
+  cursor: pointer;
+  transition: border-color .15s ease, transform .15s ease, background .15s ease;
+}
+
+.portal-tile:hover {
+  border-color: rgba(241, 211, 124, .46);
+  background:
+    linear-gradient(135deg, rgba(198, 151, 53, .22), transparent 54%),
+    linear-gradient(180deg, rgba(255, 255, 255, .06), rgba(0, 0, 0, .1)),
+    #171d25;
+}
+
+.portal-tile strong {
+  color: var(--gold-2);
+  font-size: 1.18rem;
+}
+
+.portal-tile span {
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.back-button {
+  flex: 0 0 auto;
+}
+
 main {
   position: relative;
   min-width: 0;
@@ -346,6 +397,18 @@ h2 {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: .7rem;
   margin-bottom: .9rem;
+}
+
+.score-section-switch {
+  margin-bottom: 1rem;
+}
+
+.score-section {
+  display: none;
+}
+
+.score-section.active {
+  display: block;
 }
 
 .grade-button,
@@ -1172,7 +1235,9 @@ tbody tr:hover {
   .board-layout,
   .form-grid,
   .analysis-grid,
-  .parent-main {
+  .parent-main,
+  .portal-grid,
+  .management-grid {
     grid-template-columns: 1fr;
   }
 
@@ -1192,10 +1257,7 @@ tbody tr:hover {
 }
 
 @media (max-width: 720px) {
-  .desktop-only,
-  [data-tab="schedule"],
-  #schedule,
-  #history {
+  .desktop-only {
     display: none !important;
   }
 

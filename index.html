@@ -106,14 +106,8 @@
 
       <nav class="tabs" aria-label="系統分頁">
         <button class="tab-button active" data-tab="dashboard">主頁看板</button>
-        <button class="tab-button" data-tab="students">學生檔案</button>
-        <button class="tab-button" data-tab="schedule">課表設定</button>
-        <button class="tab-button" data-tab="scores">班務成績</button>
-        <button class="tab-button" data-tab="career">生涯檔案</button>
-        <button class="tab-button" data-tab="term">段考成績</button>
-        <button class="tab-button" data-tab="leave">請假登記</button>
-        <button class="tab-button" data-tab="late">晚到登記</button>
-        <button class="tab-button desktop-only" data-tab="history">歷史紀錄</button>
+        <button class="tab-button" data-tab="attendance">出缺勤</button>
+        <button class="tab-button" data-tab="management">班務管理</button>
       </nav>
       <button class="logout-button" id="logoutButton" type="button">登出 / 切換分校</button>
     </aside>
@@ -181,12 +175,69 @@
         </div>
       </section>
 
+      <section class="page" id="attendance">
+        <header class="section-head">
+          <div>
+            <p class="eyebrow">出缺勤</p>
+            <h1>請假、晚到與歷史紀錄</h1>
+          </div>
+          <button class="ghost back-button" type="button" data-back-tab="dashboard">返回主頁</button>
+        </header>
+        <div class="portal-grid">
+          <button class="portal-tile" type="button" data-tab="leave">
+            <strong>請假登記</strong>
+            <span>新增、管理學生請假紀錄</span>
+          </button>
+          <button class="portal-tile" type="button" data-tab="late">
+            <strong>晚到登記</strong>
+            <span>臨時晚到與固定晚到查看</span>
+          </button>
+          <button class="portal-tile" type="button" data-tab="history">
+            <strong>歷史紀錄</strong>
+            <span>查詢已建立的請假與晚到紀錄</span>
+          </button>
+        </div>
+      </section>
+
+      <section class="page" id="management">
+        <header class="section-head">
+          <div>
+            <p class="eyebrow">班務管理</p>
+            <h1>學生、課表、成績與生涯檔案</h1>
+          </div>
+          <button class="ghost back-button" type="button" data-back-tab="dashboard">返回主頁</button>
+        </header>
+        <div class="portal-grid management-grid">
+          <button class="portal-tile" type="button" data-tab="students">
+            <strong>學生檔案</strong>
+            <span>建立學生、課程與家長登入碼</span>
+          </button>
+          <button class="portal-tile" type="button" data-tab="schedule">
+            <strong>課表設定</strong>
+            <span>國一到國三上午、下午、晚上課程</span>
+          </button>
+          <button class="portal-tile" type="button" data-tab="scores">
+            <strong>班務成績</strong>
+            <span>登記週考與查看歷史成績單</span>
+          </button>
+          <button class="portal-tile" type="button" data-tab="term">
+            <strong>段考成績</strong>
+            <span>段考登記、排名、圖片 PDF Excel</span>
+          </button>
+          <button class="portal-tile" type="button" data-tab="career">
+            <strong>生涯檔案</strong>
+            <span>學生歷程、折線圖與家長報告</span>
+          </button>
+        </div>
+      </section>
+
       <section class="page" id="students">
         <header class="section-head">
           <div>
             <p class="eyebrow">學生檔案</p>
             <h1>建立與管理學生資料</h1>
           </div>
+          <button class="ghost back-button" type="button" data-back-tab="management">返回班務管理</button>
         </header>
 
         <form class="form-grid panel" id="studentForm">
@@ -257,6 +308,7 @@
             <p class="eyebrow">課表層</p>
             <h1>國一到國三課表設定</h1>
           </div>
+          <button class="ghost back-button" type="button" data-back-tab="management">返回班務管理</button>
         </header>
         <div class="panel schedule-panel">
           <div class="toolbar">
@@ -294,7 +346,13 @@
             <p class="eyebrow">班務層</p>
             <h1>登記成績與輸出班級成績單</h1>
           </div>
+          <button class="ghost back-button" type="button" data-back-tab="management">返回班務管理</button>
         </header>
+        <div class="mode-switch score-section-switch" id="scoreSectionSwitch" aria-label="班務成績分區">
+          <button class="mode-button active" data-score-section="entry" type="button">登記成績</button>
+          <button class="mode-button" data-score-section="history" type="button">歷史成績單存放區</button>
+        </div>
+        <div class="score-section active" id="scoreEntrySection">
         <form class="form-grid panel" id="examForm">
           <label>日期
             <input id="examDate" type="date" required>
@@ -339,11 +397,13 @@
           </div>
           <div id="scoreEntryList" class="score-entry-list"></div>
         </div>
+        </div>
+        <div class="score-section" id="scoreHistorySection">
         <div class="panel list-panel print-area" id="classReport">
           <div class="panel-title">
             <h2>班級成績單</h2>
             <div class="action-row compact-actions">
-              <button class="ghost" id="returnCurrentClassReport" type="button">返回目前成績單</button>
+              <button class="ghost" id="returnCurrentClassReport" type="button">返回歷史成績單</button>
               <button class="ghost" id="downloadClassReportImage" type="button">圖片</button>
               <button class="ghost" id="printClassReport" type="button">PDF</button>
               <button class="ghost" id="downloadClassReportExcel" type="button">Excel</button>
@@ -352,6 +412,7 @@
           <div id="classReportBody"></div>
         </div>
         <div class="record-list panel list-panel" id="examHistoryList"></div>
+        </div>
       </section>
 
       <section class="page" id="career">
@@ -360,6 +421,7 @@
             <p class="eyebrow">學生生涯檔案層</p>
             <h1>週考、段考與家長報告</h1>
           </div>
+          <button class="ghost back-button" type="button" data-back-tab="management">返回班務管理</button>
         </header>
         <div class="toolbar">
           <select id="careerGrade">
@@ -406,6 +468,7 @@
             <p class="eyebrow">段考成績</p>
             <h1>段考登記、排名與學期結算</h1>
           </div>
+          <button class="ghost back-button" type="button" data-back-tab="management">返回班務管理</button>
         </header>
         <form class="form-grid panel" id="termScoreForm">
           <label>學年
@@ -467,6 +530,7 @@
             <p class="eyebrow">請假登記</p>
             <h1>單日或連續日期都可新增</h1>
           </div>
+          <button class="ghost back-button" type="button" data-back-tab="attendance">返回出缺勤</button>
         </header>
 
         <form class="form-grid panel" id="leaveForm">
@@ -512,6 +576,7 @@
             <p class="eyebrow">晚到登記</p>
             <h1>固定晚到與臨時晚到</h1>
           </div>
+          <button class="ghost back-button" type="button" data-back-tab="attendance">返回出缺勤</button>
         </header>
 
         <form class="form-grid panel" id="lateForm">
@@ -542,6 +607,7 @@
             <p class="eyebrow">歷史紀錄</p>
             <h1>請假與晚到保留查詢</h1>
           </div>
+          <button class="ghost back-button" type="button" data-back-tab="attendance">返回出缺勤</button>
         </header>
         <div class="toolbar">
           <select id="historyType">

@@ -20,6 +20,7 @@ let dashboardMode = "today";
 let editingStudentId = null;
 let editingExamId = null;
 let selectedClassReportExamId = null;
+let scoreSection = "entry";
 let scoreDraft = null;
 let careerSubject = "全部";
 let currentBranch = sessionStorage.getItem(SESSION_KEY) || "";
@@ -39,6 +40,16 @@ let parentStudentId = null;
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
 const mobileQuery = window.matchMedia("(max-width: 720px)");
+const parentTabs = {
+  leave: "attendance",
+  late: "attendance",
+  history: "attendance",
+  students: "management",
+  schedule: "management",
+  scores: "management",
+  term: "management",
+  career: "management",
+};
 
 function emptyState() {
   return {
@@ -918,6 +929,15 @@ function displayedClassReportExam() {
   return selected || latestExamForForm();
 }
 
+function renderScoreSections() {
+  $("#scoreEntrySection")?.classList.toggle("active", scoreSection === "entry");
+  $("#scoreHistorySection")?.classList.toggle("active", scoreSection === "history");
+  if ($("#classReport")) $("#classReport").hidden = scoreSection !== "history" || !selectedClassReportExamId;
+  $$("[data-score-section]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.scoreSection === scoreSection);
+  });
+}
+
 function renderClassReport(exam = displayedClassReportExam()) {
   if (!exam) {
     $("#classReportBody").innerHTML = `<div class="empty">尚無成績單。</div>`;
@@ -945,12 +965,15 @@ function renderClassReport(exam = displayedClassReportExam()) {
 function latestExamForForm() {
   const grade = $("#examGrade")?.value;
   const subject = $("#examSubject")?.value;
-  return state.exams
+  const date = $("#examDate")?.value;
+  const matches = state.exams
     .filter((exam) => exam.grade === grade && exam.subject === subject)
-    .sort((a, b) => b.date.localeCompare(a.date))[0];
+    .sort((a, b) => b.date.localeCompare(a.date));
+  return matches.find((exam) => exam.date === date) || matches[0];
 }
 
 function viewExamReport(exam) {
+  scoreSection = "history";
   selectedClassReportExamId = exam.id;
   $("#examDate").value = exam.date;
   $("#examGrade").value = exam.grade;
@@ -966,8 +989,10 @@ function viewExamReport(exam) {
 
 function returnCurrentClassReport() {
   selectedClassReportExamId = null;
+  scoreSection = "history";
+  renderScoreSections();
   renderClassReport();
-  $("#classReport")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  $("#examHistoryList")?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 function saveExam(event) {
@@ -1011,6 +1036,7 @@ function saveExam(event) {
     state.exams.push(exam);
   }
   selectedClassReportExamId = exam.id;
+  scoreSection = "history";
   editingExamId = null;
   updateExamFormMode();
   clearScoreDraft();
@@ -1022,6 +1048,7 @@ function saveExam(event) {
 function resetExamForm() {
   if (!confirm("確定重設當天成績輸入？尚未儲存的分數會清空。")) return;
   editingExamId = null;
+  scoreSection = "entry";
   selectedClassReportExamId = null;
   clearScoreDraft();
   $("#examDate").value = todayISO();
@@ -1036,6 +1063,7 @@ function resetExamForm() {
 
 function fillExamForm(exam) {
   clearScoreDraft();
+  scoreSection = "entry";
   selectedClassReportExamId = exam.id;
   editingExamId = exam.id;
   $("#examDate").value = exam.date;
@@ -1993,18 +2021,28 @@ function fillStudentForm(student) {
   $("#cancelStudentEdit").hidden = false;
 }
 
+function navigateToTab(tabId) {
+  if (!tabId || !$(`#${tabId}`)) return;
+  if ($("#scores")?.classList.contains("active")) captureScoreDraft();
+  $$(".tab-button").forEach((tab) => {
+    const activeTop = tab.dataset.tab === tabId || tab.dataset.tab === parentTabs[tabId];
+    tab.classList.toggle("active", activeTop);
+  });
+  $$(".page").forEach((page) => page.classList.remove("active"));
+  $(`#${tabId}`).classList.add("active");
+  document.body.classList.remove("nav-open");
+  renderAll();
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
 function setupTabs() {
   $$(".tab-button").forEach((button) => {
     button.addEventListener("click", () => {
-      if (mobileQuery.matches && button.classList.contains("desktop-only")) return;
-      if ($("#scores")?.classList.contains("active")) captureScoreDraft();
-      $$(".tab-button").forEach((tab) => tab.classList.remove("active"));
-      $$(".page").forEach((page) => page.classList.remove("active"));
-      button.classList.add("active");
-      $(`#${button.dataset.tab}`).classList.add("active");
-      document.body.classList.remove("nav-open");
-      renderAll();
+      navigateToTab(button.dataset.tab);
     });
+  });
+  $$("[data-back-tab], .portal-tile").forEach((button) => {
+    button.addEventListener("click", () => navigateToTab(button.dataset.backTab || button.dataset.tab));
   });
   $("#mobileMenuButton")?.addEventListener("click", () => document.body.classList.toggle("nav-open"));
   $("#mobileScrim")?.addEventListener("click", () => document.body.classList.remove("nav-open"));
@@ -2013,9 +2051,7 @@ function setupTabs() {
 function enforceMobilePages() {
   if (!mobileQuery.matches) return;
   const activePage = $(".page.active");
-  if (activePage && ["history", "schedule"].includes(activePage.id)) {
-    document.querySelector('[data-tab="dashboard"]').click();
-  }
+  if (activePage && !["dashboard", "attendance", "management", ...Object.keys(parentTabs)].includes(activePage.id)) navigateToTab("dashboard");
 }
 
 function setupDashboardFilter() {
@@ -2134,6 +2170,13 @@ function setupForms() {
   $("#printTermReport").addEventListener("click", printTermReportPdf);
   $("#downloadTermReportImage").addEventListener("click", downloadTermReportImage);
   $("#downloadTermReportExcel").addEventListener("click", downloadTermReportExcel);
+  $$("#scoreSectionSwitch [data-score-section]").forEach((button) => {
+    button.addEventListener("click", () => {
+      if (scoreSection === "entry") captureScoreDraft();
+      scoreSection = button.dataset.scoreSection;
+      renderAll();
+    });
+  });
 
   ["examDate", "examGrade", "examSubject", "examScope", "examPaperCount", "examNoTest", "scoreStudentSearch", "scoreStudentFilter"].forEach((id) => {
     onInputChange(id, captureScoreDraft);
@@ -2141,6 +2184,10 @@ function setupForms() {
   ["examDate", "examGrade", "examSubject"].forEach((id) => {
     onInputChange(id, () => {
       if (!editingExamId) selectedClassReportExamId = null;
+      renderExamSubjectOptions();
+      renderScoreStudentFilter();
+      renderScoreEntryList();
+      renderClassReport();
     });
   });
   $("#scoreEntryList").addEventListener("input", captureScoreDraft);
@@ -2571,7 +2618,7 @@ function setupActions() {
       const student = getStudent(editStudentId);
       if (student) {
         fillStudentForm(student);
-        document.querySelector('[data-tab="students"]').click();
+        navigateToTab("students");
         $("#studentName").focus();
       }
     }
@@ -2596,7 +2643,7 @@ function setupActions() {
       const exam = state.exams.find((record) => record.id === viewExamId);
       if (exam) {
         viewExamReport(exam);
-        document.querySelector('[data-tab="scores"]').click();
+        navigateToTab("scores");
         $("#classReport")?.scrollIntoView({ behavior: "smooth", block: "start" });
       }
     }
@@ -2604,7 +2651,7 @@ function setupActions() {
       const exam = state.exams.find((record) => record.id === editExamId);
       if (exam) {
         fillExamForm(exam);
-        document.querySelector('[data-tab="scores"]').click();
+        navigateToTab("scores");
         $("#examDate").focus();
       }
     }
@@ -2880,6 +2927,7 @@ function renderAll() {
   renderStudents();
   renderSchedule();
   renderScoreEntryList();
+  renderScoreSections();
   renderClassReport();
   renderExamHistory();
   renderStudentReport();
