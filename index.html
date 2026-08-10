@@ -59,6 +59,13 @@
       <button class="logout-button" id="parentLogout" type="button">離開家長端</button>
     </header>
     <main class="parent-main">
+      <section class="panel large-panel">
+        <div class="panel-title">
+          <h2>重大行事曆公告</h2>
+          <span>老師張貼事項</span>
+        </div>
+        <div id="parentEventList" class="record-list"></div>
+      </section>
       <section class="panel">
         <div class="panel-title">
           <h2>請假紀錄</h2>
@@ -228,7 +235,55 @@
             <strong>生涯檔案</strong>
             <span>學生歷程、折線圖與家長報告</span>
           </button>
+          <button class="portal-tile" type="button" data-tab="events">
+            <strong>重大行事曆公告</strong>
+            <span>固定與臨時重大事件張貼</span>
+          </button>
         </div>
+      </section>
+
+      <section class="page" id="events">
+        <header class="section-head">
+          <div>
+            <p class="eyebrow">重大行事曆公告</p>
+            <h1>家長端公告管理</h1>
+          </div>
+          <button class="ghost back-button" type="button" data-back-tab="management">返回班務管理</button>
+        </header>
+        <form class="form-grid panel" id="eventForm">
+          <label>公告班級
+            <select id="eventGrade">
+              <option value="全體">全體</option>
+              <option value="國一">國一</option>
+              <option value="國二">國二</option>
+              <option value="國三">國三</option>
+            </select>
+          </label>
+          <label>事件類型
+            <select id="eventType">
+              <option value="固定重大事件">固定重大事件</option>
+              <option value="臨時重大事件">臨時重大事件</option>
+            </select>
+          </label>
+          <label>日期
+            <input id="eventDate" type="date" required>
+          </label>
+          <label>公告標題
+            <input id="eventTitle" placeholder="例：段考衝刺課、停課公告" required>
+          </label>
+          <label class="wide-field">公告內容
+            <textarea id="eventNote" rows="3" placeholder="輸入要給家長看的說明"></textarea>
+          </label>
+          <button class="primary" type="submit">張貼公告</button>
+          <button class="ghost" id="cancelEventEdit" type="button" hidden>取消編輯</button>
+        </form>
+        <section class="panel list-panel">
+          <div class="panel-title">
+            <h2>已張貼公告</h2>
+            <span>可編輯或刪除</span>
+          </div>
+          <div id="eventManageList" class="record-list"></div>
+        </section>
       </section>
 
       <section class="page" id="students">

@@ -25,6 +25,7 @@ let scoreSection = "entry";
 let termSection = "entry";
 let scoreDraft = null;
 let careerSubject = "全部";
+let editingEventId = null;
 let currentBranch = sessionStorage.getItem(SESSION_KEY) || "";
 let state = currentBranch ? loadState() : emptyState();
 let syncReady = false;
@@ -51,6 +52,7 @@ const parentTabs = {
   scores: "management",
   term: "management",
   career: "management",
+  events: "management",
 };
 
 function emptyState() {
@@ -62,6 +64,7 @@ function emptyState() {
     exams: [],
     termScores: [],
     termPeriods: {},
+    events: [],
     archives: [],
   };
 }
@@ -136,6 +139,7 @@ function normalizeState(raw) {
       date: item.date || item.createdAt?.slice(0, 10) || todayISO(),
     })),
     termPeriods: normalizeTermPeriods(raw.termPeriods || {}),
+    events: normalizeEvents(raw.events || []),
     archives: raw.archives || [],
   };
 }
@@ -143,6 +147,19 @@ function normalizeState(raw) {
 function normalizeTermPeriods(raw) {
   return Object.fromEntries(Object.entries(raw || {})
     .filter(([, value]) => typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)));
+}
+
+function normalizeEvents(records) {
+  return (records || []).map((record) => ({
+    id: record.id || crypto.randomUUID(),
+    grade: ["全體", ...grades].includes(record.grade) ? record.grade : "全體",
+    type: ["固定重大事件", "臨時重大事件"].includes(record.type) ? record.type : "臨時重大事件",
+    date: record.date || todayISO(),
+    title: record.title || "",
+    note: record.note || "",
+    createdAt: record.createdAt || new Date().toISOString(),
+    updatedAt: record.updatedAt || record.createdAt || new Date().toISOString(),
+  })).filter((record) => record.title.trim());
 }
 
 function normalizeCourses(values) {
@@ -2390,6 +2407,28 @@ function setupDashboardFilter() {
   });
 }
 
+function clearEventForm() {
+  editingEventId = null;
+  $("#eventGrade").value = "全體";
+  $("#eventType").value = "固定重大事件";
+  $("#eventDate").value = todayISO();
+  $("#eventTitle").value = "";
+  $("#eventNote").value = "";
+  $("#eventForm .primary").textContent = "張貼公告";
+  $("#cancelEventEdit").hidden = true;
+}
+
+function fillEventForm(record) {
+  editingEventId = record.id;
+  $("#eventGrade").value = record.grade;
+  $("#eventType").value = record.type;
+  $("#eventDate").value = record.date;
+  $("#eventTitle").value = record.title;
+  $("#eventNote").value = record.note || "";
+  $("#eventForm .primary").textContent = "儲存公告";
+  $("#cancelEventEdit").hidden = false;
+}
+
 function setupForms() {
   const onInputChange = (id, handler) => {
     const element = $(`#${id}`);
@@ -2467,6 +2506,38 @@ function setupForms() {
     });
     $("#lateNote").value = "";
     saveState();
+    renderAll();
+  });
+
+  $("#eventForm")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const payload = {
+      grade: $("#eventGrade").value,
+      type: $("#eventType").value,
+      date: $("#eventDate").value,
+      title: $("#eventTitle").value.trim(),
+      note: $("#eventNote").value.trim(),
+      updatedAt: new Date().toISOString(),
+    };
+    if (!payload.title) return alert("請輸入公告標題");
+    if (editingEventId) {
+      const record = state.events.find((item) => item.id === editingEventId);
+      if (record) Object.assign(record, payload);
+    } else {
+      state.events.push({
+        id: crypto.randomUUID(),
+        ...payload,
+        createdAt: new Date().toISOString(),
+      });
+    }
+    clearEventForm();
+    saveState();
+    renderAll();
+    flashButton(event.submitter, "已張貼");
+  });
+
+  $("#cancelEventEdit")?.addEventListener("click", () => {
+    clearEventForm();
     renderAll();
   });
 
@@ -2917,6 +2988,44 @@ function renderHistory() {
   }).join("") || `<div class="empty">目前沒有符合條件的歷史紀錄。</div>`;
 }
 
+function eventVisibleToStudent(record, student) {
+  return record.grade === "全體" || record.grade === student?.grade;
+}
+
+function sortedEvents(records = state.events) {
+  return records.slice().sort((a, b) => {
+    const fixedOrder = a.type === b.type ? 0 : a.type === "臨時重大事件" ? -1 : 1;
+    return fixedOrder || b.date.localeCompare(a.date) || (b.updatedAt || "").localeCompare(a.updatedAt || "");
+  });
+}
+
+function renderEventCard(record, withActions = false) {
+  return `
+    <article class="record-card event-card ${record.type === "臨時重大事件" ? "ending" : ""}">
+      <strong>${record.title}</strong>
+      <div class="meta">
+        <span class="badge">${record.type}</span>
+        <span class="badge">${record.grade}</span>
+        <span class="badge">${dateLabel(record.date)}</span>
+        ${record.note ? `<span class="badge gold">${record.note}</span>` : ""}
+      </div>
+      ${withActions ? `
+        <div class="action-row">
+          <button class="ghost" data-edit-event="${record.id}">編輯</button>
+          <button class="ghost danger" data-delete-event="${record.id}">刪除</button>
+        </div>` : ""}
+    </article>
+  `;
+}
+
+function renderEventManageList() {
+  const target = $("#eventManageList");
+  if (!target) return;
+  target.innerHTML = sortedEvents()
+    .map((record) => renderEventCard(record, true))
+    .join("") || `<div class="empty">尚未張貼重大行事曆公告。</div>`;
+}
+
 function setupActions() {
   document.addEventListener("click", (event) => {
     const deleteStudentId = event.target.dataset.deleteStudent;
@@ -2931,6 +3040,8 @@ function setupActions() {
     const viewTermReportKey = event.target.dataset.viewTermReport;
     const editTermReportKey = event.target.dataset.editTermReport;
     const deleteTermReportKey = event.target.dataset.deleteTermReport;
+    const editEventId = event.target.dataset.editEvent;
+    const deleteEventId = event.target.dataset.deleteEvent;
 
     if (pickLeaveStudentId) {
       const student = getStudent(pickLeaveStudentId);
@@ -3014,8 +3125,20 @@ function setupActions() {
         renderAll();
       }
     }
+    if (editEventId) {
+      const record = state.events.find((item) => item.id === editEventId);
+      if (record) {
+        fillEventForm(record);
+        navigateToTab("events");
+        $("#eventTitle").focus();
+      }
+    }
+    if (deleteEventId && confirm("確定刪除這則重大行事曆公告？家長端也會同步移除。")) {
+      state.events = state.events.filter((item) => item.id !== deleteEventId);
+      if (editingEventId === deleteEventId) clearEventForm();
+    }
 
-    if (deleteStudentId || dismissLeaveId || deleteLeaveId || removeLateId || deleteExamId) {
+    if (deleteStudentId || dismissLeaveId || deleteLeaveId || removeLateId || deleteExamId || deleteEventId) {
       saveState();
       renderAll();
     }
@@ -3208,6 +3331,9 @@ function renderParentPortal() {
   const student = getStudent(parentStudentId);
   if (!student) return;
   $("#parentStudentTitle").textContent = `${student.name} 生涯檔案`;
+  $("#parentEventList").innerHTML = sortedEvents(state.events.filter((record) => eventVisibleToStudent(record, student)))
+    .map((record) => renderEventCard(record))
+    .join("") || `<div class="empty">目前尚無重大行事曆公告。</div>`;
   $("#parentLeaveList").innerHTML = state.leaves
     .filter((record) => record.studentId === student.id)
     .sort((a, b) => getLeaveStart(b).localeCompare(getLeaveStart(a)))
@@ -3293,6 +3419,7 @@ function renderAll() {
   renderTermScoreEntryList();
   renderTermReport();
   renderTermHistoryList();
+  renderEventManageList();
   renderActiveLeaves();
   renderLateBoard();
   renderManageLists();
@@ -3311,6 +3438,7 @@ function boot() {
   $("#careerTermAnalysisYear").value = String(new Date().getFullYear() - 1911);
   renderExamSubjectOptions();
   $("#lateDate").value = todayISO();
+  $("#eventDate").value = todayISO();
   setupTabs();
   mobileQuery.addEventListener("change", enforceMobilePages);
   setupDashboardFilter();
