@@ -25,6 +25,7 @@ let scoreSection = "entry";
 let termSection = "entry";
 let scoreDraft = null;
 let careerSubject = "全部";
+let parentCareerSubject = "全部";
 let editingEventId = null;
 let currentBranch = sessionStorage.getItem(SESSION_KEY) || "";
 let state = currentBranch ? loadState() : emptyState();
@@ -1611,6 +1612,12 @@ function selectedCareerSubject(student) {
   return "全部";
 }
 
+function selectedParentCareerSubject(student) {
+  const subjects = careerSubjectsForStudent(student);
+  if (parentCareerSubject !== "全部" && subjects.includes(parentCareerSubject)) return parentCareerSubject;
+  return "全部";
+}
+
 function scoreLineChart(rows) {
   const chartRows = rows.slice(-12);
   if (chartRows.length < 2) return `<div class="empty small-empty">至少需要 2 次成績才會形成折線圖。</div>`;
@@ -1661,25 +1668,30 @@ function termScoreLineChart(rows) {
   `;
 }
 
-function renderCareerSubjectButtons(student) {
-  const target = $("#careerSubjectButtons");
-  if (!target) return;
+function careerSubjectButtonsHtml(student, selected, dataAttribute) {
   const subjects = careerSubjectsForStudent(student);
-  const selected = selectedCareerSubject(student);
-  target.innerHTML = `
-    <button class="subject-chip ${selected === "全部" ? "active" : ""}" type="button" data-career-subject="全部">全部</button>
-    ${subjects.map((subject) => `<button class="subject-chip ${selected === subject ? "active" : ""}" type="button" data-career-subject="${subject}">${subject}</button>`).join("")}
+  return `
+    <button class="subject-chip ${selected === "全部" ? "active" : ""}" type="button" ${dataAttribute}="全部">全部</button>
+    ${subjects.map((subject) => `<button class="subject-chip ${selected === subject ? "active" : ""}" type="button" ${dataAttribute}="${subject}">${subject}</button>`).join("")}
   `;
 }
 
-function renderCareerScoreLookup(student) {
-  const target = $("#careerScoreLookup");
+function renderCareerSubjectButtons(student) {
+  const target = $("#careerSubjectButtons");
   if (!target) return;
+  target.innerHTML = careerSubjectButtonsHtml(student, selectedCareerSubject(student), "data-career-subject");
+}
+
+function renderParentCareerSubjectButtons(student) {
+  const target = $("#parentCareerSubjectButtons");
+  if (!target) return;
+  target.innerHTML = careerSubjectButtonsHtml(student, selectedParentCareerSubject(student), "data-parent-career-subject");
+}
+
+function careerScoreLookupHtml(student, queryDate, selectedSubject) {
   if (!student) {
-    target.innerHTML = `<div class="empty">請先選擇學生。</div>`;
-    return;
+    return `<div class="empty">請先選擇學生。</div>`;
   }
-  const queryDate = $("#careerQueryDate")?.value || todayISO();
   const dateSubjects = scheduledSubjectsForStudentDate(student, queryDate);
   const rows = studentExamRows(student)
     .filter((row) => !dateSubjects.length || dateSubjects.includes(row.exam.subject))
@@ -1688,13 +1700,12 @@ function renderCareerScoreLookup(student) {
   const termRows = state.termScores
     .filter((item) => item.studentId === student.id)
     .filter((item) => !dateSubjects.length || dateSubjects.includes(normalizeCourseName(item.subject)));
-  const selectedSubject = selectedCareerSubject(student);
   const subjectHistoryRows = studentExamRows(student)
     .filter((row) => studentTakesSubject(student, row.exam.subject))
     .filter((row) => selectedSubject === "全部" || row.exam.subject === selectedSubject)
     .sort((a, b) => b.exam.date.localeCompare(a.exam.date));
   const subjectCardTitle = selectedSubject === "全部" ? "各科週考紀錄" : `${selectedSubject}週考紀錄`;
-  target.innerHTML = `
+  return `
     <div class="lookup-result">
       <strong>${dateLabel(queryDate)} ${scheduledSubjectLabel(dateSubjects)}</strong>
       <div class="lookup-list">
@@ -1746,8 +1757,14 @@ function renderCareerScoreLookup(student) {
   `;
 }
 
-function renderCareerTermYearOptions(student) {
-  const target = $("#careerTermYear");
+function renderCareerScoreLookup(student) {
+  const target = $("#careerScoreLookup");
+  if (!target) return;
+  target.innerHTML = careerScoreLookupHtml(student, $("#careerQueryDate")?.value || todayISO(), selectedCareerSubject(student));
+}
+
+function renderTermYearOptions(student, targetId) {
+  const target = $(`#${targetId}`);
   if (!target) return;
   const previous = target.value;
   const years = [...new Set(state.termScores
@@ -1759,22 +1776,16 @@ function renderCareerTermYearOptions(student) {
   target.value = previous && years.includes(previous) ? previous : years[0] || "";
 }
 
-function renderCareerTermTrend(student) {
-  const target = $("#careerTermTrend");
-  if (!target) return;
+function termTrendHtml(student, year) {
   if (!student) {
-    target.innerHTML = `<div class="empty">請先選擇學生。</div>`;
-    return;
+    return `<div class="empty">請先選擇學生。</div>`;
   }
-  renderCareerTermYearOptions(student);
-  const year = $("#careerTermYear")?.value;
   const rows = state.termScores
     .filter((item) => item.studentId === student.id)
     .filter((item) => !year || item.year === year)
     .sort((a, b) => `${a.year}${a.semester}${a.stage}${a.subject}`.localeCompare(`${b.year}${b.semester}${b.stage}${b.subject}`, "zh-Hant"));
   if (!rows.length) {
-    target.innerHTML = `<div class="empty">尚無段考成績紀錄。</div>`;
-    return;
+    return `<div class="empty">尚無段考成績紀錄。</div>`;
   }
   const bySubject = termSubjects
     .map((subject) => ({
@@ -1788,7 +1799,7 @@ function renderCareerTermTrend(student) {
     if (!groups.has(key)) groups.set(key, { label: key, scores: {} });
     groups.get(key).scores[normalizeCourseName(row.subject)] = Number(row.score);
   });
-  target.innerHTML = `
+  return `
     <div class="analysis-grid">
       ${bySubject.map((item) => {
         const avg = item.rows.reduce((sum, row) => sum + Number(row.score), 0) / item.rows.length;
@@ -1811,12 +1822,39 @@ function renderCareerTermTrend(student) {
   `;
 }
 
+function renderCareerTermYearOptions(student) {
+  renderTermYearOptions(student, "careerTermYear");
+}
+
+function renderCareerTermTrend(student) {
+  const target = $("#careerTermTrend");
+  if (!target) return;
+  renderCareerTermYearOptions(student);
+  target.innerHTML = termTrendHtml(student, $("#careerTermYear")?.value);
+}
+
+function renderParentTermTrend(student) {
+  const target = $("#parentTermTrend");
+  if (!target) return;
+  renderTermYearOptions(student, "parentTermYear");
+  target.innerHTML = termTrendHtml(student, $("#parentTermYear")?.value);
+}
+
 function currentTermAnalysisMeta(student) {
   return {
     year: $("#careerTermAnalysisYear")?.value.trim() || String(new Date().getFullYear() - 1911),
     semester: $("#careerTermAnalysisSemester")?.value || "上學期",
     grade: student?.grade || $("#careerGrade")?.value || "國一",
     stage: $("#careerTermAnalysisStage")?.value || "一段",
+  };
+}
+
+function currentParentTermAnalysisMeta(student) {
+  return {
+    year: $("#parentTermAnalysisYear")?.value.trim() || String(new Date().getFullYear() - 1911),
+    semester: $("#parentTermAnalysisSemester")?.value || "上學期",
+    grade: student?.grade || "國一",
+    stage: $("#parentTermAnalysisStage")?.value || "一段",
   };
 }
 
@@ -1845,20 +1883,14 @@ function termAnalysisRows(student, meta) {
   return { endDate, previousDate, rows };
 }
 
-function renderTermAnalysisReport(student) {
-  const target = $("#termAnalysisReport");
-  if (!target) return;
+function termAnalysisReportHtml(student, meta, selectedSubject) {
   if (!student) {
-    target.innerHTML = `<div class="empty">請先選擇學生。</div>`;
-    return;
+    return `<div class="empty">請先選擇學生。</div>`;
   }
-  const meta = currentTermAnalysisMeta(student);
   const { endDate, previousDate, rows } = termAnalysisRows(student, meta);
   if (!endDate) {
-    target.innerHTML = `<div class="empty">請先設定 ${meta.year}${meta.semester} ${meta.grade} ${meta.stage} 的段考截止日期。</div>`;
-    return;
+    return `<div class="empty">請先設定 ${meta.year}${meta.semester} ${meta.grade} ${meta.stage} 的段考截止日期。</div>`;
   }
-  const selectedSubject = selectedCareerSubject(student);
   const filteredRows = rows.filter((row) => selectedSubject === "全部" || row.exam.subject === selectedSubject);
   const bySubject = courses
     .map((subject) => ({
@@ -1867,7 +1899,7 @@ function renderTermAnalysisReport(student) {
     }))
     .filter((item) => item.rows.length);
   const periodText = previousDate ? `${dateLabel(previousDate)} 之後至 ${dateLabel(endDate)}` : `${dateLabel(endDate)} 前`;
-  target.innerHTML = `
+  return `
     <div class="report-head">
       <strong>${studentLabel(student)}｜${meta.year}${meta.semester} ${meta.stage}</strong>
       <span>${periodText}</span>
@@ -1903,6 +1935,18 @@ function renderTermAnalysisReport(student) {
       </table>
     </div>
   `;
+}
+
+function renderTermAnalysisReport(student) {
+  const target = $("#termAnalysisReport");
+  if (!target) return;
+  target.innerHTML = termAnalysisReportHtml(student, currentTermAnalysisMeta(student), selectedCareerSubject(student));
+}
+
+function renderParentTermAnalysisReport(student) {
+  const target = $("#parentTermAnalysisReport");
+  if (!target) return;
+  target.innerHTML = termAnalysisReportHtml(student, currentParentTermAnalysisMeta(student), selectedParentCareerSubject(student));
 }
 
 function renderStudentReport() {
@@ -2599,17 +2643,16 @@ function setupForms() {
     renderAll();
   });
 
-  $("#parentSubjectFilter")?.addEventListener("input", () => {
+  $("#parentCareerSubjectButtons")?.addEventListener("click", (event) => {
+    const subject = event.target.dataset.parentCareerSubject;
+    if (!subject) return;
+    parentCareerSubject = subject;
     if (parentStudentId) renderParentPortal();
   });
-  $("#parentSubjectFilter")?.addEventListener("change", () => {
-    if (parentStudentId) renderParentPortal();
-  });
-  $("#parentScoreDate")?.addEventListener("input", () => {
-    if (parentStudentId) renderParentPortal();
-  });
-  $("#parentScoreDate")?.addEventListener("change", () => {
-    if (parentStudentId) renderParentPortal();
+  ["parentScoreDate", "parentTermYear", "parentTermAnalysisYear", "parentTermAnalysisSemester", "parentTermAnalysisStage"].forEach((id) => {
+    onInputChange(id, () => {
+      if (parentStudentId) renderParentPortal();
+    });
   });
 }
 
@@ -3321,14 +3364,12 @@ function renderParentPortal() {
     .sort((a, b) => getLeaveStart(b).localeCompare(getLeaveStart(a)))
     .map(renderLeaveCard)
     .join("") || `<div class="empty">尚無請假紀錄。</div>`;
-  renderParentSubjectOptions(student);
-  $("#parentScoreList").innerHTML = renderParentScoreHistory(student);
-  const parentSubjects = scheduledSubjectsForStudentDate(student, $("#parentScoreDate")?.value || todayISO());
-  const parentSubjectValue = $("#parentSubjectFilter")?.value || "當日課程";
-  const reportSubject = parentSubjectValue === "當日課程"
-    ? parentSubjects.length === 1 ? parentSubjects[0] : "全部"
-    : parentSubjectValue;
-  $("#parentReport").innerHTML = renderStudentReportHtml(student, reportSubject);
+  if (parentCareerSubject !== "全部" && !careerSubjectsForStudent(student).includes(parentCareerSubject)) parentCareerSubject = "全部";
+  renderParentCareerSubjectButtons(student);
+  $("#parentScoreList").innerHTML = careerScoreLookupHtml(student, $("#parentScoreDate")?.value || todayISO(), selectedParentCareerSubject(student));
+  renderParentTermTrend(student);
+  renderParentTermAnalysisReport(student);
+  $("#parentReport").innerHTML = renderStudentReportHtml(student, selectedParentCareerSubject(student));
 }
 
 function setupLogin() {
@@ -3419,6 +3460,7 @@ function boot() {
   $("#parentScoreDate").value = todayISO();
   $("#termYear").value = String(new Date().getFullYear() - 1911);
   $("#careerTermAnalysisYear").value = String(new Date().getFullYear() - 1911);
+  $("#parentTermAnalysisYear").value = String(new Date().getFullYear() - 1911);
   renderExamSubjectOptions();
   $("#lateDate").value = todayISO();
   $("#eventDate").value = todayISO();

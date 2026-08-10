@@ -73,22 +73,59 @@
         </div>
         <div id="parentLeaveList" class="record-list"></div>
       </section>
-      <section class="panel">
+      <section class="panel career-query-panel">
         <div class="panel-title">
-          <h2>各科成績與排名</h2>
-          <span>班平均 / 個人排名</span>
+          <h2>成績調閱</h2>
+          <span>依學生科目與日期查詢</span>
         </div>
+        <div class="career-subject-buttons" id="parentCareerSubjectButtons"></div>
         <div class="toolbar parent-score-toolbar">
-          <select id="parentSubjectFilter"></select>
           <label>查詢日期
             <input id="parentScoreDate" type="date">
           </label>
         </div>
         <div id="parentScoreList"></div>
       </section>
+      <section class="panel career-query-panel">
+        <div class="panel-title">
+          <h2>段考變化</h2>
+          <span>依學年查看歷史段考成績紀錄</span>
+        </div>
+        <div class="toolbar compact-toolbar">
+          <label>學年
+            <select id="parentTermYear"></select>
+          </label>
+        </div>
+        <div id="parentTermTrend"></div>
+      </section>
+      <section class="panel career-query-panel">
+        <div class="panel-title">
+          <h2>段考分析報告</h2>
+          <span>截止日在老師端段考成績登記設定</span>
+        </div>
+        <div class="toolbar compact-toolbar">
+          <label>學年
+            <input id="parentTermAnalysisYear" placeholder="例：115">
+          </label>
+          <label>學期
+            <select id="parentTermAnalysisSemester">
+              <option value="上學期">上學期</option>
+              <option value="下學期">下學期</option>
+            </select>
+          </label>
+          <label>段考
+            <select id="parentTermAnalysisStage">
+              <option value="一段">一段</option>
+              <option value="二段">二段</option>
+              <option value="三段">三段</option>
+            </select>
+          </label>
+        </div>
+        <div id="parentTermAnalysisReport"></div>
+      </section>
       <section class="panel large-panel">
         <div class="panel-title">
-          <h2>學習分析</h2>
+          <h2>學生週考分析報告</h2>
           <span>僅顯示該學生</span>
         </div>
         <div id="parentReport"></div>
