@@ -8,7 +8,7 @@ const SUPABASE_COLLECTION = "leaveDutyBranches";
 const grades = ["國一", "國二", "國三"];
 const weekdays = ["一", "二", "三", "四", "五", "六", "日"];
 const periods = ["上午", "下午", "晚上"];
-const courses = ["國文", "英文", "數A", "數B", "數學", "自然", "總複習", "素養課", "讀書班"];
+const courses = ["國文", "英文", "數A", "數B", "數學", "數輔", "自然", "總複習", "素養課", "讀書班"];
 const termSubjects = ["國文", "英文", "數學", "自然", "歷史", "地理", "公民"];
 const reportSubjects = [...new Set([...courses, ...termSubjects])];
 const scheduleCourses = [...courses, "考加"];
@@ -152,6 +152,9 @@ function normalizeCourseName(value) {
     數A: "數A",
     數B: "數B",
     數學: "數學",
+    數輔: "數輔",
+    數學輔導: "數輔",
+    數學輔導課: "數輔",
     社: "社會",
     社會: "社會",
     自: "自然",
@@ -541,7 +544,7 @@ function studentClassesOnDay(student, day) {
 
 function studentMatchesCourse(student, course) {
   if (student.courses.includes(course)) return true;
-  const mathGroup = ["數A", "數B", "數學"];
+  const mathGroup = ["數A", "數B", "數學", "數輔"];
   return mathGroup.includes(course) && student.courses.some((item) => mathGroup.includes(item));
 }
 
@@ -647,8 +650,15 @@ function renderSubjectOptions(targetId, includeExamPlus = false) {
 }
 
 function mathCoursesForGrade(grade) {
-  const mathGroup = ["數A", "數B", "數學"];
+  const mathGroup = ["數A", "數B", "數學", "數輔"];
   return mathGroup.filter((course) => state.students.some((student) => student.grade === grade && student.courses.includes(course)));
+}
+
+function studentTakesSubject(student, subject) {
+  if (!student) return false;
+  if (student.courses.includes(subject)) return true;
+  if (subject === "數輔") return student.courses.some((course) => ["數A", "數B", "數學", "數輔"].includes(course));
+  return false;
 }
 
 function examSubjectsForDateAndGrade(date, grade) {
@@ -667,6 +677,17 @@ function examSubjectsForDateAndGrade(date, grade) {
     }
   });
   return [...new Set(subjects)].filter((course) => courses.includes(course));
+}
+
+function scheduledSubjectsForStudentDate(student, date) {
+  if (!student) return [];
+  const subjects = examSubjectsForDateAndGrade(date, student.grade)
+    .filter((subject) => studentTakesSubject(student, subject));
+  return subjects.length ? subjects : studentAvailableSubjects(student);
+}
+
+function scheduledSubjectLabel(subjects) {
+  return subjects.length ? subjects.join("、") : "當日課程";
 }
 
 function renderExamSubjectOptions() {
@@ -712,7 +733,7 @@ function saveSchedule() {
 function studentsForGradeAndSubject(grade, subject) {
   return state.students
     .filter((student) => student.grade === grade)
-    .filter((student) => student.courses.includes(subject));
+    .filter((student) => studentTakesSubject(student, subject));
 }
 
 function visibleScoreStudents() {
@@ -1614,18 +1635,18 @@ function renderCareerScoreLookup(student) {
     target.innerHTML = `<div class="empty">請先選擇學生。</div>`;
     return;
   }
-  const subject = selectedCareerSubject(student);
   const queryDate = $("#careerQueryDate")?.value || todayISO();
+  const dateSubjects = scheduledSubjectsForStudentDate(student, queryDate);
   const rows = studentExamRows(student)
-    .filter((row) => subject === "全部" || row.exam.subject === subject)
+    .filter((row) => !dateSubjects.length || dateSubjects.includes(row.exam.subject))
     .sort((a, b) => b.exam.date.localeCompare(a.exam.date));
   const dayRows = rows.filter((row) => row.exam.date === queryDate);
   const termRows = state.termScores
     .filter((item) => item.studentId === student.id)
-    .filter((item) => subject === "全部" || normalizeCourseName(item.subject) === subject);
+    .filter((item) => !dateSubjects.length || dateSubjects.includes(normalizeCourseName(item.subject)));
   target.innerHTML = `
     <div class="lookup-result">
-      <strong>${dateLabel(queryDate)} ${subject === "全部" ? "全部科目" : subject}</strong>
+      <strong>${dateLabel(queryDate)} ${scheduledSubjectLabel(dateSubjects)}</strong>
       <div class="lookup-list">
         ${dayRows.map((row) => `<article class="score-result-card"><b>${row.exam.subject}</b><span>${row.exam.scope || "未填重點"}</span><strong class="${scoreClass(row.score)}">${scoreDisplay(row.score)}</strong><small>各卷 ${row.papers.map(scoreDisplay).join(" / ")}</small></article>`).join("") || `<div class="empty small-empty">當日此科暫時沒有成績。</div>`}
       </div>
@@ -2959,23 +2980,26 @@ function renderParentSubjectOptions(student) {
   const target = $("#parentSubjectFilter");
   if (!target) return;
   const previous = target.value;
-  const subjects = studentAvailableSubjects(student);
-  target.innerHTML = `<option value="全部">全部科目</option>${subjects.map((subject) => `<option value="${subject}">${subject}</option>`).join("")}`;
-  target.value = previous && [...subjects, "全部"].includes(previous) ? previous : "全部";
+  const queryDate = $("#parentScoreDate")?.value || todayISO();
+  const subjects = scheduledSubjectsForStudentDate(student, queryDate);
+  target.innerHTML = `<option value="當日課程">${scheduledSubjectLabel(subjects)}</option>${subjects.map((subject) => `<option value="${subject}">${subject}</option>`).join("")}`;
+  target.value = previous && ["當日課程", ...subjects].includes(previous) ? previous : "當日課程";
 }
 
 function renderParentScoreHistory(student) {
-  const subject = $("#parentSubjectFilter")?.value || "全部";
   const queryDate = $("#parentScoreDate")?.value || todayISO();
+  const dateSubjects = scheduledSubjectsForStudentDate(student, queryDate);
+  const selectedSubject = $("#parentSubjectFilter")?.value || "當日課程";
+  const lookupSubjects = selectedSubject === "當日課程" ? dateSubjects : [selectedSubject];
   const rows = studentExamRows(student)
-    .filter((row) => subject === "全部" || row.exam.subject === subject)
+    .filter((row) => !lookupSubjects.length || lookupSubjects.includes(row.exam.subject))
     .slice()
     .sort((a, b) => b.exam.date.localeCompare(a.exam.date));
   const dayRows = rows.filter((row) => row.exam.date === queryDate);
   const historyRows = rows.filter((row) => row.exam.date !== queryDate);
   const termRows = state.termScores
     .filter((item) => item.studentId === student.id)
-    .filter((item) => subject === "全部" || normalizeCourseName(item.subject) === subject)
+    .filter((item) => !lookupSubjects.length || lookupSubjects.includes(normalizeCourseName(item.subject)))
     .slice()
     .sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
   const dayTermRows = termRows.filter((item) => (item.date || item.createdAt?.slice(0, 10) || "") === queryDate);
@@ -2985,10 +3009,10 @@ function renderParentScoreHistory(student) {
 
   return `
     <div class="parent-history-head">
-      <strong>${subject === "全部" ? "全部科目歷史成績" : `${subject} 歷史成績`}</strong>
-      <span>可調閱週考、段考與排名紀錄</span>
+      <strong>${scheduledSubjectLabel(lookupSubjects)} 歷史成績</strong>
+      <span>${dateLabel(queryDate)} 依課表自動判斷科目</span>
     </div>
-    ${studentScoreSummary(student, subject)}
+    ${lookupSubjects.map((subject) => studentScoreSummary(student, subject)).join("") || studentScoreSummary(student, "全部")}
     <h3 class="subhead">當日成績</h3>
     <div class="lookup-list">
       ${[
@@ -3055,7 +3079,12 @@ function renderParentPortal() {
     .join("") || `<div class="empty">尚無請假紀錄。</div>`;
   renderParentSubjectOptions(student);
   $("#parentScoreList").innerHTML = renderParentScoreHistory(student);
-  $("#parentReport").innerHTML = renderStudentReportHtml(student, $("#parentSubjectFilter")?.value || "全部");
+  const parentSubjects = scheduledSubjectsForStudentDate(student, $("#parentScoreDate")?.value || todayISO());
+  const parentSubjectValue = $("#parentSubjectFilter")?.value || "當日課程";
+  const reportSubject = parentSubjectValue === "當日課程"
+    ? parentSubjects.length === 1 ? parentSubjects[0] : "全部"
+    : parentSubjectValue;
+  $("#parentReport").innerHTML = renderStudentReportHtml(student, reportSubject);
 }
 
 function setupLogin() {
