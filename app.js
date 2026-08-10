@@ -1285,9 +1285,10 @@ function downloadTermReportImage() {
   if (!rows.length) return alert("尚無段考成績單可匯出。");
   const scale = 2;
   const width = 1080;
+  const topSafe = 56;
   const rowHeight = 54;
   const headerHeight = 224;
-  const height = headerHeight + Math.max(rows.length, 1) * rowHeight + 70;
+  const height = topSafe + headerHeight + Math.max(rows.length, 1) * rowHeight + 70;
   const canvas = document.createElement("canvas");
   canvas.width = width * scale;
   canvas.height = height * scale;
@@ -1301,8 +1302,10 @@ function downloadTermReportImage() {
   gradient.addColorStop(.62, "#20242b");
   gradient.addColorStop(1, "#8a6424");
   ctx.fillStyle = gradient;
-  ctx.fillRect(0, 0, width, 160);
+  ctx.fillRect(0, 0, width, 160 + topSafe);
 
+  ctx.save();
+  ctx.translate(0, topSafe);
   ctx.fillStyle = "#f5d47a";
   ctx.font = "bold 34px Microsoft JhengHei, Arial";
   canvasText(ctx, "金牌躍騰教育集團 段考成績單", 54, 64, 720);
@@ -1321,7 +1324,7 @@ function downloadTermReportImage() {
   canvasText(ctx, `${rows.length} 筆成績`, 492, 166, 150);
 
   const tableX = 54;
-  const tableY = 220;
+  const tableY = 244;
   const columns = [
     { label: "排名", width: 90 },
     { label: "姓名", width: 300 },
@@ -1357,6 +1360,7 @@ function downloadTermReportImage() {
       cursor += columns[index].width;
     });
   });
+  ctx.restore();
   ctx.fillStyle = "#76623a";
   ctx.font = "15px Microsoft JhengHei, Arial";
   canvasText(ctx, "不及格分數以紅字標示｜本圖檔可直接傳送家長群組", 54, height - 24, 760);
@@ -1787,11 +1791,12 @@ function downloadClassReportImage() {
   const { average, paperCount, rows } = classReportExportRows(exam);
   const scale = 2;
   const width = 1180;
+  const topSafe = 56;
   const rowHeight = 54;
   const headerHeight = 238;
   const footerHeight = 54;
   const tableRows = Math.max(rows.length, 1);
-  const height = headerHeight + 56 + tableRows * rowHeight + footerHeight;
+  const height = topSafe + headerHeight + 56 + tableRows * rowHeight + footerHeight;
   const canvas = document.createElement("canvas");
   canvas.width = width * scale;
   canvas.height = height * scale;
@@ -1805,8 +1810,10 @@ function downloadClassReportImage() {
   gradient.addColorStop(.55, "#20242b");
   gradient.addColorStop(1, "#8a6424");
   ctx.fillStyle = gradient;
-  ctx.fillRect(0, 0, width, 170);
+  ctx.fillRect(0, 0, width, 170 + topSafe);
 
+  ctx.save();
+  ctx.translate(0, topSafe);
   ctx.fillStyle = "#f5d47a";
   ctx.font = "bold 34px Microsoft JhengHei, Arial";
   canvasText(ctx, "金牌躍騰教育集團 班級成績單", 54, 66, 760);
@@ -1826,7 +1833,7 @@ function downloadClassReportImage() {
   canvasText(ctx, `重點：${exam.scope || "未填考試重點"}`, 438, 176, 650);
 
   const tableX = 54;
-  const tableY = 236;
+  const tableY = 258;
   const tableWidth = 1072;
   const columns = [
     { key: "rank", label: "排名", width: 78 },
@@ -1876,6 +1883,7 @@ function downloadClassReportImage() {
       });
     });
   }
+  ctx.restore();
 
   ctx.fillStyle = "#76623a";
   ctx.font = "15px Microsoft JhengHei, Arial";
