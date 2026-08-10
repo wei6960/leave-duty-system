@@ -434,7 +434,8 @@ function classDaysLabel(student) {
   const labels = weekdays
     .map((day) => {
       const items = studentClassesOnDay(student, day);
-      return items.length ? `星期${day} ${items.join("/")}` : "";
+      if (items.length) return `星期${day} ${items.join("/")}`;
+      return legacyStudentHasClassOnDay(student, day) ? `星期${day}` : "";
     })
     .filter(Boolean);
   return labels.length ? labels.join("、") : "未設定課表";
@@ -471,8 +472,13 @@ function studentClassesOnDay(student, day) {
     .filter((course) => course && (course === "考加" || student.courses.includes(course)));
 }
 
+function legacyStudentHasClassOnDay(student, day) {
+  return (!student.courses || student.courses.length === 0) && Array.isArray(student.weekdays) && student.weekdays.includes(day);
+}
+
 function studentHasClassOnDate(student, date) {
-  return studentClassesOnDay(student, weekdayFromDate(date)).length > 0;
+  const day = weekdayFromDate(date);
+  return studentClassesOnDay(student, day).length > 0 || legacyStudentHasClassOnDay(student, day);
 }
 
 function dashboardStudents() {
@@ -926,7 +932,6 @@ function setupForms() {
       grade: $("#studentGrade").value,
       name: $("#studentName").value.trim(),
       courses: selectedValues("studentCourse"),
-      weekdays: [],
       meal: $("#studentMeal").value,
       fixedLeave: selectedValues("fixedLeave"),
       fixedLate: selectedFixedLate(),
