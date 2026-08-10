@@ -795,11 +795,19 @@ function classReportData(exam) {
   const average = rows.length ? rows.reduce((sum, row) => sum + row.score, 0) / rows.length : NaN;
   const paperCount = Math.max(1, Number(exam.paperCount) || 1);
   const rankedById = new Map(rows.map((row) => [row.student.id, row]));
-  const reportRows = studentsForGradeAndSubject(exam.grade, exam.subject).map((student) => ({
-    student,
-    ranked: rankedById.get(student.id),
-    absent: (exam.absences || []).includes(student.id),
-  }));
+  const reportRows = studentsForGradeAndSubject(exam.grade, exam.subject)
+    .map((student) => ({
+      student,
+      ranked: rankedById.get(student.id),
+      absent: (exam.absences || []).includes(student.id),
+    }))
+    .sort((a, b) => {
+      if (a.ranked && b.ranked) return a.ranked.rank - b.ranked.rank || b.ranked.score - a.ranked.score;
+      if (a.ranked) return -1;
+      if (b.ranked) return 1;
+      if (a.absent !== b.absent) return a.absent ? 1 : -1;
+      return a.student.name.localeCompare(b.student.name, "zh-Hant");
+    });
   return { rows, average, paperCount, reportRows };
 }
 
