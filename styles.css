@@ -740,6 +740,16 @@ legend {
   color: var(--muted);
 }
 
+.fail-score {
+  color: #ff5a4f;
+  font-weight: 900;
+}
+
+.absent-score {
+  color: #ffd9d6;
+  font-weight: 800;
+}
+
 .analysis-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

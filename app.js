@@ -491,6 +491,15 @@ function studentCoursesLabel(student) {
   return student.courses && student.courses.length ? student.courses.join("、") : "未設定";
 }
 
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
 function parentPortalUrl() {
   return `${location.origin}${location.pathname}?parent=1`;
 }
@@ -746,6 +755,32 @@ function currentScoreRows(exam) {
     }));
 }
 
+function scoreDisplay(value) {
+  return Number.isFinite(value) ? value.toFixed(1).replace(/\.0$/, "") : "-";
+}
+
+function scoreClass(value) {
+  return Number.isFinite(value) && value < 60 ? "fail-score" : "";
+}
+
+function scoreTableCell(value, absent = false) {
+  if (absent) return `<td class="absent-score">缺考</td>`;
+  return `<td class="${scoreClass(value)}">${scoreDisplay(value)}</td>`;
+}
+
+function classReportData(exam) {
+  const rows = currentScoreRows(exam);
+  const average = rows.length ? rows.reduce((sum, row) => sum + row.score, 0) / rows.length : NaN;
+  const paperCount = Math.max(1, Number(exam.paperCount) || 1);
+  const rankedById = new Map(rows.map((row) => [row.student.id, row]));
+  const reportRows = studentsForGradeAndSubject(exam.grade, exam.subject).map((student) => ({
+    student,
+    ranked: rankedById.get(student.id),
+    absent: (exam.absences || []).includes(student.id),
+  }));
+  return { rows, average, paperCount, reportRows };
+}
+
 function renderClassReport(exam = latestExamForForm()) {
   if (!exam) {
     $("#classReportBody").innerHTML = `<div class="empty">尚無成績單。</div>`;
@@ -755,25 +790,17 @@ function renderClassReport(exam = latestExamForForm()) {
     $("#classReportBody").innerHTML = `<div class="empty">${dateLabel(exam.date)} ${exam.grade} ${exam.subject}：無考試。${exam.scope ? `重點：${exam.scope}` : ""}</div>`;
     return;
   }
-  const rows = currentScoreRows(exam);
-  const average = rows.length ? (rows.reduce((sum, row) => sum + row.score, 0) / rows.length).toFixed(1) : "-";
-  const paperCount = Math.max(1, Number(exam.paperCount) || 1);
-  const rankedById = new Map(rows.map((row) => [row.student.id, row]));
-  const reportRows = studentsForGradeAndSubject(exam.grade, exam.subject).map((student) => ({
-    student,
-    ranked: rankedById.get(student.id),
-    absent: (exam.absences || []).includes(student.id),
-  }));
+  const { average, paperCount, reportRows } = classReportData(exam);
   $("#classReportBody").innerHTML = `
     <div class="report-head">
       <strong>${dateLabel(exam.date)} ${exam.grade} ${exam.subject}</strong>
-      <span>班平均 ${average}</span>
+      <span>班平均 ${scoreDisplay(average)}</span>
       <span>${paperCount} 份考卷</span>
       <span>${exam.scope ? `重點：${exam.scope}` : "未填考試重點"}</span>
     </div>
     <table>
       <thead><tr><th>排名</th><th>姓名</th><th>班級</th><th>科目</th>${Array.from({ length: paperCount }, (_, index) => `<th>卷${index + 1}</th>`).join("")}<th>平均</th></tr></thead>
-      <tbody>${reportRows.map(({ student, ranked, absent }) => `<tr><td>${ranked ? ranked.rank : "-"}</td><td>${student.name}</td><td>${student.grade}</td><td>${exam.subject}</td>${Array.from({ length: paperCount }, (_, index) => `<td>${absent ? "缺考" : ranked?.papers[index] ?? "-"}</td>`).join("")}<td>${absent ? "缺考" : ranked ? ranked.score.toFixed(1) : "-"}</td></tr>`).join("") || `<tr><td colspan="${5 + paperCount}">尚無成績</td></tr>`}</tbody>
+      <tbody>${reportRows.map(({ student, ranked, absent }) => `<tr><td>${ranked ? ranked.rank : "-"}</td><td>${student.name}</td><td>${student.grade}</td><td>${exam.subject}</td>${Array.from({ length: paperCount }, (_, index) => scoreTableCell(ranked?.papers[index], absent)).join("")}${scoreTableCell(ranked?.score, absent)}</tr>`).join("") || `<tr><td colspan="${5 + paperCount}">尚無成績</td></tr>`}</tbody>
     </table>
   `;
 }
@@ -921,6 +948,142 @@ function renderStudentReport() {
     .filter((item) => item.studentId === student.id)
     .map((item) => `<article class="record-card done"><strong>${item.term}</strong><div class="meta"><span class="badge">${item.summary}</span></div></article>`)
     .join("") || `<div class="empty">尚無歷年紀錄。</div>`;
+}
+
+function pdfDocument(title, body, layout = "portrait") {
+  const printWindow = window.open("", "_blank");
+  if (!printWindow) {
+    alert("請允許瀏覽器跳出視窗，才能產生 PDF 文件。");
+    return;
+  }
+  printWindow.document.write(`<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <title>${escapeHtml(title)}</title>
+  <style>
+    @page { size: A4 ${layout}; margin: 12mm; }
+    * { box-sizing: border-box; }
+    body { margin: 0; color: #161616; background: #fff; font-family: "Microsoft JhengHei", "Noto Sans TC", Arial, sans-serif; }
+    .sheet { width: 100%; }
+    .doc-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-bottom: 14px; border-bottom: 3px solid #b9872f; }
+    .brand { display: flex; align-items: center; gap: 12px; }
+    .brand img { width: 54px; height: 54px; object-fit: cover; border-radius: 50%; }
+    h1 { margin: 0; font-size: 24px; letter-spacing: 0; }
+    h2 { margin: 22px 0 10px; font-size: 17px; color: #7a551a; }
+    .meta { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0; }
+    .pill { border: 1px solid #d8c291; border-radius: 999px; padding: 6px 10px; font-size: 13px; background: #fff9ea; }
+    table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 13px; }
+    th { background: #181818; color: #f7df9b; }
+    th, td { border: 1px solid #cfcfcf; padding: 8px 7px; text-align: center; }
+    td.left, th.left { text-align: left; }
+    .fail-score { color: #e60012; font-weight: 900; }
+    .absent-score { color: #9a3412; font-weight: 800; }
+    .summary { margin-top: 12px; line-height: 1.75; font-size: 14px; }
+    .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-top: 12px; }
+    .card { border: 1px solid #d8c291; padding: 10px; border-radius: 6px; break-inside: avoid; }
+    .card strong { display: block; margin-bottom: 5px; color: #7a551a; }
+    @media print { button { display: none; } }
+  </style>
+</head>
+<body>
+  <main class="sheet">${body}</main>
+  <script>window.addEventListener("load", () => setTimeout(() => window.print(), 150));</script>
+</body>
+</html>`);
+  printWindow.document.close();
+  printWindow.focus();
+}
+
+function printClassReportPdf() {
+  const exam = latestExamForForm();
+  if (!exam) {
+    alert("尚無成績單可輸出。");
+    return;
+  }
+  const title = `${exam.grade} ${exam.subject} 班級成績單`;
+  const scope = exam.scope ? `重點：${escapeHtml(exam.scope)}` : "未填考試重點";
+  if (exam.noExam) {
+    pdfDocument(title, `
+      <header class="doc-head">
+        <div class="brand"><img src="assets/logo.png" alt=""><div><h1>金牌躍騰教育集團 班級成績單</h1><div>${escapeHtml(dateLabel(exam.date))} ${escapeHtml(exam.grade)} ${escapeHtml(exam.subject)}</div></div></div>
+      </header>
+      <div class="meta"><span class="pill">無考試</span><span class="pill">${scope}</span></div>
+    `, "portrait");
+    return;
+  }
+  const { average, paperCount, reportRows } = classReportData(exam);
+  const rowsHtml = reportRows.map(({ student, ranked, absent }) => `
+    <tr>
+      <td>${ranked ? ranked.rank : "-"}</td>
+      <td class="left">${escapeHtml(student.name)}</td>
+      <td>${escapeHtml(student.grade)}</td>
+      <td>${escapeHtml(exam.subject)}</td>
+      ${Array.from({ length: paperCount }, (_, index) => {
+        if (absent) return `<td class="absent-score">缺考</td>`;
+        const value = ranked?.papers[index];
+        return `<td class="${scoreClass(value)}">${scoreDisplay(value)}</td>`;
+      }).join("")}
+      <td class="${absent ? "absent-score" : scoreClass(ranked?.score)}">${absent ? "缺考" : scoreDisplay(ranked?.score)}</td>
+    </tr>
+  `).join("");
+  pdfDocument(title, `
+    <header class="doc-head">
+      <div class="brand"><img src="assets/logo.png" alt=""><div><h1>金牌躍騰教育集團 班級成績單</h1><div>${escapeHtml(dateLabel(exam.date))} ${escapeHtml(exam.grade)} ${escapeHtml(exam.subject)}</div></div></div>
+      <div>列印日期：${escapeHtml(new Date().toLocaleDateString("zh-TW"))}</div>
+    </header>
+    <div class="meta">
+      <span class="pill">班平均 ${scoreDisplay(average)}</span>
+      <span class="pill">${paperCount} 份考卷</span>
+      <span class="pill">${scope}</span>
+    </div>
+    <table>
+      <thead><tr><th>排名</th><th class="left">姓名</th><th>班級</th><th>科目</th>${Array.from({ length: paperCount }, (_, index) => `<th>卷${index + 1}</th>`).join("")}<th>平均</th></tr></thead>
+      <tbody>${rowsHtml || `<tr><td colspan="${5 + paperCount}">尚無成績</td></tr>`}</tbody>
+    </table>
+  `, paperCount > 2 ? "landscape" : "portrait");
+}
+
+function printStudentReportPdf() {
+  const student = getStudent($("#careerStudent")?.value);
+  if (!student) {
+    alert("請先選擇學生。");
+    return;
+  }
+  const examRows = studentExamRows(student);
+  const avg = examRows.length ? examRows.reduce((sum, row) => sum + row.score, 0) / examRows.length : NaN;
+  const weakUnits = examRows.filter((row) => row.score < 70).map((row) => `${row.exam.subject}｜${row.exam.scope || dateLabel(row.exam.date)}`);
+  const bySubject = courses.map((subject) => {
+    const rows = examRows.filter((row) => row.exam.subject === subject);
+    const subjectAvg = rows.length ? rows.reduce((sum, row) => sum + row.score, 0) / rows.length : NaN;
+    return { subject, rows, avg: subjectAvg };
+  }).filter((item) => item.rows.length);
+  const termRows = state.termScores.filter((item) => item.studentId === student.id);
+  const historyRows = state.archives.filter((item) => item.studentId === student.id);
+  const weeklyRows = examRows.slice().reverse().map((row) => {
+    const rank = currentScoreRows(row.exam).find((item) => item.student.id === student.id)?.rank || "-";
+    return `<tr><td>${escapeHtml(dateLabel(row.exam.date))}</td><td>${escapeHtml(row.exam.subject)}</td><td class="left">${escapeHtml(row.exam.scope || "-")}</td><td>${escapeHtml(row.papers.map(scoreDisplay).join(" / "))}</td><td class="${scoreClass(row.score)}">${scoreDisplay(row.score)}</td><td>${rank}</td></tr>`;
+  }).join("");
+  pdfDocument(`${student.name} 學生生涯報告`, `
+    <header class="doc-head">
+      <div class="brand"><img src="assets/logo.png" alt=""><div><h1>金牌躍騰教育集團 學生生涯報告</h1><div>${escapeHtml(studentLabel(student))}</div></div></div>
+      <div>列印日期：${escapeHtml(new Date().toLocaleDateString("zh-TW"))}</div>
+    </header>
+    <div class="meta">
+      <span class="pill">補習科目：${escapeHtml(studentCoursesLabel(student))}</span>
+      <span class="pill">週考平均 ${scoreDisplay(avg)}</span>
+      <span class="pill">會考推估：${escapeHtml(estimateLevel(avg))}</span>
+    </div>
+    <p class="summary">目前整體平均為 ${scoreDisplay(avg)}，推估落在 ${escapeHtml(estimateLevel(avg))}。${weakUnits.length ? `需要優先補強：${escapeHtml(weakUnits.slice(-6).join("、"))}。` : "目前沒有明顯低於 70 分的周考單元。"}</p>
+    <h2>各科概況</h2>
+    <div class="grid">${bySubject.map((item) => `<section class="card"><strong>${escapeHtml(item.subject)}</strong><div>平均 ${scoreDisplay(item.avg)}，共 ${item.rows.length} 次紀錄</div></section>`).join("") || `<section class="card">尚無週考成績</section>`}</div>
+    <h2>週考紀錄</h2>
+    <table><thead><tr><th>日期</th><th>科目</th><th class="left">重點/單元</th><th>各卷</th><th>平均</th><th>班排名</th></tr></thead><tbody>${weeklyRows || `<tr><td colspan="6">尚無週考紀錄</td></tr>`}</tbody></table>
+    <h2>段考紀錄</h2>
+    <table><thead><tr><th>學期</th><th>段別</th><th>科目</th><th>成績</th></tr></thead><tbody>${termRows.map((item) => `<tr><td>${escapeHtml(item.term)}</td><td>${escapeHtml(item.stage)}</td><td>${escapeHtml(item.subject)}</td><td class="${scoreClass(Number(item.score))}">${scoreDisplay(Number(item.score))}</td></tr>`).join("") || `<tr><td colspan="4">尚無段考紀錄</td></tr>`}</tbody></table>
+    <h2>歷年結算</h2>
+    <table><thead><tr><th>學期</th><th class="left">摘要</th></tr></thead><tbody>${historyRows.map((item) => `<tr><td>${escapeHtml(item.term)}</td><td class="left">${escapeHtml(item.summary)}</td></tr>`).join("") || `<tr><td colspan="2">尚無歷年紀錄</td></tr>`}</tbody></table>
+  `, "portrait");
 }
 
 function archiveCurrentTerm() {
@@ -1136,8 +1299,8 @@ function setupForms() {
     saveSchedule();
     flashButton(event.currentTarget, "已儲存");
   });
-  $("#printClassReport").addEventListener("click", () => window.print());
-  $("#printStudentReport").addEventListener("click", () => window.print());
+  $("#printClassReport").addEventListener("click", printClassReportPdf);
+  $("#printStudentReport").addEventListener("click", printStudentReportPdf);
 
   $("#leaveGrade").addEventListener("change", () => {
     $("#leaveStudentPicker").value = "";
