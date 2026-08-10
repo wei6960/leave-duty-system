@@ -810,6 +810,35 @@ legend {
   margin-inline: auto;
 }
 
+.parent-score-toolbar {
+  margin: 0 0 .85rem;
+}
+
+#parentLeaveList {
+  max-height: 24rem;
+  overflow-y: auto;
+  padding-right: .35rem;
+}
+
+#parentLeaveList::-webkit-scrollbar {
+  width: .45rem;
+}
+
+#parentLeaveList::-webkit-scrollbar-thumb {
+  background: rgba(241, 211, 124, .38);
+  border-radius: 999px;
+}
+
+.parent-score-history {
+  margin-top: .85rem;
+  border: 1px solid rgba(241, 211, 124, .12);
+  border-radius: .38rem;
+}
+
+.parent-score-history table {
+  min-width: 54rem;
+}
+
 .table-wrap {
   overflow: auto;
 }

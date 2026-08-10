@@ -916,6 +916,14 @@ function renderStudentReport() {
     $("#archiveList").innerHTML = `<div class="empty">尚無歷年紀錄。</div>`;
     return;
   }
+  $("#studentReport").innerHTML = renderStudentReportHtml(student);
+  $("#archiveList").innerHTML = state.archives
+    .filter((item) => item.studentId === student.id)
+    .map((item) => `<article class="record-card done"><strong>${item.term}</strong><div class="meta"><span class="badge">${item.summary}</span></div></article>`)
+    .join("") || `<div class="empty">尚無歷年紀錄。</div>`;
+}
+
+function renderStudentReportHtml(student) {
   const examRows = studentExamRows(student);
   const avg = examRows.length ? examRows.reduce((sum, row) => sum + row.score, 0) / examRows.length : NaN;
   const weakUnits = examRows.filter((row) => row.score < 70).map((row) => `${row.exam.subject}｜${row.exam.scope || dateLabel(row.exam.date)}`);
@@ -925,7 +933,7 @@ function renderStudentReport() {
     return { subject, rows, avg: subjectAvg };
   }).filter((item) => item.rows.length);
   const termRows = state.termScores.filter((item) => item.studentId === student.id);
-  $("#studentReport").innerHTML = `
+  return `
     <div class="report-head">
       <strong>${studentLabel(student)}</strong>
       <span>補習科目：${studentCoursesLabel(student)}</span>
@@ -944,10 +952,6 @@ function renderStudentReport() {
     <h2>段考紀錄</h2>
     <div class="meta">${termRows.map((item) => `<span class="badge">${item.term} ${item.stage} ${item.subject} ${item.score}</span>`).join("") || `<span class="badge">尚無段考紀錄</span>`}</div>
   `;
-  $("#archiveList").innerHTML = state.archives
-    .filter((item) => item.studentId === student.id)
-    .map((item) => `<article class="record-card done"><strong>${item.term}</strong><div class="meta"><span class="badge">${item.summary}</span></div></article>`)
-    .join("") || `<div class="empty">尚無歷年紀錄。</div>`;
 }
 
 function pdfDocument(title, body, layout = "portrait") {
@@ -1323,6 +1327,10 @@ function setupForms() {
 
   ["studentFilter", "studentSearch", "lateGrade", "historyType", "historySearch", "scheduleGrade", "examGrade", "examSubject", "examPaperCount", "examNoTest", "scoreStudentSearch", "scoreStudentFilter", "careerGrade", "careerStudent"].forEach((id) => {
     $(`#${id}`).addEventListener("input", renderAll);
+  });
+
+  $("#parentSubjectFilter")?.addEventListener("input", () => {
+    if (parentStudentId) renderParentPortal();
   });
 }
 
@@ -1800,6 +1808,60 @@ function studentScoreSummary(student) {
   }).filter(Boolean).join("") || `<div class="empty">尚無成績紀錄。</div>`;
 }
 
+function studentAvailableSubjects(student) {
+  const subjects = new Set(student.courses || []);
+  studentExamRows(student).forEach((row) => subjects.add(row.exam.subject));
+  return courses.filter((subject) => subjects.has(subject));
+}
+
+function renderParentSubjectOptions(student) {
+  const target = $("#parentSubjectFilter");
+  if (!target) return;
+  const previous = target.value;
+  const subjects = studentAvailableSubjects(student);
+  target.innerHTML = `<option value="全部">全部科目</option>${subjects.map((subject) => `<option value="${subject}">${subject}</option>`).join("")}`;
+  target.value = previous && [...subjects, "全部"].includes(previous) ? previous : "全部";
+}
+
+function renderParentScoreHistory(student) {
+  const subject = $("#parentSubjectFilter")?.value || "全部";
+  const rows = studentExamRows(student)
+    .filter((row) => subject === "全部" || row.exam.subject === subject)
+    .slice()
+    .sort((a, b) => b.exam.date.localeCompare(a.exam.date));
+
+  if (!rows.length) return `<div class="empty">尚無此科目的歷史考試分數。</div>`;
+
+  return `
+    ${studentScoreSummary(student)}
+    <div class="table-wrap parent-score-history">
+      <table>
+        <thead>
+          <tr><th>日期</th><th>科目</th><th>考試重點</th><th>各卷分數</th><th>平均</th><th>排名</th><th>班平均</th></tr>
+        </thead>
+        <tbody>
+          ${rows.map((row) => {
+            const classRows = currentScoreRows(row.exam);
+            const classAverage = classRows.length ? classRows.reduce((sum, item) => sum + item.score, 0) / classRows.length : NaN;
+            const rank = classRows.find((item) => item.student.id === student.id)?.rank || "-";
+            return `
+              <tr>
+                <td>${dateLabel(row.exam.date)}</td>
+                <td>${row.exam.subject}</td>
+                <td>${row.exam.scope || "-"}</td>
+                <td>${row.papers.map(scoreDisplay).join(" / ")}</td>
+                <td class="${scoreClass(row.score)}">${scoreDisplay(row.score)}</td>
+                <td>${rank}</td>
+                <td>${scoreDisplay(classAverage)}</td>
+              </tr>
+            `;
+          }).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
 function renderParentPortal() {
   const student = getStudent(parentStudentId);
   if (!student) return;
@@ -1809,16 +1871,9 @@ function renderParentPortal() {
     .sort((a, b) => getLeaveStart(b).localeCompare(getLeaveStart(a)))
     .map(renderLeaveCard)
     .join("") || `<div class="empty">尚無請假紀錄。</div>`;
-  $("#parentScoreList").innerHTML = studentScoreSummary(student);
-  const previousCareer = $("#careerStudent")?.value;
-  if ($("#careerGrade") && $("#careerStudent")) {
-    $("#careerGrade").value = student.grade;
-    renderStudentOptions();
-    $("#careerStudent").value = student.id;
-    renderStudentReport();
-    $("#parentReport").innerHTML = $("#studentReport").innerHTML;
-    if (previousCareer) $("#careerStudent").value = previousCareer;
-  }
+  renderParentSubjectOptions(student);
+  $("#parentScoreList").innerHTML = renderParentScoreHistory(student);
+  $("#parentReport").innerHTML = renderStudentReportHtml(student);
 }
 
 function setupLogin() {
