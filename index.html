@@ -491,13 +491,12 @@
             <span>排名會自動計算</span>
           </div>
           <div class="score-tools">
-            <label>搜尋學生
-              <input id="scoreStudentSearch" placeholder="輸入姓名快速篩選">
-            </label>
-            <label>選擇學生
-              <select id="scoreStudentFilter">
-                <option value="全部">全部學生</option>
-              </select>
+            <label>搜尋 / 選擇學生
+              <div class="combo-box" id="scoreStudentCombo">
+                <input id="scoreStudentPicker" autocomplete="off" placeholder="全部學生，或輸入姓名搜尋">
+                <div class="combo-options" id="scoreStudentOptions" hidden></div>
+              </div>
+              <input id="scoreStudentFilter" type="hidden" value="全部">
             </label>
           </div>
           <div id="scoreEntryList" class="score-entry-list"></div>
@@ -529,12 +528,20 @@
           <button class="ghost back-button" type="button" data-back-tab="management">返回班務管理</button>
         </header>
         <div class="toolbar">
-          <select id="careerGrade">
-            <option value="國一">國一</option>
-            <option value="國二">國二</option>
-            <option value="國三">國三</option>
-          </select>
-          <select id="careerStudent"></select>
+          <label>選擇班級
+            <select id="careerGrade">
+              <option value="國一">國一</option>
+              <option value="國二">國二</option>
+              <option value="國三">國三</option>
+            </select>
+          </label>
+          <label>搜尋 / 選擇學生
+            <div class="combo-box" id="careerStudentCombo">
+              <input id="careerStudentPicker" autocomplete="off" placeholder="輸入姓名搜尋學生">
+              <div class="combo-options" id="careerStudentOptions" hidden></div>
+            </div>
+            <input id="careerStudent" type="hidden">
+          </label>
         </div>
         <section class="panel career-query-panel">
           <div class="panel-title">

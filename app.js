@@ -779,11 +779,35 @@ function studentsForGradeAndSubject(grade, subject) {
 }
 
 function visibleScoreStudents() {
-  const keyword = $("#scoreStudentSearch")?.value.trim() || "";
+  const keyword = $("#scoreStudentPicker")?.value.trim() || "";
   const selected = $("#scoreStudentFilter")?.value || "全部";
   return studentsForGradeAndSubject($("#examGrade")?.value || "國一", $("#examSubject")?.value || "國文")
     .filter((student) => selected === "全部" || student.id === selected)
     .filter((student) => !keyword || student.name.includes(keyword));
+}
+
+function scoreStudentMatches() {
+  const keyword = $("#scoreStudentPicker")?.value.trim() || "";
+  return studentsForGradeAndSubject($("#examGrade")?.value || "國一", $("#examSubject")?.value || "國文")
+    .filter((student) => !keyword || student.name.includes(keyword));
+}
+
+function renderScoreStudentOptions(open = false) {
+  const optionsBox = $("#scoreStudentOptions");
+  if (!optionsBox) return;
+  const matches = scoreStudentMatches();
+  optionsBox.innerHTML = `
+    <button type="button" class="combo-option" data-pick-score-student="全部">
+      <strong>全部學生</strong><span>顯示此科全部學生</span>
+    </button>
+    ${matches.map((student) => `
+      <button type="button" class="combo-option" data-pick-score-student="${student.id}">
+        <strong>${student.name}</strong><span>${student.grade}｜${studentCoursesLabel(student)}</span>
+      </button>
+    `).join("")}
+    ${!matches.length ? `<div class="combo-empty">沒有符合的學生</div>` : ""}
+  `;
+  optionsBox.hidden = !open;
 }
 
 function renderScoreStudentFilter() {
@@ -791,8 +815,10 @@ function renderScoreStudentFilter() {
   if (!target) return;
   const previous = target.value || "全部";
   const students = studentsForGradeAndSubject($("#examGrade")?.value || "國一", $("#examSubject")?.value || "國文");
-  target.innerHTML = `<option value="全部">全部學生</option>${students.map((student) => `<option value="${student.id}">${student.name}</option>`).join("")}`;
   target.value = previous === "全部" || students.some((student) => student.id === previous) ? previous : "全部";
+  const selected = getStudent(target.value);
+  $("#scoreStudentPicker").value = target.value === "全部" ? "" : selected?.name || "";
+  renderScoreStudentOptions(false);
 }
 
 function scoreDraftKey() {
@@ -1127,7 +1153,7 @@ function resetExamForm() {
   $("#examScope").value = "";
   $("#examPaperCount").value = 1;
   $("#examNoTest").checked = false;
-  $("#scoreStudentSearch").value = "";
+  $("#scoreStudentPicker").value = "";
   $("#scoreStudentFilter").value = "全部";
   updateExamFormMode();
   renderScoreEntryList();
@@ -1148,7 +1174,7 @@ function fillExamForm(exam) {
   $("#examScope").value = exam.scope || "";
   $("#examPaperCount").value = Math.max(1, Number(exam.paperCount) || 1);
   $("#examNoTest").checked = Boolean(exam.noExam);
-  $("#scoreStudentSearch").value = "";
+  $("#scoreStudentPicker").value = "";
   $("#scoreStudentFilter").value = "全部";
   updateExamFormMode();
   renderScoreStudentFilter();
@@ -2615,12 +2641,14 @@ function setupForms() {
     });
   });
 
-  ["examDate", "examGrade", "examSubject", "examScope", "examPaperCount", "examNoTest", "scoreStudentSearch", "scoreStudentFilter"].forEach((id) => {
+  ["examDate", "examGrade", "examSubject", "examScope", "examPaperCount", "examNoTest", "scoreStudentPicker"].forEach((id) => {
     onInputChange(id, captureScoreDraft);
   });
   ["examDate", "examGrade", "examSubject"].forEach((id) => {
     onInputChange(id, () => {
       if (!editingExamId) selectedClassReportExamId = null;
+      $("#scoreStudentFilter").value = "全部";
+      $("#scoreStudentPicker").value = "";
       renderExamSubjectOptions();
       renderScoreStudentFilter();
       renderScoreEntryList();
@@ -2643,13 +2671,43 @@ function setupForms() {
     renderLeaveStudentOptions(true);
   });
 
+  $("#scoreStudentPicker").addEventListener("focus", () => renderScoreStudentOptions(true));
+  $("#scoreStudentPicker").addEventListener("click", () => renderScoreStudentOptions(true));
+  $("#scoreStudentPicker").addEventListener("input", () => {
+    $("#scoreStudentFilter").value = "全部";
+    renderScoreStudentOptions(true);
+    renderScoreEntryList();
+  });
+
+  $("#careerGrade").addEventListener("change", () => {
+    $("#careerStudentPicker").value = "";
+    $("#careerStudent").value = "";
+    careerSubject = "全部";
+    renderAll();
+  });
+
+  $("#careerStudentPicker").addEventListener("focus", () => renderCareerStudentOptions(true));
+  $("#careerStudentPicker").addEventListener("click", () => renderCareerStudentOptions(true));
+  $("#careerStudentPicker").addEventListener("input", () => {
+    $("#careerStudent").value = "";
+    careerSubject = "全部";
+    renderCareerStudentOptions(true);
+    renderStudentReport();
+  });
+
   document.addEventListener("click", (event) => {
     if (!$("#leaveStudentCombo").contains(event.target)) {
       $("#leaveStudentOptions").hidden = true;
     }
+    if (!$("#scoreStudentCombo")?.contains(event.target)) {
+      $("#scoreStudentOptions").hidden = true;
+    }
+    if (!$("#careerStudentCombo")?.contains(event.target)) {
+      $("#careerStudentOptions").hidden = true;
+    }
   });
 
-  ["studentFilter", "studentSearch", "lateGrade", "historyType", "historySearch", "scheduleGrade", "examGrade", "examSubject", "examPaperCount", "examNoTest", "scoreStudentSearch", "scoreStudentFilter", "careerGrade", "careerStudent", "careerQueryDate", "careerTermYear", "careerTermAnalysisYear", "careerTermAnalysisSemester", "careerTermAnalysisStage", "termYear", "termSemester", "termGrade", "termStage"].forEach((id) => {
+  ["studentFilter", "studentSearch", "lateGrade", "historyType", "historySearch", "scheduleGrade", "examGrade", "examSubject", "examPaperCount", "examNoTest", "careerQueryDate", "careerTermYear", "careerTermAnalysisYear", "careerTermAnalysisSemester", "careerTermAnalysisStage", "termYear", "termSemester", "termGrade", "termStage"].forEach((id) => {
     onInputChange(id, renderAll);
   });
 
@@ -2718,7 +2776,7 @@ function renderStudentOptions() {
   };
   renderLeaveOptions();
   renderOptions("#lateGrade", "#lateStudent");
-  renderOptions("#careerGrade", "#careerStudent");
+  renderCareerStudentOptions(false);
 }
 
 function leaveStudentMatches() {
@@ -2740,6 +2798,32 @@ function renderLeaveStudentOptions(open) {
         </button>
       `).join("")
     : `<div class="combo-empty">沒有符合的學生</div>`;
+  optionsBox.hidden = !open;
+}
+
+function careerStudentMatches() {
+  const grade = $("#careerGrade")?.value || "國一";
+  const keyword = $("#careerStudentPicker")?.value.trim() || "";
+  return state.students
+    .filter((student) => student.grade === grade)
+    .filter((student) => !keyword || student.name.includes(keyword));
+}
+
+function renderCareerStudentOptions(open = false) {
+  const optionsBox = $("#careerStudentOptions");
+  if (!optionsBox) return;
+  const selected = getStudent($("#careerStudent")?.value);
+  if (selected && selected.grade === ($("#careerGrade")?.value || "國一") && $("#careerStudentPicker") && !$("#careerStudentPicker").value) {
+    $("#careerStudentPicker").value = selected.name;
+  }
+  const matches = careerStudentMatches();
+  optionsBox.innerHTML = matches.length
+    ? matches.map((student) => `
+      <button type="button" class="combo-option" data-pick-career-student="${student.id}">
+        <strong>${student.name}</strong><span>${student.grade}｜${studentCoursesLabel(student)}</span>
+      </button>
+    `).join("")
+    : `<div class="combo-empty">請先建立學生，或換個關鍵字</div>`;
   optionsBox.hidden = !open;
 }
 
@@ -3072,7 +3156,9 @@ function setupActions() {
   document.addEventListener("click", (event) => {
     const deleteStudentId = event.target.dataset.deleteStudent;
     const editStudentId = event.target.dataset.editStudent;
-    const pickLeaveStudentId = event.target.dataset.pickLeaveStudent;
+    const pickLeaveStudentId = event.target.closest("[data-pick-leave-student]")?.dataset.pickLeaveStudent;
+    const pickScoreStudentId = event.target.closest("[data-pick-score-student]")?.dataset.pickScoreStudent;
+    const pickCareerStudentId = event.target.closest("[data-pick-career-student]")?.dataset.pickCareerStudent;
     const dismissLeaveId = event.target.dataset.dismissLeave;
     const deleteLeaveId = event.target.dataset.deleteLeave;
     const removeLateId = event.target.dataset.removeLate;
@@ -3091,6 +3177,31 @@ function setupActions() {
         $("#leaveStudent").value = student.id;
         $("#leaveStudentPicker").value = student.name;
         $("#leaveStudentOptions").hidden = true;
+      }
+    }
+    if (pickScoreStudentId) {
+      if (pickScoreStudentId === "全部") {
+        $("#scoreStudentFilter").value = "全部";
+        $("#scoreStudentPicker").value = "";
+      } else {
+        const student = getStudent(pickScoreStudentId);
+        if (student) {
+          $("#scoreStudentFilter").value = student.id;
+          $("#scoreStudentPicker").value = student.name;
+        }
+      }
+      $("#scoreStudentOptions").hidden = true;
+      renderScoreEntryList();
+      captureScoreDraft();
+    }
+    if (pickCareerStudentId) {
+      const student = getStudent(pickCareerStudentId);
+      if (student) {
+        $("#careerStudent").value = student.id;
+        $("#careerStudentPicker").value = student.name;
+        $("#careerStudentOptions").hidden = true;
+        careerSubject = "全部";
+        renderStudentReport();
       }
     }
     if (editStudentId) {
