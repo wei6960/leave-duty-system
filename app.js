@@ -17,6 +17,7 @@ let dashboardGrade = "全體";
 let dashboardMode = "today";
 let editingStudentId = null;
 let editingExamId = null;
+let scoreDraft = null;
 let currentBranch = sessionStorage.getItem(SESSION_KEY) || "";
 let state = currentBranch ? loadState() : emptyState();
 let syncReady = false;
@@ -705,6 +706,92 @@ function renderScoreStudentFilter() {
   target.value = previous === "全部" || students.some((student) => student.id === previous) ? previous : "全部";
 }
 
+function scoreDraftKey() {
+  return `${STORAGE_KEY_PREFIX}-score-draft-${currentBranch || "local"}`;
+}
+
+function loadScoreDraft() {
+  try {
+    scoreDraft = JSON.parse(localStorage.getItem(scoreDraftKey()) || "null");
+  } catch (_error) {
+    scoreDraft = null;
+  }
+}
+
+function saveScoreDraft() {
+  if (!scoreDraft) return localStorage.removeItem(scoreDraftKey());
+  localStorage.setItem(scoreDraftKey(), JSON.stringify(scoreDraft));
+}
+
+function clearScoreDraft() {
+  scoreDraft = null;
+  localStorage.removeItem(scoreDraftKey());
+}
+
+function captureScoreDraft() {
+  if (!$("#examForm")) return;
+  const draft = scoreDraft || { scores: {}, absences: [] };
+  const nextKey = [$("#examDate").value, $("#examGrade").value, $("#examSubject").value].join("|");
+  if (draft.key && draft.key !== nextKey) {
+    draft.scores = {};
+    draft.absences = [];
+  }
+  draft.key = nextKey;
+  draft.editingExamId = editingExamId;
+  draft.date = $("#examDate").value;
+  draft.grade = $("#examGrade").value;
+  draft.subject = $("#examSubject").value;
+  draft.scope = $("#examScope").value;
+  draft.paperCount = Math.max(1, Number($("#examPaperCount").value) || 1);
+  draft.noExam = $("#examNoTest").checked;
+  draft.scores = draft.scores || {};
+  draft.absences = Array.isArray(draft.absences) ? draft.absences : [];
+  $$("[data-score-student]").forEach((input) => {
+    const studentId = input.dataset.scoreStudent;
+    const paper = input.dataset.scorePaper;
+    if (!draft.scores[studentId]) draft.scores[studentId] = {};
+    if (input.value === "") {
+      delete draft.scores[studentId][paper];
+    } else {
+      draft.scores[studentId][paper] = input.value;
+    }
+  });
+  $$("[data-score-absent]").forEach((input) => {
+    const studentId = input.dataset.scoreAbsent;
+    draft.absences = draft.absences.filter((id) => id !== studentId);
+    if (input.checked) draft.absences.push(studentId);
+  });
+  scoreDraft = draft;
+  saveScoreDraft();
+}
+
+function restoreScoreDraftMeta() {
+  if (!scoreDraft || !$("#examForm")) return;
+  if (scoreDraft.date) $("#examDate").value = scoreDraft.date;
+  if (scoreDraft.grade) $("#examGrade").value = scoreDraft.grade;
+  renderExamSubjectOptions();
+  if (scoreDraft.subject && !Array.from($("#examSubject").options).some((option) => option.value === scoreDraft.subject)) {
+    $("#examSubject").insertAdjacentHTML("beforeend", `<option value="${scoreDraft.subject}">${scoreDraft.subject}</option>`);
+  }
+  if (scoreDraft.subject) $("#examSubject").value = scoreDraft.subject;
+  $("#examScope").value = scoreDraft.scope || "";
+  $("#examPaperCount").value = Math.max(1, Number(scoreDraft.paperCount) || 1);
+  $("#examNoTest").checked = Boolean(scoreDraft.noExam);
+  editingExamId = scoreDraft.editingExamId || null;
+  updateExamFormMode();
+}
+
+function applyScoreDraftToRows() {
+  if (!scoreDraft) return;
+  $$("[data-score-student]").forEach((input) => {
+    const value = scoreDraft.scores?.[input.dataset.scoreStudent]?.[input.dataset.scorePaper];
+    if (value !== undefined) input.value = value;
+  });
+  $$("[data-score-absent]").forEach((input) => {
+    input.checked = (scoreDraft.absences || []).includes(input.dataset.scoreAbsent);
+  });
+}
+
 function renderScoreEntryList() {
   const subject = $("#examSubject")?.value || "國文";
   const noExam = $("#examNoTest")?.checked;
@@ -728,6 +815,7 @@ function renderScoreEntryList() {
     `).join("")
     : `<div class="empty">此年級尚無補 ${subject} 的學生。</div>`;
   applyEditingExamScores();
+  applyScoreDraftToRows();
 }
 
 function scoreValuesForStudent(exam, studentId) {
@@ -845,18 +933,22 @@ function latestExamForForm() {
 
 function saveExam(event) {
   event.preventDefault();
+  captureScoreDraft();
   const noExam = $("#examNoTest").checked;
   const paperCount = Math.max(1, Number($("#examPaperCount").value) || 1);
   const scores = {};
   const absences = [];
   studentsForGradeAndSubject($("#examGrade").value, $("#examSubject").value).forEach((student) => {
-    if (document.querySelector(`[data-score-absent="${student.id}"]`)?.checked) {
+    const absent = (scoreDraft?.absences || []).includes(student.id) || document.querySelector(`[data-score-absent="${student.id}"]`)?.checked;
+    if (absent) {
       absences.push(student.id);
       return;
     }
     const values = Array.from({ length: paperCount }, (_, index) => {
       const input = document.querySelector(`[data-score-student="${student.id}"][data-score-paper="${index}"]`);
-      return input && input.value !== "" ? Number(input.value) : null;
+      const draftValue = scoreDraft?.scores?.[student.id]?.[String(index)];
+      const value = draftValue !== undefined ? draftValue : input?.value;
+      return value !== "" && value !== undefined ? Number(value) : null;
     }).filter((value) => value !== null && Number.isFinite(value));
     if (values.length) scores[student.id] = values;
   });
@@ -881,6 +973,7 @@ function saveExam(event) {
   }
   editingExamId = null;
   updateExamFormMode();
+  clearScoreDraft();
   saveState();
   renderAll();
   flashButton(event.submitter, existing ? "已更新" : "已儲存");
@@ -889,6 +982,7 @@ function saveExam(event) {
 function resetExamForm() {
   if (!confirm("確定重設當天成績輸入？尚未儲存的分數會清空。")) return;
   editingExamId = null;
+  clearScoreDraft();
   $("#examDate").value = todayISO();
   $("#examScope").value = "";
   $("#examPaperCount").value = 1;
@@ -900,6 +994,7 @@ function resetExamForm() {
 }
 
 function fillExamForm(exam) {
+  clearScoreDraft();
   editingExamId = exam.id;
   $("#examDate").value = exam.date;
   $("#examGrade").value = exam.grade;
@@ -1318,6 +1413,7 @@ function setupTabs() {
   $$(".tab-button").forEach((button) => {
     button.addEventListener("click", () => {
       if (mobileQuery.matches && button.classList.contains("desktop-only")) return;
+      if ($("#scores")?.classList.contains("active")) captureScoreDraft();
       $$(".tab-button").forEach((tab) => tab.classList.remove("active"));
       $$(".page").forEach((page) => page.classList.remove("active"));
       button.classList.add("active");
@@ -1438,6 +1534,12 @@ function setupForms() {
   });
   $("#printClassReport").addEventListener("click", printClassReportPdf);
   $("#printStudentReport").addEventListener("click", printStudentReportPdf);
+
+  ["examDate", "examGrade", "examSubject", "examScope", "examPaperCount", "examNoTest", "scoreStudentSearch", "scoreStudentFilter"].forEach((id) => {
+    $(`#${id}`).addEventListener("input", captureScoreDraft);
+  });
+  $("#scoreEntryList").addEventListener("input", captureScoreDraft);
+  $("#scoreEntryList").addEventListener("change", captureScoreDraft);
 
   $("#leaveGrade").addEventListener("change", () => {
     $("#leaveStudentPicker").value = "";
@@ -2062,6 +2164,8 @@ function setupLogin() {
     currentBranch = $("#loginBranch").value;
     sessionStorage.setItem(SESSION_KEY, currentBranch);
     state = loadState();
+    loadScoreDraft();
+    restoreScoreDraftMeta();
     $("#loginError").hidden = true;
     showApp();
     setupCloudSync();
@@ -2141,6 +2245,8 @@ function boot() {
     showParentLogin();
   } else if (currentBranch) {
     showApp();
+    loadScoreDraft();
+    restoreScoreDraftMeta();
     setupCloudSync();
     saveState();
     renderAll();
