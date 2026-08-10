@@ -73,6 +73,9 @@
         </div>
         <div class="toolbar parent-score-toolbar">
           <select id="parentSubjectFilter"></select>
+          <label>查詢日期
+            <input id="parentScoreDate" type="date">
+          </label>
         </div>
         <div id="parentScoreList"></div>
       </section>
@@ -107,6 +110,7 @@
         <button class="tab-button" data-tab="schedule">課表設定</button>
         <button class="tab-button" data-tab="scores">班務成績</button>
         <button class="tab-button" data-tab="career">生涯檔案</button>
+        <button class="tab-button" data-tab="term">段考成績</button>
         <button class="tab-button" data-tab="leave">請假登記</button>
         <button class="tab-button" data-tab="late">晚到登記</button>
         <button class="tab-button desktop-only" data-tab="history">歷史紀錄</button>
@@ -378,26 +382,6 @@
           </div>
           <div id="careerScoreLookup"></div>
         </section>
-        <form class="form-grid panel" id="termScoreForm">
-          <label>學期
-            <input id="termName" placeholder="例：114上">
-          </label>
-          <label>段考
-            <select id="termStage">
-              <option value="一段">一段</option>
-              <option value="二段">二段</option>
-              <option value="三段">三段</option>
-            </select>
-          </label>
-          <label>科目
-            <select id="termSubject"></select>
-          </label>
-          <label>成績
-            <input id="termScore" type="number" min="0" max="100" step="0.1">
-          </label>
-          <button class="primary" type="submit">新增段考成績</button>
-          <button class="ghost" id="archiveTerm" type="button">學期末結算並刷新</button>
-        </form>
         <div class="board-layout">
           <section class="panel large-panel">
             <div class="panel-title">
@@ -414,6 +398,67 @@
             <div id="archiveList" class="record-list compact"></div>
           </section>
         </div>
+      </section>
+
+      <section class="page" id="term">
+        <header class="section-head">
+          <div>
+            <p class="eyebrow">段考成績</p>
+            <h1>段考登記、排名與學期結算</h1>
+          </div>
+        </header>
+        <form class="form-grid panel" id="termScoreForm">
+          <label>學年
+            <input id="termYear" placeholder="例：114">
+          </label>
+          <label>學期
+            <select id="termSemester">
+              <option value="上學期">上學期</option>
+              <option value="下學期">下學期</option>
+            </select>
+          </label>
+          <label>班級
+            <select id="termGrade">
+              <option value="國一">國一</option>
+              <option value="國二">國二</option>
+              <option value="國三">國三</option>
+            </select>
+          </label>
+          <label>考試日期
+            <input id="termDate" type="date" required>
+          </label>
+          <label>段考
+            <select id="termStage">
+              <option value="一段">一段</option>
+              <option value="二段">二段</option>
+              <option value="三段">三段</option>
+            </select>
+          </label>
+          <label>科目
+            <select id="termSubject"></select>
+          </label>
+          <button class="primary" type="submit">儲存段考成績</button>
+          <button class="ghost" id="archiveTerm" type="button">學期末結算並刷新</button>
+        </form>
+        <section class="panel list-panel">
+          <div class="panel-title">
+            <h2>段考輸入</h2>
+            <span>學生直列輸入</span>
+          </div>
+          <div id="termScoreEntryList" class="score-entry-list"></div>
+        </section>
+        <section class="panel list-panel">
+          <div class="panel-title">
+            <h2>段考成績單</h2>
+            <span>自動排名</span>
+          </div>
+          <div class="toolbar compact-toolbar">
+            <button class="ghost" id="downloadTermReportImage" type="button">圖片</button>
+            <button class="ghost" id="printTermReport" type="button">PDF</button>
+            <button class="ghost" id="downloadTermReportExcel" type="button">Excel</button>
+          </div>
+          <div id="termReportBody"></div>
+        </section>
       </section>
 
       <section class="page" id="leave">

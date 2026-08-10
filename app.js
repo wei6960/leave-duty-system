@@ -9,6 +9,8 @@ const grades = ["國一", "國二", "國三"];
 const weekdays = ["一", "二", "三", "四", "五", "六", "日"];
 const periods = ["上午", "下午", "晚上"];
 const courses = ["國文", "英文", "數A", "數B", "數學", "自然", "總複習", "素養課", "讀書班"];
+const termSubjects = ["國文", "英文", "數學", "社會", "自然", "歷史", "地理", "公民"];
+const reportSubjects = [...new Set([...courses, ...termSubjects])];
 const scheduleCourses = [...courses, "考加"];
 const leavePeriods = ["上午", "下午", "晚上"];
 const parentMode = new URLSearchParams(location.search).get("parent") === "1" || location.hash === "#parent";
@@ -114,7 +116,11 @@ function normalizeState(raw) {
     lateRecords: raw.lateRecords || [],
     schedule: baseSchedule,
     exams: (raw.exams || []).map(normalizeExam),
-    termScores: raw.termScores || [],
+    termScores: (raw.termScores || []).map((item) => ({
+      ...item,
+      id: item.id || crypto.randomUUID(),
+      date: item.date || item.createdAt?.slice(0, 10) || todayISO(),
+    })),
     archives: raw.archives || [],
   };
 }
@@ -138,6 +144,12 @@ function normalizeCourseName(value) {
     社會: "社會",
     自: "自然",
     自然: "自然",
+    歷: "歷史",
+    歷史: "歷史",
+    地: "地理",
+    地理: "地理",
+    公: "公民",
+    公民: "公民",
     總複習: "總複習",
     素養: "素養課",
     素養課: "素養課",
@@ -616,7 +628,7 @@ function renderFixedLateInputs() {
 }
 
 function renderSubjectOptions(targetId, includeExamPlus = false) {
-  const list = courses;
+  const list = targetId === "termSubject" ? termSubjects : courses;
   const target = $(`#${targetId}`);
   if (!target) return;
   target.innerHTML = list.map((course) => `<option value="${course}">${course}</option>`).join("");
@@ -1068,22 +1080,49 @@ function renderExamHistory() {
 
 function saveTermScore(event) {
   event.preventDefault();
-  const studentId = $("#careerStudent").value;
-  if (!studentId) return alert("請先選擇學生");
-  if ($("#termScore").value === "") return alert("請輸入成績");
-  state.termScores.push({
-    id: crypto.randomUUID(),
-    studentId,
-    term: $("#termName").value.trim() || "未命名學期",
-    stage: $("#termStage").value,
-    subject: $("#termSubject").value,
-    score: Number($("#termScore").value),
-    createdAt: new Date().toISOString(),
+  const year = $("#termYear").value.trim() || "未填學年";
+  const semester = $("#termSemester").value;
+  const grade = $("#termGrade").value;
+  const date = $("#termDate").value || todayISO();
+  const stage = $("#termStage").value;
+  const subject = $("#termSubject").value;
+  const term = `${year}${semester}`;
+  const inputs = $$("[data-term-score-student]");
+  let saved = 0;
+  inputs.forEach((input) => {
+    if (input.value === "") return;
+    const studentId = input.dataset.termScoreStudent;
+    const score = Number(input.value);
+    if (!Number.isFinite(score)) return;
+    const existing = state.termScores.find((item) =>
+      item.studentId === studentId &&
+      item.year === year &&
+      item.semester === semester &&
+      item.date === date &&
+      item.stage === stage &&
+      item.subject === subject
+    );
+    const payload = {
+      studentId,
+      year,
+      semester,
+      term,
+      grade,
+      date,
+      stage,
+      subject,
+      score,
+      createdAt: existing?.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    if (existing) Object.assign(existing, payload);
+    else state.termScores.push({ id: crypto.randomUUID(), ...payload });
+    saved += 1;
   });
-  $("#termScore").value = "";
+  if (!saved) return alert("請至少輸入一位學生的段考成績");
   saveState();
   renderAll();
-  flashButton(event.submitter, "已新增");
+  flashButton(event.submitter, "已儲存");
 }
 
 function studentExamRows(student) {
@@ -1092,6 +1131,211 @@ function studentExamRows(student) {
     .map((exam) => ({ exam, papers: scoreValuesForStudent(exam, student.id), score: averageScore(scoreValuesForStudent(exam, student.id)) }))
     .filter((row) => Number.isFinite(row.score))
     .sort((a, b) => a.exam.date.localeCompare(b.exam.date));
+}
+
+function currentTermMeta() {
+  return {
+    year: $("#termYear")?.value.trim() || "未填學年",
+    semester: $("#termSemester")?.value || "上學期",
+    grade: $("#termGrade")?.value || "國一",
+    date: $("#termDate")?.value || todayISO(),
+    stage: $("#termStage")?.value || "一段",
+    subject: $("#termSubject")?.value || "國文",
+  };
+}
+
+function termRowsForMeta(meta = currentTermMeta()) {
+  return state.termScores
+    .filter((item) =>
+      item.year === meta.year &&
+      item.semester === meta.semester &&
+      item.grade === meta.grade &&
+      (item.date || item.createdAt?.slice(0, 10) || "") === meta.date &&
+      item.stage === meta.stage &&
+      item.subject === meta.subject
+    )
+    .map((item) => ({ ...item, student: getStudent(item.studentId) }))
+    .filter((item) => item.student && Number.isFinite(Number(item.score)))
+    .sort((a, b) => Number(b.score) - Number(a.score))
+    .map((item, index, rows) => ({
+      ...item,
+      rank: rows.findIndex((row) => Number(row.score) === Number(item.score)) + 1,
+    }));
+}
+
+function renderTermScoreEntryList() {
+  const target = $("#termScoreEntryList");
+  if (!target) return;
+  const meta = currentTermMeta();
+  const students = state.students.filter((student) => student.grade === meta.grade);
+  const existing = new Map(termRowsForMeta(meta).map((row) => [row.studentId, row]));
+  target.innerHTML = students.length
+    ? students.map((student) => `
+      <label class="score-row term-score-row">
+        <span>${student.name}</span>
+        <input type="number" min="0" max="100" step="0.1" data-term-score-student="${student.id}" value="${existing.get(student.id)?.score ?? ""}" placeholder="輸入成績">
+      </label>
+    `).join("")
+    : `<div class="empty">此年級尚無學生。</div>`;
+}
+
+function renderTermReport() {
+  const target = $("#termReportBody");
+  if (!target) return;
+  const meta = currentTermMeta();
+  const rows = termRowsForMeta(meta);
+  const average = rows.length ? rows.reduce((sum, row) => sum + Number(row.score), 0) / rows.length : NaN;
+  target.innerHTML = `
+    <div class="report-head">
+      <strong>${meta.year}${meta.semester} ${meta.grade} ${meta.stage} ${meta.subject}</strong>
+      <span>${dateLabel(meta.date)}</span>
+      <span>班平均 ${scoreDisplay(average)}</span>
+      <span>${rows.length} 筆成績</span>
+    </div>
+    <table>
+      <thead><tr><th>排名</th><th>姓名</th><th>班級</th><th>科目</th><th>成績</th></tr></thead>
+      <tbody>${rows.map((row) => `<tr><td>${row.rank}</td><td>${row.student.name}</td><td>${row.grade}</td><td>${row.subject}</td><td class="${scoreClass(Number(row.score))}">${scoreDisplay(Number(row.score))}</td></tr>`).join("") || `<tr><td colspan="5">尚無段考成績</td></tr>`}</tbody>
+    </table>
+  `;
+}
+
+function termReportFileName(meta, ext) {
+  return `${meta.date}_${meta.grade}_${meta.stage}_${meta.subject}_段考成績單.${ext}`;
+}
+
+function termReportExportRows(meta = currentTermMeta()) {
+  const rows = termRowsForMeta(meta).map((row) => ({
+    rank: row.rank,
+    name: row.student.name,
+    grade: row.grade,
+    subject: row.subject,
+    score: scoreDisplay(Number(row.score)),
+    failing: Number(row.score) < 60,
+  }));
+  const average = rows.length
+    ? termRowsForMeta(meta).reduce((sum, row) => sum + Number(row.score), 0) / rows.length
+    : NaN;
+  return { meta, rows, average };
+}
+
+function printTermReportPdf() {
+  const { meta, rows, average } = termReportExportRows();
+  if (!rows.length) return alert("尚無段考成績單可輸出。");
+  pdfDocument(`${meta.grade} ${meta.stage} ${meta.subject} 段考成績單`, `
+    <header class="doc-head">
+      <div class="brand"><img src="assets/logo.png" alt=""><div><h1>金牌躍騰教育集團 段考成績單</h1><div>${escapeHtml(dateLabel(meta.date))} ${escapeHtml(meta.grade)} ${escapeHtml(meta.stage)} ${escapeHtml(meta.subject)}</div></div></div>
+      <div>列印日期：${escapeHtml(new Date().toLocaleDateString("zh-TW"))}</div>
+    </header>
+    <div class="meta">
+      <span class="pill">${escapeHtml(meta.year)}${escapeHtml(meta.semester)}</span>
+      <span class="pill">班平均 ${scoreDisplay(average)}</span>
+      <span class="pill">${rows.length} 筆成績</span>
+    </div>
+    <table>
+      <thead><tr><th>排名</th><th class="left">姓名</th><th>班級</th><th>科目</th><th>成績</th></tr></thead>
+      <tbody>${rows.map((row) => `<tr><td>${row.rank}</td><td class="left">${escapeHtml(row.name)}</td><td>${escapeHtml(row.grade)}</td><td>${escapeHtml(row.subject)}</td><td class="${row.failing ? "fail-score" : ""}">${escapeHtml(row.score)}</td></tr>`).join("")}</tbody>
+    </table>
+  `, "portrait");
+}
+
+function downloadTermReportExcel() {
+  const { meta, rows, average } = termReportExportRows();
+  if (!rows.length) return alert("尚無段考成績單可匯出。");
+  const html = `<!doctype html><html><head><meta charset="utf-8"></head><body>
+    <table border="1">
+      <tr><th colspan="5">金牌躍騰教育集團 段考成績單</th></tr>
+      <tr><td colspan="5">${escapeHtml(dateLabel(meta.date))} ${escapeHtml(meta.grade)} ${escapeHtml(meta.stage)} ${escapeHtml(meta.subject)}　${escapeHtml(meta.year)}${escapeHtml(meta.semester)}　班平均 ${scoreDisplay(average)}</td></tr>
+      <tr><th>排名</th><th>姓名</th><th>班級</th><th>科目</th><th>成績</th></tr>
+      ${rows.map((row) => `<tr><td>${row.rank}</td><td>${escapeHtml(row.name)}</td><td>${escapeHtml(row.grade)}</td><td>${escapeHtml(row.subject)}</td><td style="${row.failing ? "color:#e60012;font-weight:bold;" : ""}">${escapeHtml(row.score)}</td></tr>`).join("")}
+    </table>
+  </body></html>`;
+  downloadBlob(`\ufeff${html}`, "application/vnd.ms-excel;charset=utf-8", termReportFileName(meta, "xls"));
+}
+
+function downloadTermReportImage() {
+  const { meta, rows, average } = termReportExportRows();
+  if (!rows.length) return alert("尚無段考成績單可匯出。");
+  const scale = 2;
+  const width = 1080;
+  const rowHeight = 54;
+  const headerHeight = 224;
+  const height = headerHeight + Math.max(rows.length, 1) * rowHeight + 70;
+  const canvas = document.createElement("canvas");
+  canvas.width = width * scale;
+  canvas.height = height * scale;
+  const ctx = canvas.getContext("2d");
+  ctx.scale(scale, scale);
+
+  ctx.fillStyle = "#f7f1e3";
+  ctx.fillRect(0, 0, width, height);
+  const gradient = ctx.createLinearGradient(0, 0, width, 0);
+  gradient.addColorStop(0, "#101419");
+  gradient.addColorStop(.62, "#20242b");
+  gradient.addColorStop(1, "#8a6424");
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, width, 160);
+
+  ctx.fillStyle = "#f5d47a";
+  ctx.font = "bold 34px Microsoft JhengHei, Arial";
+  canvasText(ctx, "金牌躍騰教育集團 段考成績單", 54, 64, 720);
+  ctx.fillStyle = "#fff7df";
+  ctx.font = "20px Microsoft JhengHei, Arial";
+  canvasText(ctx, `${dateLabel(meta.date)}　${meta.grade}　${meta.stage}　${meta.subject}`, 56, 104, 660);
+  canvasText(ctx, `列印日期：${new Date().toLocaleDateString("zh-TW")}`, 820, 104, 220);
+
+  ctx.fillStyle = "rgba(255,255,255,.08)";
+  drawRoundRect(ctx, 54, 126, 972, 66, 10);
+  ctx.fill();
+  ctx.fillStyle = "#fff7df";
+  ctx.font = "bold 20px Microsoft JhengHei, Arial";
+  canvasText(ctx, `${meta.year}${meta.semester}`, 82, 166, 180);
+  canvasText(ctx, `班平均 ${scoreDisplay(average)}`, 288, 166, 180);
+  canvasText(ctx, `${rows.length} 筆成績`, 492, 166, 150);
+
+  const tableX = 54;
+  const tableY = 220;
+  const columns = [
+    { label: "排名", width: 90 },
+    { label: "姓名", width: 300 },
+    { label: "班級", width: 150 },
+    { label: "科目", width: 200 },
+    { label: "成績", width: 232 },
+  ];
+  ctx.fillStyle = "#171b21";
+  drawRoundRect(ctx, tableX, tableY - 48, 972, 48, 8);
+  ctx.fill();
+  ctx.font = "bold 18px Microsoft JhengHei, Arial";
+  ctx.fillStyle = "#f5d47a";
+  let cursor = tableX;
+  columns.forEach((column) => {
+    canvasText(ctx, column.label, cursor + 14, tableY - 17, column.width - 18);
+    cursor += column.width;
+  });
+  rows.forEach((row, rowIndex) => {
+    const y = tableY + rowIndex * rowHeight;
+    ctx.fillStyle = rowIndex % 2 ? "#f4ead2" : "#fffaf0";
+    ctx.fillRect(tableX, y, 972, rowHeight);
+    ctx.strokeStyle = "#dfd0aa";
+    ctx.beginPath();
+    ctx.moveTo(tableX, y + rowHeight);
+    ctx.lineTo(tableX + 972, y + rowHeight);
+    ctx.stroke();
+    cursor = tableX;
+    const values = [row.rank, row.name, row.grade, row.subject, row.score];
+    ctx.font = row.rank === 1 ? "bold 18px Microsoft JhengHei, Arial" : "17px Microsoft JhengHei, Arial";
+    values.forEach((value, index) => {
+      ctx.fillStyle = index === 4 && row.failing ? "#e60012" : "#1e2329";
+      canvasText(ctx, value, cursor + 14, y + 34, columns[index].width - 18);
+      cursor += columns[index].width;
+    });
+  });
+  ctx.fillStyle = "#76623a";
+  ctx.font = "15px Microsoft JhengHei, Arial";
+  canvasText(ctx, "不及格分數以紅字標示｜本圖檔可直接傳送家長群組", 54, height - 24, 760);
+  canvas.toBlob((blob) => {
+    if (!blob) return alert("圖片生成失敗，請再試一次。");
+    downloadBlob(blob, "image/png", termReportFileName(meta, "png"));
+  }, "image/png");
 }
 
 function estimateLevel(avg) {
@@ -1186,7 +1430,7 @@ function careerSubjectsForStudent(student) {
   state.termScores
     .filter((item) => item.studentId === student.id)
     .forEach((item) => subjects.add(normalizeCourseName(item.subject)));
-  return courses.filter((subject) => subjects.has(subject));
+  return reportSubjects.filter((subject) => subjects.has(subject));
 }
 
 function selectedCareerSubject(student) {
@@ -1286,12 +1530,27 @@ function renderStudentReport() {
     .join("") || `<div class="empty">尚無歷年紀錄。</div>`;
 }
 
-function renderStudentReportHtml(student) {
+function renderStudentReportHtml(student, subjectOverride = null) {
   const examRows = studentExamRows(student);
-  const subject = selectedCareerSubject(student);
+  const subject = subjectOverride || selectedCareerSubject(student);
   const analyses = subjectPerformanceRows(student).filter((item) => subject === "全部" || item.subject === subject);
-  const levelSummary = analyses.length ? analyses.map((item) => `${item.subject} ${item.level}`).join("、") : "資料不足";
-  const termRows = state.termScores.filter((item) => item.studentId === student.id);
+  const termRows = state.termScores
+    .filter((item) => item.studentId === student.id)
+    .filter((item) => subject === "全部" || normalizeCourseName(item.subject) === subject);
+  const analyzedSubjects = new Set(analyses.map((item) => item.subject));
+  const termOnlyAnalyses = reportSubjects
+    .filter((itemSubject) => (subject === "全部" || itemSubject === subject) && !analyzedSubjects.has(itemSubject))
+    .map((itemSubject) => {
+      const rows = termRows
+        .filter((row) => normalizeCourseName(row.subject) === itemSubject)
+        .sort((a, b) => (a.date || "").localeCompare(b.date || ""));
+      const avg = rows.length ? rows.reduce((sum, row) => sum + Number(row.score), 0) / rows.length : NaN;
+      return rows.length ? { subject: itemSubject, avg, rows } : null;
+    })
+    .filter(Boolean);
+  const levelSummary = analyses.length || termOnlyAnalyses.length
+    ? [...analyses.map((item) => `${item.subject} ${item.level}`), ...termOnlyAnalyses.map((item) => `${item.subject} ${levelFromScore(item.avg)}`)].join("、")
+    : "資料不足";
   return `
     <div class="report-head">
       <strong>${studentLabel(student)}</strong>
@@ -1310,7 +1569,23 @@ function renderStudentReportHtml(student) {
           ${scoreLineChart(item.rows)}
           <p>${item.note}</p>
         </article>
-      `).join("") || `<div class="empty">尚無週考成績。</div>`}
+      `).join("")}
+      ${termOnlyAnalyses.map((item) => `
+        <article class="analysis-card">
+          <div class="analysis-card-head">
+            <strong>${item.subject}</strong>
+            <b class="level-badge">${levelFromScore(item.avg)}</b>
+          </div>
+          <span>段考平均 ${scoreDisplay(item.avg)}｜共 ${item.rows.length} 筆</span>
+          <small>目前此科以段考紀錄為主</small>
+          ${scoreLineChart(item.rows.map((row) => ({
+            score: Number(row.score),
+            exam: { date: row.date || row.createdAt?.slice(0, 10) || todayISO(), subject: row.subject },
+          })))}
+          <p>尚無週考折線圖；已有段考成績會納入生涯檔案與家長端紀錄。</p>
+        </article>
+      `).join("")}
+      ${!analyses.length && !termOnlyAnalyses.length ? `<div class="empty">尚無成績紀錄。</div>` : ""}
     </div>
     <p class="report-copy">此報告採各科獨立判讀，不以全部科目總平均推估；系統優先參考近期考試、分數起伏與進退步趨勢，避免早期成績或不同科目混算造成失準。</p>
     <h2>段考紀錄</h2>
@@ -1620,19 +1895,27 @@ function printStudentReportPdf() {
 }
 
 function archiveCurrentTerm() {
-  const student = getStudent($("#careerStudent").value);
-  if (!student) return alert("請先選擇學生");
-  const term = $("#termName").value.trim() || "未命名學期";
-  const rows = state.termScores.filter((item) => item.studentId === student.id && item.term === term);
-  const avg = rows.length ? rows.reduce((sum, row) => sum + Number(row.score), 0) / rows.length : NaN;
-  state.archives.push({
-    id: crypto.randomUUID(),
-    studentId: student.id,
-    term,
-    summary: rows.length ? `段考平均 ${avg.toFixed(1)}，共 ${rows.length} 筆` : "本學期尚無段考成績",
-    createdAt: new Date().toISOString(),
+  const meta = currentTermMeta();
+  const term = `${meta.year}${meta.semester}`;
+  const students = state.students.filter((student) => student.grade === meta.grade);
+  if (!students.length) return alert("此年級尚無學生");
+  if (!confirm(`確定結算 ${term} ${meta.grade}？結算後會寫入歷年紀錄並清除該學期段考表格。`)) return;
+  students.forEach((student) => {
+    const rows = state.termScores.filter((item) =>
+      item.studentId === student.id &&
+      item.year === meta.year &&
+      item.semester === meta.semester
+    );
+    const avg = rows.length ? rows.reduce((sum, row) => sum + Number(row.score), 0) / rows.length : NaN;
+    state.archives.push({
+      id: crypto.randomUUID(),
+      studentId: student.id,
+      term,
+      summary: rows.length ? `段考平均 ${avg.toFixed(1)}，共 ${rows.length} 筆` : "本學期尚無段考成績",
+      createdAt: new Date().toISOString(),
+    });
   });
-  state.termScores = state.termScores.filter((item) => !(item.studentId === student.id && item.term === term));
+  state.termScores = state.termScores.filter((item) => !(item.year === meta.year && item.semester === meta.semester && item.grade === meta.grade));
   saveState();
   renderAll();
 }
@@ -1848,6 +2131,9 @@ function setupForms() {
   $("#downloadClassReportImage").addEventListener("click", downloadClassReportImage);
   $("#downloadClassReportExcel").addEventListener("click", downloadClassReportExcel);
   $("#printStudentReport").addEventListener("click", printStudentReportPdf);
+  $("#printTermReport").addEventListener("click", printTermReportPdf);
+  $("#downloadTermReportImage").addEventListener("click", downloadTermReportImage);
+  $("#downloadTermReportExcel").addEventListener("click", downloadTermReportExcel);
 
   ["examDate", "examGrade", "examSubject", "examScope", "examPaperCount", "examNoTest", "scoreStudentSearch", "scoreStudentFilter"].forEach((id) => {
     onInputChange(id, captureScoreDraft);
@@ -1879,7 +2165,7 @@ function setupForms() {
     }
   });
 
-  ["studentFilter", "studentSearch", "lateGrade", "historyType", "historySearch", "scheduleGrade", "examGrade", "examSubject", "examPaperCount", "examNoTest", "scoreStudentSearch", "scoreStudentFilter", "careerGrade", "careerStudent", "careerQueryDate"].forEach((id) => {
+  ["studentFilter", "studentSearch", "lateGrade", "historyType", "historySearch", "scheduleGrade", "examGrade", "examSubject", "examPaperCount", "examNoTest", "scoreStudentSearch", "scoreStudentFilter", "careerGrade", "careerStudent", "careerQueryDate", "termYear", "termSemester", "termGrade", "termDate", "termStage", "termSubject"].forEach((id) => {
     onInputChange(id, renderAll);
   });
 
@@ -1891,6 +2177,15 @@ function setupForms() {
   });
 
   $("#parentSubjectFilter")?.addEventListener("input", () => {
+    if (parentStudentId) renderParentPortal();
+  });
+  $("#parentSubjectFilter")?.addEventListener("change", () => {
+    if (parentStudentId) renderParentPortal();
+  });
+  $("#parentScoreDate")?.addEventListener("input", () => {
+    if (parentStudentId) renderParentPortal();
+  });
+  $("#parentScoreDate")?.addEventListener("change", () => {
     if (parentStudentId) renderParentPortal();
   });
 }
@@ -2373,21 +2668,40 @@ async function loadParentBranchState(branch) {
 }
 
 function studentScoreSummary(student, subjectFilter = "全部") {
-  return courses
+  return reportSubjects
     .filter((subject) => subjectFilter === "全部" || subject === subjectFilter)
     .map((subject) => {
     const exams = state.exams.filter((exam) => !exam.noExam && exam.subject === subject && exam.scores?.[student.id] !== undefined);
-    if (!exams.length) return "";
-    const scores = exams.map((exam) => averageScore(scoreValuesForStudent(exam, student.id))).filter(Number.isFinite);
+    const termRows = state.termScores.filter((item) => item.studentId === student.id && normalizeCourseName(item.subject) === subject);
+    if (!exams.length && !termRows.length) return "";
+    const weeklyScores = exams.map((exam) => averageScore(scoreValuesForStudent(exam, student.id))).filter(Number.isFinite);
+    const termScores = termRows.map((item) => Number(item.score)).filter(Number.isFinite);
+    const scores = [...weeklyScores, ...termScores];
     const avg = scores.reduce((sum, score) => sum + score, 0) / scores.length;
     const classRows = state.exams
       .filter((exam) => !exam.noExam && exam.subject === subject)
       .flatMap((exam) => Object.keys(exam.scores || {}).map((studentId) => averageScore(scoreValuesForStudent(exam, studentId))))
       .filter(Number.isFinite);
-    const classAvg = classRows.length ? classRows.reduce((sum, score) => sum + score, 0) / classRows.length : NaN;
+    const termClassRows = state.termScores
+      .filter((item) => normalizeCourseName(item.subject) === subject)
+      .map((item) => Number(item.score))
+      .filter(Number.isFinite);
+    const combinedClassRows = [...classRows, ...termClassRows];
+    const classAvg = combinedClassRows.length ? combinedClassRows.reduce((sum, score) => sum + score, 0) / combinedClassRows.length : NaN;
     const latest = exams.sort((a, b) => b.date.localeCompare(a.date))[0];
-    const rankRows = currentScoreRows(latest);
-    const rank = rankRows.find((row) => row.student.id === student.id)?.rank || "-";
+    const rankRows = latest ? currentScoreRows(latest) : [];
+    const latestTerm = termRows.sort((a, b) => (b.date || "").localeCompare(a.date || ""))[0];
+    const latestIsTerm = latestTerm && (!latest || (latestTerm.date || "") >= latest.date);
+    const rank = latestIsTerm
+      ? termRowsForMeta({
+        year: latestTerm.year,
+        semester: latestTerm.semester,
+        grade: latestTerm.grade,
+        date: latestTerm.date,
+        stage: latestTerm.stage,
+        subject: latestTerm.subject,
+      }).find((row) => row.student.id === student.id)?.rank || "-"
+      : rankRows.find((row) => row.student.id === student.id)?.rank || "-";
     return `<article class="record-card"><strong>${subject}</strong><div class="meta"><span class="badge">個人平均 ${avg.toFixed(1)}</span><span class="badge">班平均 ${Number.isFinite(classAvg) ? classAvg.toFixed(1) : "-"}</span><span class="badge">最新排名 ${rank}</span></div></article>`;
   }).filter(Boolean).join("") || `<div class="empty">尚無成績紀錄。</div>`;
 }
@@ -2398,7 +2712,7 @@ function studentAvailableSubjects(student) {
   state.termScores
     .filter((item) => item.studentId === student.id)
     .forEach((item) => subjects.add(normalizeCourseName(item.subject)));
-  return courses.filter((subject) => subjects.has(subject));
+  return reportSubjects.filter((subject) => subjects.has(subject));
 }
 
 function renderParentSubjectOptions(student) {
@@ -2412,15 +2726,20 @@ function renderParentSubjectOptions(student) {
 
 function renderParentScoreHistory(student) {
   const subject = $("#parentSubjectFilter")?.value || "全部";
+  const queryDate = $("#parentScoreDate")?.value || todayISO();
   const rows = studentExamRows(student)
     .filter((row) => subject === "全部" || row.exam.subject === subject)
     .slice()
     .sort((a, b) => b.exam.date.localeCompare(a.exam.date));
+  const dayRows = rows.filter((row) => row.exam.date === queryDate);
+  const historyRows = rows.filter((row) => row.exam.date !== queryDate);
   const termRows = state.termScores
     .filter((item) => item.studentId === student.id)
     .filter((item) => subject === "全部" || normalizeCourseName(item.subject) === subject)
     .slice()
     .sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
+  const dayTermRows = termRows.filter((item) => (item.date || item.createdAt?.slice(0, 10) || "") === queryDate);
+  const historyTermRows = termRows.filter((item) => (item.date || item.createdAt?.slice(0, 10) || "") !== queryDate);
 
   if (!rows.length && !termRows.length) return `<div class="empty">尚無此科目的歷史成績。</div>`;
 
@@ -2430,6 +2749,13 @@ function renderParentScoreHistory(student) {
       <span>可調閱週考、段考與排名紀錄</span>
     </div>
     ${studentScoreSummary(student, subject)}
+    <h3 class="subhead">當日成績</h3>
+    <div class="lookup-list">
+      ${[
+        ...dayRows.map((row) => `<article class="score-result-card"><b>${row.exam.subject}</b><span>${row.exam.scope || "未填重點"}</span><strong class="${scoreClass(row.score)}">${scoreDisplay(row.score)}</strong><small>${dateLabel(row.exam.date)}｜週考｜各卷 ${row.papers.map(scoreDisplay).join(" / ")}</small></article>`),
+        ...dayTermRows.map((item) => `<article class="score-result-card"><b>${item.subject}</b><span>${item.term || `${item.year || ""}${item.semester || ""}`} ${item.stage || ""}</span><strong class="${scoreClass(Number(item.score))}">${scoreDisplay(Number(item.score))}</strong><small>${dateLabel(item.date || item.createdAt?.slice(0, 10) || "")}｜段考</small></article>`),
+      ].join("") || `<div class="empty small-empty">當日此科暫時沒有成績。</div>`}
+    </div>
     <h3 class="subhead">週考歷史</h3>
     <div class="table-wrap parent-score-history">
       <table>
@@ -2437,7 +2763,7 @@ function renderParentScoreHistory(student) {
           <tr><th>日期</th><th>科目</th><th>考試重點</th><th>各卷分數</th><th>平均</th><th>排名</th><th>班平均</th></tr>
         </thead>
         <tbody>
-          ${rows.map((row) => {
+          ${historyRows.map((row) => {
             const classRows = currentScoreRows(row.exam);
             const classAverage = classRows.length ? classRows.reduce((sum, item) => sum + item.score, 0) / classRows.length : NaN;
             const rank = classRows.find((item) => item.student.id === student.id)?.rank || "-";
@@ -2463,13 +2789,13 @@ function renderParentScoreHistory(student) {
           <tr><th>學期</th><th>段別</th><th>科目</th><th>成績</th><th>建立日期</th></tr>
         </thead>
         <tbody>
-          ${termRows.map((item) => `
+          ${historyTermRows.map((item) => `
             <tr>
               <td>${item.term || "-"}</td>
               <td>${item.stage || "-"}</td>
               <td>${item.subject || "-"}</td>
               <td class="${scoreClass(Number(item.score))}">${scoreDisplay(Number(item.score))}</td>
-              <td>${item.createdAt ? dateLabel(item.createdAt.slice(0, 10)) : "-"}</td>
+              <td>${item.date ? dateLabel(item.date) : item.createdAt ? dateLabel(item.createdAt.slice(0, 10)) : "-"}</td>
             </tr>
           `).join("") || `<tr><td colspan="5">尚無段考歷史</td></tr>`}
         </tbody>
@@ -2489,7 +2815,7 @@ function renderParentPortal() {
     .join("") || `<div class="empty">尚無請假紀錄。</div>`;
   renderParentSubjectOptions(student);
   $("#parentScoreList").innerHTML = renderParentScoreHistory(student);
-  $("#parentReport").innerHTML = renderStudentReportHtml(student);
+  $("#parentReport").innerHTML = renderStudentReportHtml(student, $("#parentSubjectFilter")?.value || "全部");
 }
 
 function setupLogin() {
@@ -2557,6 +2883,8 @@ function renderAll() {
   renderClassReport();
   renderExamHistory();
   renderStudentReport();
+  renderTermScoreEntryList();
+  renderTermReport();
   renderActiveLeaves();
   renderLateBoard();
   renderManageLists();
@@ -2571,6 +2899,9 @@ function boot() {
   resetLeaveForm();
   $("#examDate").value = todayISO();
   $("#careerQueryDate").value = todayISO();
+  $("#parentScoreDate").value = todayISO();
+  $("#termDate").value = todayISO();
+  $("#termYear").value = String(new Date().getFullYear() - 1911);
   renderExamSubjectOptions();
   $("#lateDate").value = todayISO();
   setupTabs();
