@@ -456,10 +456,39 @@
           </div>
           <div id="careerTermTrend"></div>
         </section>
+        <section class="panel career-query-panel">
+          <div class="panel-title">
+            <h2>段考分析報告</h2>
+            <span>依段考截止日期抓該段前週考弱點</span>
+          </div>
+          <div class="toolbar compact-toolbar">
+            <label>學年
+              <input id="careerTermAnalysisYear" placeholder="例：115">
+            </label>
+            <label>學期
+              <select id="careerTermAnalysisSemester">
+                <option value="上學期">上學期</option>
+                <option value="下學期">下學期</option>
+              </select>
+            </label>
+            <label>段考
+              <select id="careerTermAnalysisStage">
+                <option value="一段">一段</option>
+                <option value="二段">二段</option>
+                <option value="三段">三段</option>
+              </select>
+            </label>
+            <label>段考截止日
+              <input id="careerTermAnalysisEndDate" type="date">
+            </label>
+            <button class="primary" id="saveTermAnalysisPeriod" type="button">儲存段考時間</button>
+          </div>
+          <div id="termAnalysisReport"></div>
+        </section>
         <div class="board-layout">
           <section class="panel large-panel">
             <div class="panel-title">
-              <h2>學生分析報告</h2>
+              <h2>學生週考分析報告</h2>
               <button class="ghost" id="printStudentReport" type="button">列印家長報告</button>
             </div>
             <div id="studentReport"></div>
