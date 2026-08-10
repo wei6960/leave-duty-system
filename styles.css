@@ -768,6 +768,34 @@ legend {
     rgba(0, 0, 0, .14);
 }
 
+.analysis-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .6rem;
+}
+
+.level-badge {
+  min-width: 3.2rem;
+  padding: .22rem .55rem;
+  border-radius: 999px;
+  background: linear-gradient(180deg, var(--gold-2), var(--gold-3));
+  color: #151008;
+  font-size: .88rem;
+  font-weight: 900;
+  text-align: center;
+}
+
+.analysis-card small,
+.analysis-card p {
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.analysis-card p {
+  margin: 0;
+}
+
 .mini-bars {
   display: flex;
   align-items: end;

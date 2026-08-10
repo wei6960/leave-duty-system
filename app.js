@@ -975,6 +975,78 @@ function estimateLevel(avg) {
   return "C 區間";
 }
 
+const levelScale = ["C", "B", "B+", "B++", "A", "A+", "A++"];
+
+function levelFromScore(score) {
+  if (!Number.isFinite(score)) return "資料不足";
+  if (score >= 95) return "A++";
+  if (score >= 90) return "A+";
+  if (score >= 85) return "A";
+  if (score >= 80) return "B++";
+  if (score >= 75) return "B+";
+  if (score >= 70) return "B";
+  return "C";
+}
+
+function shiftLevel(level, amount) {
+  const index = levelScale.indexOf(level);
+  if (index < 0) return level;
+  return levelScale[Math.max(0, Math.min(levelScale.length - 1, index + amount))];
+}
+
+function trendLabel(trend) {
+  if (!Number.isFinite(trend)) return "資料不足";
+  if (trend >= 8) return "明顯上升";
+  if (trend >= 3) return "小幅上升";
+  if (trend <= -8) return "明顯下滑";
+  if (trend <= -3) return "小幅下滑";
+  return "穩定";
+}
+
+function stabilityLabel(range) {
+  if (!Number.isFinite(range)) return "資料不足";
+  if (range <= 8) return "穩定";
+  if (range <= 18) return "略有起伏";
+  return "起伏偏大";
+}
+
+function analyzeSubjectPerformance(subject, rows) {
+  const ordered = rows.slice().sort((a, b) => a.exam.date.localeCompare(b.exam.date));
+  const recent = ordered.slice(-6);
+  const scores = recent.map((row) => row.score).filter(Number.isFinite);
+  if (!scores.length) {
+    return { subject, level: "資料不足", recentAvg: NaN, latest: NaN, trend: NaN, range: NaN, count: 0, note: "尚無足夠考試紀錄可分析。" };
+  }
+  const weightedTotal = scores.reduce((sum, score, index) => sum + score * (index + 1), 0);
+  const weightSum = scores.reduce((sum, _score, index) => sum + index + 1, 0);
+  const recentAvg = weightedTotal / weightSum;
+  const latest = scores.at(-1);
+  const trend = scores.length >= 2 ? latest - scores[0] : 0;
+  const range = Math.max(...scores) - Math.min(...scores);
+  let level = levelFromScore(recentAvg);
+  if (trend >= 8 && latest >= recentAvg) level = shiftLevel(level, 1);
+  if (trend <= -8 || (range >= 25 && latest < recentAvg)) level = shiftLevel(level, -1);
+  const weakRows = recent.filter((row) => row.score < 70);
+  const focus = weakRows.map((row) => row.exam.scope || dateLabel(row.exam.date)).slice(-3).join("、");
+  const note = [
+    `近 ${scores.length} 次加權平均 ${scoreDisplay(recentAvg)}`,
+    `最新 ${scoreDisplay(latest)}`,
+    trendLabel(trend),
+    stabilityLabel(range),
+    focus ? `需補強：${focus}` : "近期未見明顯低於 70 分的單元",
+  ].join("｜");
+  return { subject, level, recentAvg, latest, trend, range, count: scores.length, note };
+}
+
+function subjectPerformanceRows(student) {
+  const examRows = studentExamRows(student);
+  return courses.map((subject) => {
+    const rows = examRows.filter((row) => row.exam.subject === subject);
+    if (!rows.length) return null;
+    return { ...analyzeSubjectPerformance(subject, rows), rows };
+  }).filter(Boolean);
+}
+
 function renderStudentReport() {
   const student = getStudent($("#careerStudent")?.value);
   if (!student) {
@@ -991,30 +1063,30 @@ function renderStudentReport() {
 
 function renderStudentReportHtml(student) {
   const examRows = studentExamRows(student);
-  const avg = examRows.length ? examRows.reduce((sum, row) => sum + row.score, 0) / examRows.length : NaN;
-  const weakUnits = examRows.filter((row) => row.score < 70).map((row) => `${row.exam.subject}｜${row.exam.scope || dateLabel(row.exam.date)}`);
-  const bySubject = courses.map((subject) => {
-    const rows = examRows.filter((row) => row.exam.subject === subject);
-    const subjectAvg = rows.length ? rows.reduce((sum, row) => sum + row.score, 0) / rows.length : NaN;
-    return { subject, rows, avg: subjectAvg };
-  }).filter((item) => item.rows.length);
+  const analyses = subjectPerformanceRows(student);
+  const levelSummary = analyses.length ? analyses.map((item) => `${item.subject} ${item.level}`).join("、") : "資料不足";
   const termRows = state.termScores.filter((item) => item.studentId === student.id);
   return `
     <div class="report-head">
       <strong>${studentLabel(student)}</strong>
       <span>補習科目：${studentCoursesLabel(student)}</span>
-      <span>會考推估：${estimateLevel(avg)}</span>
+      <span>各科推估：${levelSummary}</span>
     </div>
     <div class="analysis-grid">
-      ${bySubject.map((item) => `
+      ${analyses.map((item) => `
         <article class="analysis-card">
-          <strong>${item.subject}</strong>
-          <span>週考平均 ${item.avg.toFixed(1)}</span>
+          <div class="analysis-card-head">
+            <strong>${item.subject}</strong>
+            <b class="level-badge">${item.level}</b>
+          </div>
+          <span>近期加權 ${scoreDisplay(item.recentAvg)}｜最新 ${scoreDisplay(item.latest)}</span>
+          <small>${trendLabel(item.trend)}｜${stabilityLabel(item.range)}｜近 ${item.count} 次</small>
           <div class="mini-bars">${item.rows.slice(-8).map((row) => `<i style="height:${Math.max(8, row.score)}%" title="${dateLabel(row.exam.date)} ${row.score}"></i>`).join("")}</div>
+          <p>${item.note}</p>
         </article>
       `).join("") || `<div class="empty">尚無週考成績。</div>`}
     </div>
-    <p class="report-copy">目前整體平均為 ${Number.isFinite(avg) ? avg.toFixed(1) : "資料不足"}，推估落在 ${estimateLevel(avg)}。${weakUnits.length ? `需要優先補強：${weakUnits.slice(-6).join("、")}。` : "目前沒有明顯低於 70 分的周考單元。"}</p>
+    <p class="report-copy">此報告採各科獨立判讀，不以全部科目總平均推估；系統優先參考近期考試、分數起伏與進退步趨勢，避免早期成績或不同科目混算造成失準。</p>
     <h2>段考紀錄</h2>
     <div class="meta">${termRows.map((item) => `<span class="badge">${item.term} ${item.stage} ${item.subject} ${item.score}</span>`).join("") || `<span class="badge">尚無段考紀錄</span>`}</div>
   `;
@@ -1053,6 +1125,7 @@ function pdfDocument(title, body, layout = "portrait") {
     .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-top: 12px; }
     .card { border: 1px solid #d8c291; padding: 10px; border-radius: 6px; break-inside: avoid; }
     .card strong { display: block; margin-bottom: 5px; color: #7a551a; }
+    .level { display: inline-block; min-width: 46px; padding: 3px 8px; border-radius: 999px; color: #161616; background: #f3c75f; font-weight: 900; text-align: center; }
     @media print { button { display: none; } }
   </style>
 </head>
@@ -1121,13 +1194,8 @@ function printStudentReportPdf() {
     return;
   }
   const examRows = studentExamRows(student);
-  const avg = examRows.length ? examRows.reduce((sum, row) => sum + row.score, 0) / examRows.length : NaN;
-  const weakUnits = examRows.filter((row) => row.score < 70).map((row) => `${row.exam.subject}｜${row.exam.scope || dateLabel(row.exam.date)}`);
-  const bySubject = courses.map((subject) => {
-    const rows = examRows.filter((row) => row.exam.subject === subject);
-    const subjectAvg = rows.length ? rows.reduce((sum, row) => sum + row.score, 0) / rows.length : NaN;
-    return { subject, rows, avg: subjectAvg };
-  }).filter((item) => item.rows.length);
+  const analyses = subjectPerformanceRows(student);
+  const levelSummary = analyses.length ? analyses.map((item) => `${item.subject} ${item.level}`).join("、") : "資料不足";
   const termRows = state.termScores.filter((item) => item.studentId === student.id);
   const historyRows = state.archives.filter((item) => item.studentId === student.id);
   const weeklyRows = examRows.slice().reverse().map((row) => {
@@ -1141,12 +1209,11 @@ function printStudentReportPdf() {
     </header>
     <div class="meta">
       <span class="pill">補習科目：${escapeHtml(studentCoursesLabel(student))}</span>
-      <span class="pill">週考平均 ${scoreDisplay(avg)}</span>
-      <span class="pill">會考推估：${escapeHtml(estimateLevel(avg))}</span>
+      <span class="pill">各科推估：${escapeHtml(levelSummary)}</span>
     </div>
-    <p class="summary">目前整體平均為 ${scoreDisplay(avg)}，推估落在 ${escapeHtml(estimateLevel(avg))}。${weakUnits.length ? `需要優先補強：${escapeHtml(weakUnits.slice(-6).join("、"))}。` : "目前沒有明顯低於 70 分的周考單元。"}</p>
+    <p class="summary">本報告採各科獨立分析，優先參考近期考試、分數起伏與進退步趨勢，不用全部科目總平均直接推估。</p>
     <h2>各科概況</h2>
-    <div class="grid">${bySubject.map((item) => `<section class="card"><strong>${escapeHtml(item.subject)}</strong><div>平均 ${scoreDisplay(item.avg)}，共 ${item.rows.length} 次紀錄</div></section>`).join("") || `<section class="card">尚無週考成績</section>`}</div>
+    <div class="grid">${analyses.map((item) => `<section class="card"><strong>${escapeHtml(item.subject)} <span class="level">${escapeHtml(item.level)}</span></strong><div>近期加權 ${scoreDisplay(item.recentAvg)}，最新 ${scoreDisplay(item.latest)}</div><div>${escapeHtml(trendLabel(item.trend))}｜${escapeHtml(stabilityLabel(item.range))}｜近 ${item.count} 次</div><div>${escapeHtml(item.note)}</div></section>`).join("") || `<section class="card">尚無週考成績</section>`}</div>
     <h2>週考紀錄</h2>
     <table><thead><tr><th>日期</th><th>科目</th><th class="left">重點/單元</th><th>各卷</th><th>平均</th><th>班排名</th></tr></thead><tbody>${weeklyRows || `<tr><td colspan="6">尚無週考紀錄</td></tr>`}</tbody></table>
     <h2>段考紀錄</h2>
