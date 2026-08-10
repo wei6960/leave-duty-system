@@ -19,6 +19,7 @@ let editingStudentId = null;
 let editingExamId = null;
 let selectedClassReportExamId = null;
 let scoreDraft = null;
+let careerSubject = "全部";
 let currentBranch = sessionStorage.getItem(SESSION_KEY) || "";
 let state = currentBranch ? loadState() : emptyState();
 let syncReady = false;
@@ -1132,6 +1133,7 @@ function stabilityLabel(range) {
 function analyzeSubjectPerformance(subject, rows) {
   const ordered = rows.slice().sort((a, b) => a.exam.date.localeCompare(b.exam.date));
   const recent = ordered.slice(-6);
+  const allScores = ordered.map((row) => row.score).filter(Number.isFinite);
   const scores = recent.map((row) => row.score).filter(Number.isFinite);
   if (!scores.length) {
     return { subject, level: "資料不足", recentAvg: NaN, latest: NaN, trend: NaN, range: NaN, count: 0, note: "尚無足夠考試紀錄可分析。" };
@@ -1139,22 +1141,27 @@ function analyzeSubjectPerformance(subject, rows) {
   const weightedTotal = scores.reduce((sum, score, index) => sum + score * (index + 1), 0);
   const weightSum = scores.reduce((sum, _score, index) => sum + index + 1, 0);
   const recentAvg = weightedTotal / weightSum;
+  const longAvg = allScores.reduce((sum, score) => sum + score, 0) / allScores.length;
   const latest = scores.at(-1);
-  const trend = scores.length >= 2 ? latest - scores[0] : 0;
-  const range = Math.max(...scores) - Math.min(...scores);
-  let level = levelFromScore(recentAvg);
+  const firstBandAvg = allScores.slice(0, Math.min(3, allScores.length)).reduce((sum, score) => sum + score, 0) / Math.min(3, allScores.length);
+  const trend = allScores.length >= 2 ? recentAvg - firstBandAvg : 0;
+  const range = Math.max(...allScores) - Math.min(...allScores);
+  const combined = recentAvg * .7 + longAvg * .3;
+  let level = levelFromScore(combined);
   if (trend >= 8 && latest >= recentAvg) level = shiftLevel(level, 1);
   if (trend <= -8 || (range >= 25 && latest < recentAvg)) level = shiftLevel(level, -1);
   const weakRows = recent.filter((row) => row.score < 70);
   const focus = weakRows.map((row) => row.exam.scope || dateLabel(row.exam.date)).slice(-3).join("、");
   const note = [
-    `近 ${scores.length} 次加權平均 ${scoreDisplay(recentAvg)}`,
+    `歷程 ${allScores.length} 次`,
+    `近期加權 ${scoreDisplay(recentAvg)}`,
+    `長期平均 ${scoreDisplay(longAvg)}`,
     `最新 ${scoreDisplay(latest)}`,
     trendLabel(trend),
     stabilityLabel(range),
     focus ? `需補強：${focus}` : "近期未見明顯低於 70 分的單元",
   ].join("｜");
-  return { subject, level, recentAvg, latest, trend, range, count: scores.length, note };
+  return { subject, level, recentAvg, longAvg, latest, trend, range, count: allScores.length, recentCount: scores.length, note };
 }
 
 function subjectPerformanceRows(student) {
@@ -1166,13 +1173,106 @@ function subjectPerformanceRows(student) {
   }).filter(Boolean);
 }
 
+function careerSubjectsForStudent(student) {
+  if (!student) return [];
+  const subjects = new Set(student.courses || []);
+  studentExamRows(student).forEach((row) => subjects.add(row.exam.subject));
+  state.termScores
+    .filter((item) => item.studentId === student.id)
+    .forEach((item) => subjects.add(normalizeCourseName(item.subject)));
+  return courses.filter((subject) => subjects.has(subject));
+}
+
+function selectedCareerSubject(student) {
+  const subjects = careerSubjectsForStudent(student);
+  if (careerSubject !== "全部" && subjects.includes(careerSubject)) return careerSubject;
+  return "全部";
+}
+
+function scoreLineChart(rows) {
+  const chartRows = rows.slice(-12);
+  if (chartRows.length < 2) return `<div class="empty small-empty">至少需要 2 次成績才會形成折線圖。</div>`;
+  const width = 640;
+  const height = 220;
+  const pad = 28;
+  const points = chartRows.map((row, index) => {
+    const x = pad + (index * (width - pad * 2)) / Math.max(1, chartRows.length - 1);
+    const y = height - pad - (Math.max(0, Math.min(100, row.score)) / 100) * (height - pad * 2);
+    return { x, y, row };
+  });
+  const polyline = points.map((point) => `${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(" ");
+  return `
+    <svg class="score-line-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="成績起伏折線圖">
+      <line x1="${pad}" y1="${pad}" x2="${pad}" y2="${height - pad}" class="chart-axis"></line>
+      <line x1="${pad}" y1="${height - pad}" x2="${width - pad}" y2="${height - pad}" class="chart-axis"></line>
+      <line x1="${pad}" y1="${height - pad - .6 * (height - pad * 2)}" x2="${width - pad}" y2="${height - pad - .6 * (height - pad * 2)}" class="chart-pass"></line>
+      <polyline points="${polyline}" class="chart-line"></polyline>
+      ${points.map((point) => `<g><circle cx="${point.x.toFixed(1)}" cy="${point.y.toFixed(1)}" r="4.5" class="chart-dot"></circle><title>${dateLabel(point.row.exam.date)} ${point.row.exam.subject} ${scoreDisplay(point.row.score)}</title></g>`).join("")}
+      ${points.map((point, index) => index % 2 === 0 || index === points.length - 1 ? `<text x="${point.x.toFixed(1)}" y="${height - 8}" text-anchor="middle" class="chart-label">${dateLabel(point.row.exam.date).replace("（週", "\n").replace("）", "")}</text>` : "").join("")}
+      <text x="${pad + 4}" y="${height - pad - .6 * (height - pad * 2) - 6}" class="chart-mark">60</text>
+    </svg>
+  `;
+}
+
+function renderCareerSubjectButtons(student) {
+  const target = $("#careerSubjectButtons");
+  if (!target) return;
+  const subjects = careerSubjectsForStudent(student);
+  const selected = selectedCareerSubject(student);
+  target.innerHTML = `
+    <button class="subject-chip ${selected === "全部" ? "active" : ""}" type="button" data-career-subject="全部">全部</button>
+    ${subjects.map((subject) => `<button class="subject-chip ${selected === subject ? "active" : ""}" type="button" data-career-subject="${subject}">${subject}</button>`).join("")}
+  `;
+}
+
+function renderCareerScoreLookup(student) {
+  const target = $("#careerScoreLookup");
+  if (!target) return;
+  if (!student) {
+    target.innerHTML = `<div class="empty">請先選擇學生。</div>`;
+    return;
+  }
+  const subject = selectedCareerSubject(student);
+  const queryDate = $("#careerQueryDate")?.value || todayISO();
+  const rows = studentExamRows(student)
+    .filter((row) => subject === "全部" || row.exam.subject === subject)
+    .sort((a, b) => b.exam.date.localeCompare(a.exam.date));
+  const dayRows = rows.filter((row) => row.exam.date === queryDate);
+  const termRows = state.termScores
+    .filter((item) => item.studentId === student.id)
+    .filter((item) => subject === "全部" || normalizeCourseName(item.subject) === subject);
+  target.innerHTML = `
+    <div class="lookup-result">
+      <strong>${dateLabel(queryDate)} ${subject === "全部" ? "全部科目" : subject}</strong>
+      <div class="lookup-list">
+        ${dayRows.map((row) => `<article class="score-result-card"><b>${row.exam.subject}</b><span>${row.exam.scope || "未填重點"}</span><strong class="${scoreClass(row.score)}">${scoreDisplay(row.score)}</strong><small>各卷 ${row.papers.map(scoreDisplay).join(" / ")}</small></article>`).join("") || `<div class="empty small-empty">當日此科暫時沒有成績。</div>`}
+      </div>
+    </div>
+    <div class="table-wrap career-history-table">
+      <table>
+        <thead><tr><th>日期</th><th>科目</th><th>重點</th><th>各卷</th><th>平均</th><th>排名</th></tr></thead>
+        <tbody>${rows.map((row) => {
+          const rank = currentScoreRows(row.exam).find((item) => item.student.id === student.id)?.rank || "-";
+          return `<tr><td>${dateLabel(row.exam.date)}</td><td>${row.exam.subject}</td><td>${row.exam.scope || "-"}</td><td>${row.papers.map(scoreDisplay).join(" / ")}</td><td class="${scoreClass(row.score)}">${scoreDisplay(row.score)}</td><td>${rank}</td></tr>`;
+        }).join("") || `<tr><td colspan="6">尚無歷史成績</td></tr>`}</tbody>
+      </table>
+    </div>
+    <div class="meta">${termRows.map((item) => `<span class="badge">${item.term} ${item.stage} ${item.subject} ${scoreDisplay(Number(item.score))}</span>`).join("") || `<span class="badge">尚無段考成績</span>`}</div>
+  `;
+}
+
 function renderStudentReport() {
   const student = getStudent($("#careerStudent")?.value);
   if (!student) {
+    renderCareerSubjectButtons(null);
+    renderCareerScoreLookup(null);
     $("#studentReport").innerHTML = `<div class="empty">請先選擇學生。</div>`;
     $("#archiveList").innerHTML = `<div class="empty">尚無歷年紀錄。</div>`;
     return;
   }
+  if (careerSubject !== "全部" && !careerSubjectsForStudent(student).includes(careerSubject)) careerSubject = "全部";
+  renderCareerSubjectButtons(student);
+  renderCareerScoreLookup(student);
   $("#studentReport").innerHTML = renderStudentReportHtml(student);
   $("#archiveList").innerHTML = state.archives
     .filter((item) => item.studentId === student.id)
@@ -1182,7 +1282,8 @@ function renderStudentReport() {
 
 function renderStudentReportHtml(student) {
   const examRows = studentExamRows(student);
-  const analyses = subjectPerformanceRows(student);
+  const subject = selectedCareerSubject(student);
+  const analyses = subjectPerformanceRows(student).filter((item) => subject === "全部" || item.subject === subject);
   const levelSummary = analyses.length ? analyses.map((item) => `${item.subject} ${item.level}`).join("、") : "資料不足";
   const termRows = state.termScores.filter((item) => item.studentId === student.id);
   return `
@@ -1198,9 +1299,9 @@ function renderStudentReportHtml(student) {
             <strong>${item.subject}</strong>
             <b class="level-badge">${item.level}</b>
           </div>
-          <span>近期加權 ${scoreDisplay(item.recentAvg)}｜最新 ${scoreDisplay(item.latest)}</span>
-          <small>${trendLabel(item.trend)}｜${stabilityLabel(item.range)}｜近 ${item.count} 次</small>
-          <div class="mini-bars">${item.rows.slice(-8).map((row) => `<i style="height:${Math.max(8, row.score)}%" title="${dateLabel(row.exam.date)} ${row.score}"></i>`).join("")}</div>
+          <span>近期加權 ${scoreDisplay(item.recentAvg)}｜長期平均 ${scoreDisplay(item.longAvg)}｜最新 ${scoreDisplay(item.latest)}</span>
+          <small>${trendLabel(item.trend)}｜${stabilityLabel(item.range)}｜歷程 ${item.count} 次</small>
+          ${scoreLineChart(item.rows)}
           <p>${item.note}</p>
         </article>
       `).join("") || `<div class="empty">尚無週考成績。</div>`}
@@ -1442,15 +1543,18 @@ function setupTabs() {
       $$(".page").forEach((page) => page.classList.remove("active"));
       button.classList.add("active");
       $(`#${button.dataset.tab}`).classList.add("active");
+      document.body.classList.remove("nav-open");
       renderAll();
     });
   });
+  $("#mobileMenuButton")?.addEventListener("click", () => document.body.classList.toggle("nav-open"));
+  $("#mobileScrim")?.addEventListener("click", () => document.body.classList.remove("nav-open"));
 }
 
 function enforceMobilePages() {
   if (!mobileQuery.matches) return;
   const activePage = $(".page.active");
-  if (activePage && ["history"].includes(activePage.id)) {
+  if (activePage && ["history", "schedule"].includes(activePage.id)) {
     document.querySelector('[data-tab="dashboard"]').click();
   }
 }
@@ -1589,8 +1693,15 @@ function setupForms() {
     }
   });
 
-  ["studentFilter", "studentSearch", "lateGrade", "historyType", "historySearch", "scheduleGrade", "examGrade", "examSubject", "examPaperCount", "examNoTest", "scoreStudentSearch", "scoreStudentFilter", "careerGrade", "careerStudent"].forEach((id) => {
+  ["studentFilter", "studentSearch", "lateGrade", "historyType", "historySearch", "scheduleGrade", "examGrade", "examSubject", "examPaperCount", "examNoTest", "scoreStudentSearch", "scoreStudentFilter", "careerGrade", "careerStudent", "careerQueryDate"].forEach((id) => {
     $(`#${id}`).addEventListener("input", renderAll);
+  });
+
+  $("#careerSubjectButtons")?.addEventListener("click", (event) => {
+    const subject = event.target.dataset.careerSubject;
+    if (!subject) return;
+    careerSubject = subject;
+    renderAll();
   });
 
   $("#parentSubjectFilter")?.addEventListener("input", () => {
@@ -2269,6 +2380,7 @@ function boot() {
   renderSubjectOptions("termSubject", false);
   resetLeaveForm();
   $("#examDate").value = todayISO();
+  $("#careerQueryDate").value = todayISO();
   renderExamSubjectOptions();
   $("#lateDate").value = todayISO();
   setupTabs();

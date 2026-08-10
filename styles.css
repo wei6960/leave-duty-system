@@ -119,6 +119,11 @@ select {
   min-height: 100vh;
 }
 
+.mobile-menu-button,
+.mobile-scrim {
+  display: none;
+}
+
 .sidebar {
   position: sticky;
   top: 0;
@@ -796,6 +801,109 @@ legend {
   margin: 0;
 }
 
+.career-query-panel {
+  margin-bottom: 1rem;
+}
+
+.career-subject-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .5rem;
+  margin-bottom: .85rem;
+}
+
+.subject-chip {
+  border: 1px solid rgba(241, 211, 124, .2);
+  border-radius: 999px;
+  min-height: 2.35rem;
+  padding: .35rem .9rem;
+  background: rgba(0, 0, 0, .22);
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.subject-chip.active {
+  border-color: var(--gold);
+  background: linear-gradient(135deg, rgba(198, 151, 53, .34), rgba(20, 24, 30, .96));
+  color: var(--gold-2);
+}
+
+.compact-toolbar {
+  margin: 0 0 .85rem;
+}
+
+.lookup-result {
+  display: grid;
+  gap: .65rem;
+}
+
+.lookup-list {
+  display: grid;
+  gap: .55rem;
+}
+
+.score-result-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: .35rem .7rem;
+  align-items: center;
+  padding: .75rem;
+  border: 1px solid rgba(241, 211, 124, .14);
+  border-radius: .38rem;
+  background: rgba(0, 0, 0, .16);
+}
+
+.score-result-card small {
+  grid-column: 1 / -1;
+  color: var(--muted);
+}
+
+.career-history-table {
+  margin: .85rem 0;
+}
+
+.career-history-table table {
+  min-width: 48rem;
+}
+
+.score-line-chart {
+  width: 100%;
+  min-height: 12rem;
+  border: 1px solid rgba(241, 211, 124, .12);
+  border-radius: .38rem;
+  background: linear-gradient(180deg, rgba(255, 255, 255, .035), rgba(0, 0, 0, .08));
+}
+
+.chart-axis,
+.chart-pass {
+  stroke: rgba(241, 211, 124, .22);
+  stroke-width: 1;
+}
+
+.chart-pass {
+  stroke-dasharray: 4 5;
+}
+
+.chart-line {
+  fill: none;
+  stroke: var(--gold-2);
+  stroke-width: 4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.chart-dot {
+  fill: #11151a;
+  stroke: var(--gold-2);
+  stroke-width: 3;
+}
+
+.chart-label,
+.chart-mark {
+  fill: var(--muted);
+  font-size: 11px;
+}
+
 .mini-bars {
   display: flex;
   align-items: end;
@@ -1075,6 +1183,8 @@ tbody tr:hover {
 
 @media (max-width: 720px) {
   .desktop-only,
+  [data-tab="schedule"],
+  #schedule,
   #history {
     display: none !important;
   }
@@ -1083,10 +1193,60 @@ tbody tr:hover {
     display: block;
   }
 
+  .mobile-menu-button {
+    position: fixed;
+    top: .85rem;
+    left: .85rem;
+    z-index: 60;
+    display: inline-grid;
+    place-content: center;
+    gap: .22rem;
+    width: 2.75rem;
+    height: 2.75rem;
+    border: 1px solid rgba(241, 211, 124, .32);
+    border-radius: .42rem;
+    background: rgba(9, 11, 15, .92);
+    box-shadow: 0 .8rem 1.6rem rgba(0, 0, 0, .34);
+  }
+
+  .mobile-menu-button span {
+    display: block;
+    width: 1.25rem;
+    height: .12rem;
+    background: var(--gold-2);
+  }
+
+  .mobile-scrim {
+    position: fixed;
+    inset: 0;
+    z-index: 45;
+    display: block;
+    pointer-events: none;
+    background: rgba(0, 0, 0, 0);
+    transition: background .18s ease;
+  }
+
+  body.nav-open .mobile-scrim {
+    pointer-events: auto;
+    background: rgba(0, 0, 0, .55);
+  }
+
   .sidebar {
-    border-right: 0;
-    border-bottom: 1px solid rgba(241, 211, 124, .22);
-    box-shadow: 0 1rem 2rem rgba(0, 0, 0, .24);
+    position: fixed;
+    inset: 0 auto 0 0;
+    z-index: 50;
+    width: min(82vw, 20rem);
+    height: 100vh;
+    overflow-y: auto;
+    transform: translateX(-105%);
+    border-right: 1px solid rgba(241, 211, 124, .22);
+    border-bottom: 0;
+    box-shadow: 1rem 0 2rem rgba(0, 0, 0, .36);
+    transition: transform .2s ease;
+  }
+
+  body.nav-open .sidebar {
+    transform: translateX(0);
   }
 
   .brand img {
@@ -1095,12 +1255,12 @@ tbody tr:hover {
   }
 
   .tabs {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: 1fr;
   }
 
   .tab-button {
-    text-align: center;
-    padding: .72rem .35rem;
+    text-align: left;
+    padding: .78rem .9rem;
   }
 
   .logout-button {
@@ -1111,8 +1271,34 @@ tbody tr:hover {
     font-size: 1.7rem;
   }
 
+  main {
+    padding: 4.25rem .85rem 1rem;
+  }
+
+  .panel,
+  .list-panel {
+    padding: .9rem;
+  }
+
+  .topbar,
+  .section-head {
+    gap: .75rem;
+  }
+
   .mode-switch {
     grid-template-columns: 1fr 1fr;
+  }
+
+  .score-result-card {
+    grid-template-columns: 1fr auto;
+  }
+
+  .score-result-card span {
+    grid-column: 1 / -1;
+  }
+
+  .score-line-chart {
+    min-height: 10rem;
   }
 
   #students .table-wrap {
@@ -1125,9 +1311,12 @@ tbody tr:hover {
 }
 
 @media (max-width: 520px) {
-  main,
   .sidebar {
     padding: 1rem;
+  }
+
+  main {
+    padding-inline: .7rem;
   }
 
   .login-screen {
@@ -1142,9 +1331,5 @@ tbody tr:hover {
   .login-card img {
     width: 7.5rem;
     height: 7.5rem;
-  }
-
-  .tabs {
-    grid-template-columns: 1fr;
   }
 }
