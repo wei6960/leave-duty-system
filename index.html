@@ -344,37 +344,56 @@
           <button class="ghost back-button" type="button" data-back-tab="management">返回班務管理</button>
         </header>
 
-        <form class="form-grid panel" id="studentForm">
-          <label>年級
-            <select id="studentGrade" required>
-              <option value="國一">國一</option>
-              <option value="國二">國二</option>
-              <option value="國三">國三</option>
-            </select>
-          </label>
-          <label>姓名
-            <input id="studentName" required placeholder="輸入學生姓名">
-          </label>
-          <label>有無訂餐
-            <select id="studentMeal">
-              <option value="有訂餐">有訂餐</option>
-              <option value="無訂餐">無訂餐</option>
-            </select>
-          </label>
-          <fieldset>
-            <legend>課程選擇</legend>
+        <form class="panel student-profile-form" id="studentForm">
+          <section class="student-form-card">
+            <div class="form-card-title">
+              <strong>基本資料</strong>
+              <span>學生身份與訂餐</span>
+            </div>
+            <div class="student-basic-grid">
+              <label>年級
+                <select id="studentGrade" required>
+                  <option value="國一">國一</option>
+                  <option value="國二">國二</option>
+                  <option value="國三">國三</option>
+                </select>
+              </label>
+              <label>姓名
+                <input id="studentName" required placeholder="輸入學生姓名">
+              </label>
+              <label>有無訂餐
+                <select id="studentMeal">
+                  <option value="有訂餐">有訂餐</option>
+                  <option value="無訂餐">無訂餐</option>
+                </select>
+              </label>
+            </div>
+          </section>
+          <section class="student-form-card">
+            <div class="form-card-title">
+              <strong>課程選擇</strong>
+              <span>學生實際補習科目</span>
+            </div>
             <div class="weekday-group" id="studentCourses"></div>
-          </fieldset>
-          <fieldset>
-            <legend>固定請假</legend>
-            <div class="weekday-group" id="studentFixedLeave"></div>
-          </fieldset>
-          <fieldset>
-            <legend>固定晚到、到班時間與原因</legend>
+          </section>
+          <section class="student-form-card">
+            <div class="form-card-title">
+              <strong>固定請假</strong>
+              <span>每週固定不出席</span>
+            </div>
+            <div class="weekday-group compact-weekday-group" id="studentFixedLeave"></div>
+          </section>
+          <section class="student-form-card full-span">
+            <div class="form-card-title">
+              <strong>固定晚到、到班時間與原因</strong>
+              <span>可設定每週固定晚到日</span>
+            </div>
             <div class="fixed-late-group" id="studentFixedLate"></div>
-          </fieldset>
-          <button class="primary" id="studentSubmitButton" type="submit">新增學生檔案</button>
-          <button class="ghost" id="cancelStudentEdit" type="button" hidden>取消編輯</button>
+          </section>
+          <div class="student-form-actions">
+            <button class="primary" id="studentSubmitButton" type="submit">新增學生檔案</button>
+            <button class="ghost" id="cancelStudentEdit" type="button" hidden>取消編輯</button>
+          </div>
         </form>
 
         <div class="toolbar">

@@ -611,10 +611,78 @@ legend {
   color: var(--gold-2);
 }
 
+.student-profile-form {
+  display: grid;
+  grid-template-columns: minmax(20rem, .95fr) minmax(22rem, 1.05fr) minmax(20rem, .95fr);
+  gap: .85rem;
+  align-items: stretch;
+  margin-bottom: 1rem;
+}
+
+.student-form-card {
+  display: grid;
+  align-content: start;
+  gap: .75rem;
+  min-height: 10.2rem;
+  padding: .95rem;
+  border: 1px solid rgba(241, 211, 124, .13);
+  border-radius: .5rem;
+  background:
+    linear-gradient(145deg, rgba(198, 151, 53, .08), transparent 46%),
+    rgba(0, 0, 0, .16);
+}
+
+.student-form-card.full-span {
+  grid-column: 1 / -1;
+  min-height: auto;
+}
+
+.form-card-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: .75rem;
+  padding-bottom: .55rem;
+  border-bottom: 1px solid rgba(241, 211, 124, .1);
+}
+
+.form-card-title strong {
+  color: var(--gold-2);
+  font-size: .98rem;
+}
+
+.form-card-title span {
+  color: var(--muted);
+  font-size: .84rem;
+}
+
+.student-basic-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: .65rem;
+}
+
+.student-form-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: flex-end;
+  gap: .65rem;
+  padding-top: .2rem;
+}
+
+.student-form-actions .primary,
+.student-form-actions .ghost {
+  min-width: 10rem;
+}
+
 .weekday-group {
   display: flex;
   flex-wrap: wrap;
   gap: .5rem;
+}
+
+.compact-weekday-group .check-pill {
+  min-width: 7rem;
 }
 
 .period-grid {
@@ -625,7 +693,7 @@ legend {
 
 .fixed-late-group {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
   gap: .6rem;
 }
 
@@ -1677,6 +1745,25 @@ tbody tr:hover {
 
   .fixed-late-group {
     grid-template-columns: 1fr;
+  }
+
+  .student-profile-form,
+  .student-basic-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .student-form-card {
+    min-height: auto;
+  }
+
+  .student-form-actions {
+    justify-content: stretch;
+    flex-direction: column;
+  }
+
+  .student-form-actions .primary,
+  .student-form-actions .ghost {
+    width: 100%;
   }
 
   main {
