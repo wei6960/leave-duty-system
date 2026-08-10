@@ -1413,6 +1413,176 @@ function printClassReportPdf() {
   `, paperCount > 2 ? "landscape" : "portrait");
 }
 
+function classReportFileName(exam, ext) {
+  return `${exam.date}_${exam.grade}_${exam.subject}_班級成績單.${ext}`;
+}
+
+function classReportExportRows(exam) {
+  if (!exam || exam.noExam) return { average: NaN, paperCount: Math.max(1, Number(exam?.paperCount) || 1), rows: [] };
+  const { average, paperCount, reportRows } = classReportData(exam);
+  const rows = reportRows.map(({ student, ranked, absent }) => ({
+    rank: ranked ? ranked.rank : "-",
+    name: student.name,
+    grade: student.grade,
+    subject: exam.subject,
+    papers: Array.from({ length: paperCount }, (_item, index) => absent ? "缺考" : scoreDisplay(ranked?.papers[index])),
+    average: absent ? "缺考" : scoreDisplay(ranked?.score),
+    failing: !absent && Number.isFinite(ranked?.score) && ranked.score < 60,
+  }));
+  return { average, paperCount, rows };
+}
+
+function downloadBlob(content, mimeType, filename) {
+  const blob = content instanceof Blob ? content : new Blob([content], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+function downloadClassReportExcel() {
+  const exam = displayedClassReportExam();
+  if (!exam) return alert("尚無成績單可匯出。");
+  const { average, paperCount, rows } = classReportExportRows(exam);
+  const headers = ["排名", "姓名", "班級", "科目", ...Array.from({ length: paperCount }, (_item, index) => `卷${index + 1}`), "平均"];
+  const html = `<!doctype html><html><head><meta charset="utf-8"></head><body>
+    <table border="1">
+      <tr><th colspan="${headers.length}">金牌躍騰教育集團 班級成績單</th></tr>
+      <tr><td colspan="${headers.length}">${escapeHtml(dateLabel(exam.date))} ${escapeHtml(exam.grade)} ${escapeHtml(exam.subject)}　班平均 ${scoreDisplay(average)}　${escapeHtml(exam.scope || "未填考試重點")}</td></tr>
+      <tr>${headers.map((header) => `<th>${escapeHtml(header)}</th>`).join("")}</tr>
+      ${rows.map((row) => `<tr><td>${row.rank}</td><td>${escapeHtml(row.name)}</td><td>${escapeHtml(row.grade)}</td><td>${escapeHtml(row.subject)}</td>${row.papers.map((value) => `<td>${escapeHtml(value)}</td>`).join("")}<td style="${row.failing ? "color:#e60012;font-weight:bold;" : ""}">${escapeHtml(row.average)}</td></tr>`).join("") || `<tr><td colspan="${headers.length}">${exam.noExam ? "無考試" : "尚無成績"}</td></tr>`}
+    </table>
+  </body></html>`;
+  downloadBlob(`\ufeff${html}`, "application/vnd.ms-excel;charset=utf-8", classReportFileName(exam, "xls"));
+}
+
+function drawRoundRect(ctx, x, y, width, height, radius) {
+  ctx.beginPath();
+  ctx.moveTo(x + radius, y);
+  ctx.lineTo(x + width - radius, y);
+  ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
+  ctx.lineTo(x + width, y + height - radius);
+  ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+  ctx.lineTo(x + radius, y + height);
+  ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
+  ctx.lineTo(x, y + radius);
+  ctx.quadraticCurveTo(x, y, x + radius, y);
+  ctx.closePath();
+}
+
+function canvasText(ctx, text, x, y, maxWidth) {
+  ctx.fillText(String(text ?? ""), x, y, maxWidth);
+}
+
+function downloadClassReportImage() {
+  const exam = displayedClassReportExam();
+  if (!exam) return alert("尚無成績單可匯出。");
+  const { average, paperCount, rows } = classReportExportRows(exam);
+  const scale = 2;
+  const width = 1180;
+  const rowHeight = 54;
+  const headerHeight = 238;
+  const footerHeight = 54;
+  const tableRows = Math.max(rows.length, 1);
+  const height = headerHeight + 56 + tableRows * rowHeight + footerHeight;
+  const canvas = document.createElement("canvas");
+  canvas.width = width * scale;
+  canvas.height = height * scale;
+  const ctx = canvas.getContext("2d");
+  ctx.scale(scale, scale);
+
+  ctx.fillStyle = "#f7f1e3";
+  ctx.fillRect(0, 0, width, height);
+  const gradient = ctx.createLinearGradient(0, 0, width, 0);
+  gradient.addColorStop(0, "#11151a");
+  gradient.addColorStop(.55, "#20242b");
+  gradient.addColorStop(1, "#8a6424");
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, width, 170);
+
+  ctx.fillStyle = "#f5d47a";
+  ctx.font = "bold 34px Microsoft JhengHei, Arial";
+  canvasText(ctx, "金牌躍騰教育集團 班級成績單", 54, 66, 760);
+  ctx.fillStyle = "#fff7df";
+  ctx.font = "20px Microsoft JhengHei, Arial";
+  canvasText(ctx, `${dateLabel(exam.date)}　${exam.grade}　${exam.subject}`, 56, 106, 620);
+  canvasText(ctx, `列印日期：${new Date().toLocaleDateString("zh-TW")}`, 890, 106, 230);
+
+  ctx.fillStyle = "rgba(255,255,255,.08)";
+  drawRoundRect(ctx, 54, 132, 1072, 72, 10);
+  ctx.fill();
+  ctx.fillStyle = "#fff7df";
+  ctx.font = "bold 20px Microsoft JhengHei, Arial";
+  canvasText(ctx, `班平均 ${scoreDisplay(average)}`, 82, 176, 180);
+  canvasText(ctx, `${paperCount} 份考卷`, 270, 176, 160);
+  ctx.font = "18px Microsoft JhengHei, Arial";
+  canvasText(ctx, `重點：${exam.scope || "未填考試重點"}`, 438, 176, 650);
+
+  const tableX = 54;
+  const tableY = 236;
+  const tableWidth = 1072;
+  const columns = [
+    { key: "rank", label: "排名", width: 78 },
+    { key: "name", label: "姓名", width: 190 },
+    { key: "grade", label: "班級", width: 100 },
+    { key: "subject", label: "科目", width: 120 },
+    ...Array.from({ length: paperCount }, (_item, index) => ({ key: `p${index}`, label: `卷${index + 1}`, width: Math.max(80, Math.floor(300 / paperCount)) })),
+    { key: "average", label: "平均", width: 110 },
+  ];
+  const total = columns.reduce((sum, column) => sum + column.width, 0);
+  columns.forEach((column) => { column.width = column.width * tableWidth / total; });
+
+  ctx.fillStyle = "#171b21";
+  drawRoundRect(ctx, tableX, tableY, tableWidth, 48, 8);
+  ctx.fill();
+  ctx.font = "bold 18px Microsoft JhengHei, Arial";
+  ctx.fillStyle = "#f5d47a";
+  let cursor = tableX;
+  columns.forEach((column) => {
+    canvasText(ctx, column.label, cursor + 14, tableY + 31, column.width - 18);
+    cursor += column.width;
+  });
+
+  if (!rows.length) {
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(tableX, tableY + 48, tableWidth, rowHeight);
+    ctx.fillStyle = "#333";
+    ctx.font = "18px Microsoft JhengHei, Arial";
+    canvasText(ctx, exam.noExam ? "當日無考試" : "尚無成績", tableX + 18, tableY + 82, tableWidth - 36);
+  } else {
+    rows.forEach((row, rowIndex) => {
+      const y = tableY + 48 + rowIndex * rowHeight;
+      ctx.fillStyle = rowIndex % 2 ? "#f4ead2" : "#fffaf0";
+      ctx.fillRect(tableX, y, tableWidth, rowHeight);
+      ctx.strokeStyle = "#dfd0aa";
+      ctx.beginPath();
+      ctx.moveTo(tableX, y + rowHeight);
+      ctx.lineTo(tableX + tableWidth, y + rowHeight);
+      ctx.stroke();
+      ctx.font = row.rank === 1 ? "bold 18px Microsoft JhengHei, Arial" : "17px Microsoft JhengHei, Arial";
+      cursor = tableX;
+      const values = [row.rank, row.name, row.grade, row.subject, ...row.papers, row.average];
+      values.forEach((value, index) => {
+        ctx.fillStyle = index === values.length - 1 && row.failing ? "#e60012" : "#1e2329";
+        canvasText(ctx, value, cursor + 14, y + 34, columns[index].width - 18);
+        cursor += columns[index].width;
+      });
+    });
+  }
+
+  ctx.fillStyle = "#76623a";
+  ctx.font = "15px Microsoft JhengHei, Arial";
+  canvasText(ctx, "不及格分數以紅字標示｜本圖檔可直接傳送家長群組", 54, height - 22, 800);
+  canvas.toBlob((blob) => {
+    if (!blob) return alert("圖片生成失敗，請再試一次。");
+    downloadBlob(blob, "image/png", classReportFileName(exam, "png"));
+  }, "image/png");
+}
+
 function printStudentReportPdf() {
   const student = getStudent($("#careerStudent")?.value);
   if (!student) {
@@ -1675,6 +1845,8 @@ function setupForms() {
   });
   $("#printClassReport").addEventListener("click", printClassReportPdf);
   $("#returnCurrentClassReport").addEventListener("click", returnCurrentClassReport);
+  $("#downloadClassReportImage").addEventListener("click", downloadClassReportImage);
+  $("#downloadClassReportExcel").addEventListener("click", downloadClassReportExcel);
   $("#printStudentReport").addEventListener("click", printStudentReportPdf);
 
   ["examDate", "examGrade", "examSubject", "examScope", "examPaperCount", "examNoTest", "scoreStudentSearch", "scoreStudentFilter"].forEach((id) => {

@@ -644,6 +644,11 @@ legend {
   justify-content: flex-end;
 }
 
+.compact-actions .ghost {
+  min-height: 2.35rem;
+  padding-inline: .8rem;
+}
+
 .link-button,
 .file-button {
   display: inline-flex;
@@ -1288,6 +1293,21 @@ tbody tr:hover {
   .topbar,
   .section-head {
     gap: .75rem;
+  }
+
+  .panel-title {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .compact-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    width: 100%;
+  }
+
+  .compact-actions .ghost:first-child {
+    grid-column: 1 / -1;
   }
 
   .mode-switch {
