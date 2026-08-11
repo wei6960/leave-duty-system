@@ -1658,6 +1658,14 @@ th {
   padding: 0;
 }
 
+.parent-side-stack {
+  grid-column: 1;
+  display: grid;
+  align-content: start;
+  gap: .85rem;
+  min-width: 0;
+}
+
 .parent-main .large-panel {
   grid-column: 1 / -1;
 }
@@ -1693,23 +1701,20 @@ th {
 }
 
 .parent-code-panel {
-  grid-column: 1;
-  grid-row: 1;
+  grid-column: auto;
 }
 
 .parent-event-panel {
-  grid-column: 1;
-  grid-row: 2;
+  grid-column: auto;
 }
 
 .parent-leave-panel {
-  grid-column: 1;
-  grid-row: 3;
+  grid-column: auto;
 }
 
 .parent-score-panel {
   grid-column: 2;
-  grid-row: 1 / span 3;
+  grid-row: 1;
   min-width: 0;
   overflow: hidden;
 }
@@ -2177,6 +2182,10 @@ tbody tr:hover {
   .parent-score-panel {
     grid-column: 1;
     grid-row: auto;
+  }
+
+  .parent-side-stack {
+    grid-column: 1;
   }
 
   #parentLeaveList {
