@@ -874,6 +874,7 @@ function renderScoreStudentOptions(open = false) {
   const optionsBox = $("#scoreStudentOptions");
   if (!optionsBox) return;
   const matches = scoreStudentMatches();
+  const picker = $("#scoreStudentPicker");
   optionsBox.innerHTML = `
     <button type="button" class="combo-option" data-pick-score-student="全部">
       <strong>全部學生</strong><span>顯示此科全部學生</span>
@@ -886,6 +887,7 @@ function renderScoreStudentOptions(open = false) {
     ${!matches.length ? `<div class="combo-empty">沒有符合的學生</div>` : ""}
   `;
   optionsBox.hidden = !open;
+  if (picker) picker.setAttribute("aria-expanded", String(open));
 }
 
 function renderScoreStudentFilter() {
@@ -2799,6 +2801,11 @@ function setupForms() {
     renderScoreStudentOptions(true);
     renderScoreEntryList();
   });
+  $("#scoreStudentToggle")?.addEventListener("click", () => {
+    const options = $("#scoreStudentOptions");
+    renderScoreStudentOptions(options?.hidden !== false);
+    $("#scoreStudentPicker")?.focus();
+  });
 
   $("#careerGrade").addEventListener("change", () => {
     $("#careerStudentPicker").value = "";
@@ -3197,6 +3204,7 @@ function renderManageLists() {
       return `${renderLateCard({ ...record, student })}
         <div class="action-row">
           ${record.dismissedAt ? "" : `<button class="ghost" data-remove-late="${record.id}">結束顯示但保留紀錄</button>`}
+          <button class="ghost danger" data-delete-late="${record.id}">刪除晚到</button>
         </div>`;
     })
     .join("") || `<div class="empty">尚未新增臨時晚到。</div>`;
@@ -3283,6 +3291,7 @@ function setupActions() {
     const dismissLeaveId = event.target.dataset.dismissLeave;
     const deleteLeaveId = event.target.dataset.deleteLeave;
     const removeLateId = event.target.dataset.removeLate;
+    const deleteLateId = event.target.dataset.deleteLate;
     const viewExamId = event.target.dataset.viewExam;
     const editExamId = event.target.dataset.editExam;
     const deleteExamId = event.target.dataset.deleteExam;
@@ -3350,6 +3359,9 @@ function setupActions() {
       const late = state.lateRecords.find((record) => record.id === removeLateId);
       if (late) late.dismissedAt = new Date().toISOString();
     }
+    if (deleteLateId && confirm("確定刪除這筆晚到紀錄？刪除後不會保留在歷史紀錄。")) {
+      state.lateRecords = state.lateRecords.filter((record) => record.id !== deleteLateId);
+    }
     if (viewExamId) {
       const exam = state.exams.find((record) => record.id === viewExamId);
       if (exam) {
@@ -3412,7 +3424,7 @@ function setupActions() {
       if (editingEventId === deleteEventId) clearEventForm();
     }
 
-    if (deleteStudentId || dismissLeaveId || deleteLeaveId || removeLateId || deleteExamId || deleteEventId) {
+    if (deleteStudentId || dismissLeaveId || deleteLeaveId || removeLateId || deleteLateId || deleteExamId || deleteEventId) {
       saveState();
       renderAll();
     }

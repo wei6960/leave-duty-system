@@ -565,6 +565,35 @@ textarea:focus {
   position: relative;
 }
 
+.unified-combo {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 2.45rem;
+}
+
+.unified-combo input {
+  width: 100%;
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.combo-toggle {
+  position: relative;
+  z-index: 1;
+  width: 2.45rem;
+  min-height: 2.6rem;
+  padding: 0;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  border-color: rgba(241, 211, 124, .22);
+  background: rgba(241, 211, 124, .08);
+  color: var(--gold-2);
+  font-size: 1.05rem;
+}
+
+.combo-toggle:hover {
+  background: rgba(241, 211, 124, .16);
+}
+
 .combo-options {
   position: absolute;
   z-index: 20;
@@ -835,7 +864,7 @@ legend {
 
 .score-tools {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(12rem, .45fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: .75rem;
   margin-bottom: .75rem;
 }

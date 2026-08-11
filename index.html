@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark">
   <meta name="theme-color" content="#07090c">
-  <title>班務行政考核系統</title>
+  <title>金牌躍騰班務系統</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -13,7 +13,7 @@
     <form class="login-card" id="loginForm">
       <img src="assets/logo.png" alt="金牌躍騰教育集團 logo">
       <p class="eyebrow">金牌躍騰教育集團</p>
-      <h1>班務行政考核系統</h1>
+      <h1>金牌躍騰班務系統</h1>
       <label>選擇分校
         <select id="loginBranch" required>
           <option value="平鎮">平鎮</option>
@@ -164,7 +164,7 @@
       <div class="brand">
         <img src="assets/logo.png" alt="平鎮分校 logo">
         <div>
-          <strong>班務行政考核系統</strong>
+          <strong>金牌躍騰班務系統</strong>
           <span id="currentBranchLabel">平鎮分校</span>
           <small id="syncStatus">本機模式</small>
         </div>
@@ -546,9 +546,10 @@
             <span>排名會自動計算</span>
           </div>
           <div class="score-tools">
-            <label>搜尋 / 選擇學生
-              <div class="combo-box" id="scoreStudentCombo">
-                <input id="scoreStudentPicker" autocomplete="off" placeholder="全部學生，或輸入姓名搜尋">
+            <label>搜尋學生
+              <div class="combo-box unified-combo" id="scoreStudentCombo">
+                <input id="scoreStudentPicker" autocomplete="off" role="combobox" aria-expanded="false" placeholder="全部學生，或輸入姓名快速篩選">
+                <button class="combo-toggle" id="scoreStudentToggle" type="button" aria-label="展開學生選單">⌄</button>
                 <div class="combo-options" id="scoreStudentOptions" hidden></div>
               </div>
               <input id="scoreStudentFilter" type="hidden" value="全部">
