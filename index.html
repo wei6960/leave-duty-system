@@ -279,10 +279,6 @@
             <strong>學生檔案</strong>
             <span>建立學生、課程與家長登入碼</span>
           </button>
-          <button class="portal-tile" type="button" data-tab="schedule">
-            <strong>課表設定</strong>
-            <span>國一到國三上午、下午、晚上課程</span>
-          </button>
           <button class="portal-tile" type="button" data-tab="scores">
             <strong>班務成績</strong>
             <span>登記週考與查看歷史成績單</span>
@@ -294,6 +290,10 @@
           <button class="portal-tile" type="button" data-tab="career">
             <strong>生涯檔案</strong>
             <span>學生歷程、折線圖與家長報告</span>
+          </button>
+          <button class="portal-tile" type="button" data-tab="schedule">
+            <strong>課表設定</strong>
+            <span>國一到國三上午、下午、晚上課程</span>
           </button>
           <button class="portal-tile" type="button" data-tab="events">
             <strong>重大行事曆公告</strong>
@@ -547,11 +547,7 @@
           </div>
           <div class="score-tools">
             <label>搜尋學生
-              <div class="combo-box unified-combo" id="scoreStudentCombo">
-                <input id="scoreStudentPicker" autocomplete="off" role="combobox" aria-expanded="false" placeholder="全部學生，或輸入姓名快速篩選">
-                <button class="combo-toggle" id="scoreStudentToggle" type="button" aria-label="展開學生選單">⌄</button>
-                <div class="combo-options" id="scoreStudentOptions" hidden></div>
-              </div>
+              <input id="scoreStudentPicker" autocomplete="off" placeholder="輸入姓名快速篩選">
               <input id="scoreStudentFilter" type="hidden" value="全部">
             </label>
           </div>

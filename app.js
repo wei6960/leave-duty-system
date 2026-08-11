@@ -872,22 +872,7 @@ function scoreStudentMatches() {
 
 function renderScoreStudentOptions(open = false) {
   const optionsBox = $("#scoreStudentOptions");
-  if (!optionsBox) return;
-  const matches = scoreStudentMatches();
-  const picker = $("#scoreStudentPicker");
-  optionsBox.innerHTML = `
-    <button type="button" class="combo-option" data-pick-score-student="全部">
-      <strong>全部學生</strong><span>顯示此科全部學生</span>
-    </button>
-    ${matches.map((student) => `
-      <button type="button" class="combo-option" data-pick-score-student="${student.id}">
-        <strong>${student.name}</strong><span>${student.grade}｜${studentCoursesLabel(student)}</span>
-      </button>
-    `).join("")}
-    ${!matches.length ? `<div class="combo-empty">沒有符合的學生</div>` : ""}
-  `;
-  optionsBox.hidden = !open;
-  if (picker) picker.setAttribute("aria-expanded", String(open));
+  if (optionsBox) optionsBox.hidden = true;
 }
 
 function renderScoreStudentFilter() {
@@ -2794,17 +2779,9 @@ function setupForms() {
     renderLeaveStudentOptions(true);
   });
 
-  $("#scoreStudentPicker").addEventListener("focus", () => renderScoreStudentOptions(true));
-  $("#scoreStudentPicker").addEventListener("click", () => renderScoreStudentOptions(true));
   $("#scoreStudentPicker").addEventListener("input", () => {
     $("#scoreStudentFilter").value = "全部";
-    renderScoreStudentOptions(true);
     renderScoreEntryList();
-  });
-  $("#scoreStudentToggle")?.addEventListener("click", () => {
-    const options = $("#scoreStudentOptions");
-    renderScoreStudentOptions(options?.hidden !== false);
-    $("#scoreStudentPicker")?.focus();
   });
 
   $("#careerGrade").addEventListener("change", () => {
@@ -2827,7 +2804,7 @@ function setupForms() {
     if (!$("#leaveStudentCombo").contains(event.target)) {
       $("#leaveStudentOptions").hidden = true;
     }
-    if (!$("#scoreStudentCombo")?.contains(event.target)) {
+    if ($("#scoreStudentCombo") && !$("#scoreStudentCombo").contains(event.target)) {
       $("#scoreStudentOptions").hidden = true;
     }
     if (!$("#careerStudentCombo")?.contains(event.target)) {
@@ -3286,7 +3263,6 @@ function setupActions() {
     const deleteStudentId = event.target.dataset.deleteStudent;
     const editStudentId = event.target.dataset.editStudent;
     const pickLeaveStudentId = event.target.closest("[data-pick-leave-student]")?.dataset.pickLeaveStudent;
-    const pickScoreStudentId = event.target.closest("[data-pick-score-student]")?.dataset.pickScoreStudent;
     const pickCareerStudentId = event.target.closest("[data-pick-career-student]")?.dataset.pickCareerStudent;
     const dismissLeaveId = event.target.dataset.dismissLeave;
     const deleteLeaveId = event.target.dataset.deleteLeave;
@@ -3308,21 +3284,6 @@ function setupActions() {
         $("#leaveStudentPicker").value = student.name;
         $("#leaveStudentOptions").hidden = true;
       }
-    }
-    if (pickScoreStudentId) {
-      if (pickScoreStudentId === "全部") {
-        $("#scoreStudentFilter").value = "全部";
-        $("#scoreStudentPicker").value = "";
-      } else {
-        const student = getStudent(pickScoreStudentId);
-        if (student) {
-          $("#scoreStudentFilter").value = student.id;
-          $("#scoreStudentPicker").value = student.name;
-        }
-      }
-      $("#scoreStudentOptions").hidden = true;
-      renderScoreEntryList();
-      captureScoreDraft();
     }
     if (pickCareerStudentId) {
       const student = getStudent(pickCareerStudentId);
