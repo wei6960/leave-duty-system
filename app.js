@@ -1187,6 +1187,15 @@ function scoreTableCell(value, absent = false) {
   return `<td class="${scoreClass(value)}">${scoreDisplay(value)}</td>`;
 }
 
+function chunkArray(items, size) {
+  const chunks = [];
+  const pageSize = Math.max(1, size);
+  for (let index = 0; index < items.length; index += pageSize) {
+    chunks.push(items.slice(index, index + pageSize));
+  }
+  return chunks;
+}
+
 function classReportData(exam) {
   const rows = currentScoreRows(exam);
   const average = rows.length ? rows.reduce((sum, row) => sum + row.score, 0) / rows.length : NaN;
@@ -2598,6 +2607,8 @@ function pdfDocument(title, body, layout = "portrait") {
     .meta { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0; }
     .pill { border: 1px solid #d8c291; border-radius: 999px; padding: 6px 10px; font-size: 13px; background: #fff9ea; }
     table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 13px; }
+    thead { display: table-header-group; }
+    tr { break-inside: avoid; page-break-inside: avoid; }
     th { background: #181818; color: #f7df9b; }
     th, td { border: 1px solid #cfcfcf; padding: 8px 7px; text-align: center; }
     td.left, th.left { text-align: left; }
@@ -2608,6 +2619,8 @@ function pdfDocument(title, body, layout = "portrait") {
     .card { border: 1px solid #d8c291; padding: 10px; border-radius: 6px; break-inside: avoid; }
     .card strong { display: block; margin-bottom: 5px; color: #7a551a; }
     .level { display: inline-block; min-width: 46px; padding: 3px 8px; border-radius: 999px; color: #161616; background: #f3c75f; font-weight: 900; text-align: center; }
+    .pdf-page { break-after: page; page-break-after: always; }
+    .pdf-page:last-child { break-after: auto; page-break-after: auto; }
     @media print { button { display: none; } }
   </style>
 </head>
@@ -2638,7 +2651,13 @@ function printClassReportPdf() {
     return;
   }
   const { average, paperCount, reportRows } = classReportData(exam);
-  const rowsHtml = reportRows.map(({ student, ranked, absent }) => `
+  const layout = paperCount > 2 ? "landscape" : "portrait";
+  const rowsPerPage = layout === "landscape" ? 15 : 22;
+  const rowPages = chunkArray(reportRows, rowsPerPage);
+  const pages = rowPages.length ? rowPages : [[]];
+  const totalPages = pages.length;
+  const tableHead = `<thead><tr><th>排名</th><th class="left">姓名</th><th>班級</th><th>科目</th>${Array.from({ length: paperCount }, (_, index) => `<th>卷${index + 1}</th>`).join("")}<th>平均</th></tr></thead>`;
+  const rowHtml = ({ student, ranked, absent }) => `
     <tr>
       <td>${ranked ? ranked.rank : "-"}</td>
       <td class="left">${escapeHtml(student.name)}</td>
@@ -2651,22 +2670,28 @@ function printClassReportPdf() {
       }).join("")}
       <td class="${absent ? "absent-score" : scoreClass(ranked?.score)}">${absent ? "缺考" : scoreDisplay(ranked?.score)}</td>
     </tr>
+  `;
+  const pagesHtml = pages.map((pageRows, pageIndex) => `
+    <section class="pdf-page">
+      <header class="doc-head">
+        <div class="brand"><img src="assets/logo.png" alt=""><div><h1>金牌躍騰教育集團 班級成績單</h1><div>${escapeHtml(dateLabel(exam.date))} ${escapeHtml(exam.grade)} ${escapeHtml(exam.subject)}</div></div></div>
+        <div>列印日期：${escapeHtml(new Date().toLocaleDateString("zh-TW"))}</div>
+      </header>
+      <div class="meta">
+        <span class="pill">班平均 ${scoreDisplay(average)}</span>
+        <span class="pill">${paperCount} 份考卷</span>
+        <span class="pill">${scope}</span>
+        <span class="pill">第 ${pageIndex + 1} / ${totalPages} 頁</span>
+      </div>
+      <table>
+        ${tableHead}
+        <tbody>${pageRows.map(rowHtml).join("") || `<tr><td colspan="${5 + paperCount}">尚無成績</td></tr>`}</tbody>
+      </table>
+    </section>
   `).join("");
   pdfDocument(title, `
-    <header class="doc-head">
-      <div class="brand"><img src="assets/logo.png" alt=""><div><h1>金牌躍騰教育集團 班級成績單</h1><div>${escapeHtml(dateLabel(exam.date))} ${escapeHtml(exam.grade)} ${escapeHtml(exam.subject)}</div></div></div>
-      <div>列印日期：${escapeHtml(new Date().toLocaleDateString("zh-TW"))}</div>
-    </header>
-    <div class="meta">
-      <span class="pill">班平均 ${scoreDisplay(average)}</span>
-      <span class="pill">${paperCount} 份考卷</span>
-      <span class="pill">${scope}</span>
-    </div>
-    <table>
-      <thead><tr><th>排名</th><th class="left">姓名</th><th>班級</th><th>科目</th>${Array.from({ length: paperCount }, (_, index) => `<th>卷${index + 1}</th>`).join("")}<th>平均</th></tr></thead>
-      <tbody>${rowsHtml || `<tr><td colspan="${5 + paperCount}">尚無成績</td></tr>`}</tbody>
-    </table>
-  `, paperCount > 2 ? "landscape" : "portrait");
+    ${pagesHtml}
+  `, layout);
 }
 
 function classReportFileName(exam, ext) {
@@ -2738,109 +2763,117 @@ function downloadClassReportImage() {
   const exam = displayedClassReportExam();
   if (!exam) return alert("尚無成績單可匯出。");
   const { average, paperCount, rows } = classReportExportRows(exam);
+  const landscape = paperCount > 2;
   const scale = 2;
-  const width = 1180;
-  const topSafe = 56;
-  const rowHeight = 54;
-  const headerBandHeight = 300;
-  const tableY = 322;
-  const footerHeight = 54;
-  const tableRows = Math.max(rows.length, 1);
-  const height = topSafe + tableY + 48 + tableRows * rowHeight + footerHeight;
-  const canvas = document.createElement("canvas");
-  canvas.width = width * scale;
-  canvas.height = height * scale;
-  const ctx = canvas.getContext("2d");
-  ctx.scale(scale, scale);
+  const width = landscape ? 1123 : 794;
+  const height = landscape ? 794 : 1123;
+  const margin = landscape ? 44 : 42;
+  const rowHeight = landscape ? 34 : 39;
+  const headerBandHeight = landscape ? 190 : 232;
+  const tableY = landscape ? 226 : 278;
+  const footerHeight = 46;
+  const tableHeaderHeight = 42;
+  const rowsPerPage = Math.max(1, Math.floor((height - tableY - tableHeaderHeight - footerHeight - 18) / rowHeight));
+  const pages = rows.length ? chunkArray(rows, rowsPerPage) : [[]];
+  const totalPages = pages.length;
+  const baseFileName = classReportFileName(exam, "png").replace(/\.png$/i, "");
 
-  ctx.fillStyle = "#f7f1e3";
-  ctx.fillRect(0, 0, width, height);
-  const gradient = ctx.createLinearGradient(0, 0, width, 0);
-  gradient.addColorStop(0, "#11151a");
-  gradient.addColorStop(.55, "#20242b");
-  gradient.addColorStop(1, "#8a6424");
-  ctx.fillStyle = gradient;
-  ctx.fillRect(0, 0, width, headerBandHeight + topSafe);
+  pages.forEach((pageRows, pageIndex) => {
+    const canvas = document.createElement("canvas");
+    canvas.width = width * scale;
+    canvas.height = height * scale;
+    const ctx = canvas.getContext("2d");
+    ctx.scale(scale, scale);
 
-  ctx.save();
-  ctx.translate(0, topSafe);
-  ctx.fillStyle = "#f5d47a";
-  ctx.font = "bold 34px Microsoft JhengHei, Arial";
-  canvasText(ctx, "金牌躍騰教育集團 班級成績單", 54, 66, 760);
-  ctx.fillStyle = "#fff7df";
-  ctx.font = "20px Microsoft JhengHei, Arial";
-  canvasText(ctx, `${dateLabel(exam.date)}　${exam.grade}　${exam.subject}`, 56, 106, 620);
-  canvasText(ctx, `列印日期：${new Date().toLocaleDateString("zh-TW")}`, 890, 106, 230);
+    ctx.fillStyle = "#f7f1e3";
+    ctx.fillRect(0, 0, width, height);
+    const gradient = ctx.createLinearGradient(0, 0, width, 0);
+    gradient.addColorStop(0, "#11151a");
+    gradient.addColorStop(.55, "#20242b");
+    gradient.addColorStop(1, "#8a6424");
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, width, headerBandHeight);
 
-  ctx.fillStyle = "rgba(255,255,255,.08)";
-  drawRoundRect(ctx, 54, 138, 1072, 82, 10);
-  ctx.fill();
-  ctx.fillStyle = "#fff7df";
-  ctx.font = "bold 20px Microsoft JhengHei, Arial";
-  canvasText(ctx, `班平均 ${scoreDisplay(average)}`, 82, 188, 180);
-  canvasText(ctx, `${paperCount} 份考卷`, 270, 188, 160);
-  ctx.font = "18px Microsoft JhengHei, Arial";
-  canvasText(ctx, `重點：${exam.scope || "未填考試重點"}`, 438, 188, 650);
+    ctx.fillStyle = "#f5d47a";
+    ctx.font = `bold ${landscape ? 28 : 30}px Microsoft JhengHei, Arial`;
+    canvasText(ctx, "金牌躍騰教育集團 班級成績單", margin, 58, width - margin * 2);
+    ctx.fillStyle = "#fff7df";
+    ctx.font = `${landscape ? 17 : 18}px Microsoft JhengHei, Arial`;
+    canvasText(ctx, `${dateLabel(exam.date)}　${exam.grade}　${exam.subject}`, margin, 94, width - margin * 2 - 210);
+    canvasText(ctx, `列印日期：${new Date().toLocaleDateString("zh-TW")}`, width - margin - 205, 94, 205);
 
-  const tableX = 54;
-  const tableWidth = 1072;
-  const columns = [
-    { key: "rank", label: "排名", width: 78 },
-    { key: "name", label: "姓名", width: 190 },
-    { key: "grade", label: "班級", width: 100 },
-    { key: "subject", label: "科目", width: 120 },
-    ...Array.from({ length: paperCount }, (_item, index) => ({ key: `p${index}`, label: `卷${index + 1}`, width: Math.max(80, Math.floor(300 / paperCount)) })),
-    { key: "average", label: "平均", width: 110 },
-  ];
-  const total = columns.reduce((sum, column) => sum + column.width, 0);
-  columns.forEach((column) => { column.width = column.width * tableWidth / total; });
+    ctx.fillStyle = "rgba(255,255,255,.08)";
+    drawRoundRect(ctx, margin, landscape ? 116 : 126, width - margin * 2, landscape ? 52 : 72, 10);
+    ctx.fill();
+    ctx.fillStyle = "#fff7df";
+    ctx.font = `bold ${landscape ? 17 : 18}px Microsoft JhengHei, Arial`;
+    canvasText(ctx, `班平均 ${scoreDisplay(average)}`, margin + 22, landscape ? 149 : 170, 150);
+    canvasText(ctx, `${paperCount} 份考卷`, margin + 176, landscape ? 149 : 170, 130);
+    canvasText(ctx, `第 ${pageIndex + 1} / ${totalPages} 頁`, width - margin - 126, landscape ? 149 : 170, 120);
+    ctx.font = `${landscape ? 15 : 16}px Microsoft JhengHei, Arial`;
+    canvasText(ctx, `重點：${exam.scope || "未填考試重點"}`, margin + 318, landscape ? 149 : 170, width - margin * 2 - 470);
 
-  ctx.fillStyle = "#171b21";
-  drawRoundRect(ctx, tableX, tableY, tableWidth, 48, 8);
-  ctx.fill();
-  ctx.font = "bold 18px Microsoft JhengHei, Arial";
-  ctx.fillStyle = "#f5d47a";
-  let cursor = tableX;
-  columns.forEach((column) => {
-    canvasText(ctx, column.label, cursor + 14, tableY + 31, column.width - 18);
-    cursor += column.width;
-  });
+    const tableX = margin;
+    const tableWidth = width - margin * 2;
+    const columns = [
+      { key: "rank", label: "排名", width: 68 },
+      { key: "name", label: "姓名", width: landscape ? 168 : 128 },
+      { key: "grade", label: "班級", width: 82 },
+      { key: "subject", label: "科目", width: 98 },
+      ...Array.from({ length: paperCount }, (_item, index) => ({ key: `p${index}`, label: `卷${index + 1}`, width: Math.max(66, Math.floor((landscape ? 270 : 170) / paperCount)) })),
+      { key: "average", label: "平均", width: 88 },
+    ];
+    const total = columns.reduce((sum, column) => sum + column.width, 0);
+    columns.forEach((column) => { column.width = column.width * tableWidth / total; });
 
-  if (!rows.length) {
-    ctx.fillStyle = "#fff";
-    ctx.fillRect(tableX, tableY + 48, tableWidth, rowHeight);
-    ctx.fillStyle = "#333";
-    ctx.font = "18px Microsoft JhengHei, Arial";
-    canvasText(ctx, exam.noExam ? "當日無考試" : "尚無成績", tableX + 18, tableY + 82, tableWidth - 36);
-  } else {
-    rows.forEach((row, rowIndex) => {
-      const y = tableY + 48 + rowIndex * rowHeight;
-      ctx.fillStyle = rowIndex % 2 ? "#f4ead2" : "#fffaf0";
-      ctx.fillRect(tableX, y, tableWidth, rowHeight);
-      ctx.strokeStyle = "#dfd0aa";
-      ctx.beginPath();
-      ctx.moveTo(tableX, y + rowHeight);
-      ctx.lineTo(tableX + tableWidth, y + rowHeight);
-      ctx.stroke();
-      ctx.font = row.rank === 1 ? "bold 18px Microsoft JhengHei, Arial" : "17px Microsoft JhengHei, Arial";
-      cursor = tableX;
-      const values = [row.rank, row.name, row.grade, row.subject, ...row.papers, row.average];
-      values.forEach((value, index) => {
-        ctx.fillStyle = index === values.length - 1 && row.failing ? "#e60012" : "#1e2329";
-        canvasText(ctx, value, cursor + 14, y + 34, columns[index].width - 18);
-        cursor += columns[index].width;
-      });
+    ctx.fillStyle = "#171b21";
+    drawRoundRect(ctx, tableX, tableY, tableWidth, tableHeaderHeight, 7);
+    ctx.fill();
+    ctx.font = `bold ${landscape ? 15 : 14}px Microsoft JhengHei, Arial`;
+    ctx.fillStyle = "#f5d47a";
+    let cursor = tableX;
+    columns.forEach((column) => {
+      canvasText(ctx, column.label, cursor + 10, tableY + 27, column.width - 14);
+      cursor += column.width;
     });
-  }
-  ctx.restore();
 
-  ctx.fillStyle = "#76623a";
-  ctx.font = "15px Microsoft JhengHei, Arial";
-  canvasText(ctx, "不及格分數以紅字標示｜本圖檔可直接傳送家長群組", 54, height - 22, 800);
-  canvas.toBlob((blob) => {
-    if (!blob) return alert("圖片生成失敗，請再試一次。");
-    downloadBlob(blob, "image/png", classReportFileName(exam, "png"));
-  }, "image/png");
+    if (!rows.length) {
+      ctx.fillStyle = "#fff";
+      ctx.fillRect(tableX, tableY + tableHeaderHeight, tableWidth, rowHeight);
+      ctx.fillStyle = "#333";
+      ctx.font = "16px Microsoft JhengHei, Arial";
+      canvasText(ctx, exam.noExam ? "當日無考試" : "尚無成績", tableX + 14, tableY + tableHeaderHeight + 25, tableWidth - 28);
+    } else {
+      pageRows.forEach((row, rowIndex) => {
+        const y = tableY + tableHeaderHeight + rowIndex * rowHeight;
+        ctx.fillStyle = rowIndex % 2 ? "#f4ead2" : "#fffaf0";
+        ctx.fillRect(tableX, y, tableWidth, rowHeight);
+        ctx.strokeStyle = "#dfd0aa";
+        ctx.beginPath();
+        ctx.moveTo(tableX, y + rowHeight);
+        ctx.lineTo(tableX + tableWidth, y + rowHeight);
+        ctx.stroke();
+        ctx.font = row.rank === 1 ? `bold ${landscape ? 15 : 14}px Microsoft JhengHei, Arial` : `${landscape ? 14 : 13}px Microsoft JhengHei, Arial`;
+        cursor = tableX;
+        const values = [row.rank, row.name, row.grade, row.subject, ...row.papers, row.average];
+        values.forEach((value, index) => {
+          ctx.fillStyle = index === values.length - 1 && row.failing ? "#e60012" : "#1e2329";
+          canvasText(ctx, value, cursor + 10, y + Math.round(rowHeight * .64), columns[index].width - 14);
+          cursor += columns[index].width;
+        });
+      });
+    }
+
+    ctx.fillStyle = "#76623a";
+    ctx.font = "13px Microsoft JhengHei, Arial";
+    canvasText(ctx, "不及格分數以紅字標示｜本圖檔可直接傳送家長群組", margin, height - 20, width - margin * 2 - 100);
+    canvasText(ctx, `${pageIndex + 1}/${totalPages}`, width - margin - 48, height - 20, 48);
+    canvas.toBlob((blob) => {
+      if (!blob) return alert("圖片生成失敗，請再試一次。");
+      const suffix = totalPages > 1 ? `_第${pageIndex + 1}頁` : "";
+      downloadBlob(blob, "image/png", `${baseFileName}${suffix}.png`);
+    }, "image/png");
+  });
 }
 
 function printStudentReportPdf() {
