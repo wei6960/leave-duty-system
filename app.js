@@ -41,7 +41,7 @@ let supabaseClient = null;
 let supabasePollTimer = null;
 let lastRemoteUpdatedAt = "";
 let parentStudentId = null;
-let parentActiveSection = "parentReportSection";
+let parentActiveSection = "parentHomeSection";
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -3783,6 +3783,9 @@ function setupParentDrawer() {
       closeParentDrawer();
     });
   });
+  $$(".parent-home-grid [data-parent-section]").forEach((button) => {
+    button.addEventListener("click", () => setParentSection(button.dataset.parentSection));
+  });
 }
 
 function updateClock() {
@@ -4664,6 +4667,7 @@ function setupLogin() {
       return;
     }
     parentStudentId = student.id;
+    parentActiveSection = "parentHomeSection";
     $("#parentLoginError").hidden = true;
     showParentShell();
     renderParentPortal();

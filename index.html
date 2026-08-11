@@ -78,6 +78,35 @@
       <button class="logout-button" id="parentLogout" type="button">離開家長端</button>
     </header>
     <main class="parent-main">
+      <section class="parent-home-section parent-page-section" id="parentHomeSection">
+        <div class="parent-home-head">
+          <p class="eyebrow">家長端清單</p>
+          <h2>請選擇要查看的項目</h2>
+          <span>成績、報告與班務紀錄會分開顯示</span>
+        </div>
+        <div class="parent-home-grid">
+          <button type="button" data-parent-section="parentReportSection">
+            <strong>報告區</strong>
+            <span>週考分析、段考變化與段考分析</span>
+          </button>
+          <button type="button" data-parent-section="parentScoreSection">
+            <strong>成績調閱</strong>
+            <span>依學年學期、日期查看每週成績</span>
+          </button>
+          <button type="button" data-parent-section="parentEventSection">
+            <strong>重大公告</strong>
+            <span>老師張貼的重要事項</span>
+          </button>
+          <button type="button" data-parent-section="parentLeaveSection">
+            <strong>請假紀錄</strong>
+            <span>查看請假歷史與狀態</span>
+          </button>
+          <button type="button" data-parent-section="parentCodeSection">
+            <strong>家長代碼更新</strong>
+            <span>修改家長端登入代碼</span>
+          </button>
+        </div>
+      </section>
       <aside class="parent-side-stack" aria-label="家長端資訊">
         <section class="panel parent-side-panel parent-code-panel parent-page-section" id="parentCodeSection">
           <div class="panel-title">
