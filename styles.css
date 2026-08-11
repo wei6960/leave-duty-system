@@ -1551,9 +1551,31 @@ th {
 }
 
 .parent-shell {
+  position: relative;
   background:
+    linear-gradient(150deg, rgba(241, 211, 124, .08) 0 1px, transparent 1px 10rem),
+    linear-gradient(28deg, transparent 0 72%, rgba(198, 151, 53, .08) 72% 72.4%, transparent 72.4%),
     linear-gradient(130deg, rgba(198, 151, 53, .1), transparent 24rem),
     #07090c;
+}
+
+.parent-shell::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(135deg, transparent 0 45%, rgba(241, 211, 124, .1) 45% 45.35%, transparent 45.35%),
+    linear-gradient(45deg, transparent 0 62%, rgba(111, 182, 232, .055) 62% 62.25%, transparent 62.25%);
+  background-size: 34rem 34rem, 28rem 28rem;
+  opacity: .75;
+  mask-image: linear-gradient(180deg, rgba(0, 0, 0, .8), transparent 82%);
+}
+
+.parent-shell > * {
+  position: relative;
+  z-index: 1;
 }
 
 .parent-main {
@@ -1630,13 +1652,66 @@ th {
 
 .parent-main {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: .9rem;
+  grid-template-columns: minmax(17rem, .68fr) minmax(0, 1.55fr);
+  align-items: start;
+  gap: .85rem 1rem;
   padding: 0;
 }
 
 .parent-main .large-panel {
   grid-column: 1 / -1;
+}
+
+.parent-side-panel {
+  overflow: hidden;
+  padding: .82rem;
+}
+
+.parent-side-panel::before,
+.parent-score-panel::before {
+  content: "";
+  position: absolute;
+  inset: .65rem;
+  pointer-events: none;
+  border-top: 1px solid rgba(241, 211, 124, .16);
+  border-right: 1px solid rgba(241, 211, 124, .08);
+  clip-path: polygon(0 0, 100% 0, 100% 1.2rem, calc(100% - 1.2rem) 1.2rem, calc(100% - 1.2rem) 100%, 0 100%);
+  opacity: .8;
+}
+
+.parent-side-panel .panel-title {
+  gap: .45rem;
+  padding-bottom: .55rem;
+}
+
+.parent-side-panel .panel-title h2 {
+  font-size: .98rem;
+}
+
+.parent-side-panel .panel-title span {
+  font-size: .78rem;
+}
+
+.parent-code-panel {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.parent-event-panel {
+  grid-column: 1;
+  grid-row: 2;
+}
+
+.parent-leave-panel {
+  grid-column: 1;
+  grid-row: 3;
+}
+
+.parent-score-panel {
+  grid-column: 2;
+  grid-row: 1 / span 3;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .parent-topbar {
@@ -1654,9 +1729,46 @@ th {
 }
 
 #parentLeaveList {
-  max-height: 24rem;
+  max-height: 12.5rem;
   overflow-y: auto;
   padding-right: .35rem;
+}
+
+#parentEventList,
+#parentLeaveList {
+  gap: .48rem;
+}
+
+#parentEventList .record-card,
+#parentLeaveList .record-card {
+  gap: .38rem;
+  padding: .62rem .68rem;
+  border-radius: .32rem;
+  background:
+    linear-gradient(135deg, rgba(241, 211, 124, .08), transparent 42%),
+    linear-gradient(180deg, rgba(31, 37, 45, .9), rgba(12, 15, 19, .94));
+}
+
+#parentEventList .record-card strong,
+#parentLeaveList .record-card strong {
+  font-size: .92rem;
+}
+
+#parentEventList .record-card .meta,
+#parentLeaveList .record-card .meta {
+  gap: .3rem;
+}
+
+#parentEventList .badge,
+#parentLeaveList .badge {
+  padding: .18rem .42rem;
+  font-size: .72rem;
+  line-height: 1.35;
+}
+
+#parentLeaveList .badge:nth-child(5),
+#parentLeaveList .badge:nth-child(6) {
+  display: none;
 }
 
 #parentLeaveList::-webkit-scrollbar {
@@ -2057,6 +2169,18 @@ tbody tr:hover {
   .portal-grid,
   .management-grid {
     grid-template-columns: 1fr;
+  }
+
+  .parent-code-panel,
+  .parent-event-panel,
+  .parent-leave-panel,
+  .parent-score-panel {
+    grid-column: 1;
+    grid-row: auto;
+  }
+
+  #parentLeaveList {
+    max-height: 14rem;
   }
 
   .score-row,
