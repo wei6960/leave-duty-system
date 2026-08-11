@@ -211,7 +211,9 @@ function normalizeEvents(records) {
     id: record.id || crypto.randomUUID(),
     grade: ["全體", ...grades].includes(record.grade) ? record.grade : "全體",
     type: ["固定重大事件", "臨時重大事件"].includes(record.type) ? record.type : "臨時重大事件",
-    date: record.date || todayISO(),
+    date: record.startDate || record.date || todayISO(),
+    startDate: record.startDate || record.date || todayISO(),
+    endDate: record.endDate || record.startDate || record.date || todayISO(),
     title: record.title || "",
     note: record.note || "",
     createdAt: record.createdAt || new Date().toISOString(),
@@ -3482,7 +3484,8 @@ function clearEventForm() {
   editingEventId = null;
   $("#eventGrade").value = "全體";
   $("#eventType").value = "固定重大事件";
-  $("#eventDate").value = todayISO();
+  $("#eventStartDate").value = todayISO();
+  $("#eventEndDate").value = todayISO();
   $("#eventTitle").value = "";
   $("#eventNote").value = "";
   $("#eventForm .primary").textContent = "張貼公告";
@@ -3493,7 +3496,8 @@ function fillEventForm(record) {
   editingEventId = record.id;
   $("#eventGrade").value = record.grade;
   $("#eventType").value = record.type;
-  $("#eventDate").value = record.date;
+  $("#eventStartDate").value = record.startDate || record.date;
+  $("#eventEndDate").value = record.endDate || record.startDate || record.date;
   $("#eventTitle").value = record.title;
   $("#eventNote").value = record.note || "";
   $("#eventForm .primary").textContent = "儲存公告";
@@ -3588,15 +3592,21 @@ function setupForms() {
 
   $("#eventForm")?.addEventListener("submit", (event) => {
     event.preventDefault();
+    const startDate = $("#eventStartDate").value;
+    const endDate = $("#eventEndDate").value;
     const payload = {
       grade: $("#eventGrade").value,
       type: $("#eventType").value,
-      date: $("#eventDate").value,
+      date: startDate,
+      startDate,
+      endDate,
       title: $("#eventTitle").value.trim(),
       note: $("#eventNote").value.trim(),
       updatedAt: new Date().toISOString(),
     };
     if (!payload.title) return alert("請輸入公告標題");
+    if (!startDate || !endDate) return alert("請選擇開課日期與結束日期");
+    if (endDate < startDate) return alert("結束日期不能早於開課日期");
     if (editingEventId) {
       const record = state.events.find((item) => item.id === editingEventId);
       if (record) Object.assign(record, payload);
@@ -4179,8 +4189,18 @@ function eventVisibleToStudent(record, student) {
 function sortedEvents(records = state.events) {
   return records.slice().sort((a, b) => {
     const fixedOrder = a.type === b.type ? 0 : a.type === "臨時重大事件" ? -1 : 1;
-    return fixedOrder || b.date.localeCompare(a.date) || (b.updatedAt || "").localeCompare(a.updatedAt || "");
+    const aStart = a.startDate || a.date || "";
+    const bStart = b.startDate || b.date || "";
+    return fixedOrder || bStart.localeCompare(aStart) || (b.updatedAt || "").localeCompare(a.updatedAt || "");
   });
+}
+
+function eventDateRangeLabel(record) {
+  const start = record.startDate || record.date;
+  const end = record.endDate || start;
+  if (!start && !end) return "-";
+  if (!end || start === end) return dateLabel(start);
+  return `${dateLabel(start)} ～ ${dateLabel(end)}`;
 }
 
 function renderEventCard(record, withActions = false) {
@@ -4190,7 +4210,7 @@ function renderEventCard(record, withActions = false) {
       <div class="meta">
         <span class="badge">${record.type}</span>
         <span class="badge">${record.grade}</span>
-        <span class="badge">${dateLabel(record.date)}</span>
+        <span class="badge">${eventDateRangeLabel(record)}</span>
         ${record.note ? `<span class="badge gold">${record.note}</span>` : ""}
       </div>
       ${withActions ? `
@@ -4732,7 +4752,8 @@ function boot() {
   renderAcademicSettings();
   renderExamSubjectOptions();
   $("#lateDate").value = todayISO();
-  $("#eventDate").value = todayISO();
+  $("#eventStartDate").value = todayISO();
+  $("#eventEndDate").value = todayISO();
   setupTabs();
   mobileQuery.addEventListener("change", enforceMobilePages);
   setupDashboardFilter();
