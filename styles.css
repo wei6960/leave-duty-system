@@ -1684,6 +1684,61 @@ th {
   background: linear-gradient(90deg, var(--green), var(--gold-2));
 }
 
+.class-report-block {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(241, 211, 124, .12);
+}
+
+.segment-grid,
+.weak-topic-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: .85rem;
+}
+
+.segment-card,
+.weak-topic-card {
+  display: grid;
+  gap: .55rem;
+  padding: .9rem;
+  border: 1px solid rgba(241, 211, 124, .16);
+  border-radius: .45rem;
+  background: linear-gradient(180deg, #1a2027, #11161c);
+}
+
+.segment-card p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.segment-card ul {
+  display: grid;
+  gap: .45rem;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.segment-card li {
+  display: grid;
+  gap: .15rem;
+  padding-top: .45rem;
+  border-top: 1px solid rgba(255, 255, 255, .08);
+}
+
+.segment-card li span,
+.weak-topic-card span,
+.weak-topic-card small {
+  color: var(--muted);
+  font-size: .88rem;
+}
+
+.weak-topic-card strong {
+  color: #fff4d2;
+}
+
 table {
   width: 100%;
   min-width: 46rem;
@@ -2094,7 +2149,9 @@ tbody tr:hover {
 
   .class-ops-toolbar,
   .class-ops-summary,
-  .class-ops-layout {
+  .class-ops-layout,
+  .segment-grid,
+  .weak-topic-grid {
     grid-template-columns: 1fr;
   }
 

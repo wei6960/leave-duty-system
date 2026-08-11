@@ -1614,6 +1614,105 @@ function classOpsWeakUnits(meta) {
     .slice(0, 12);
 }
 
+function weakTopicKey(scope) {
+  return String(scope || "")
+    .replace(/[0-9０-９]+/g, "")
+    .replace(/[第章節回單元測驗考卷範圍上下左右一二三四五六七八九十、，,.\s]/g, "")
+    .slice(0, 8) || String(scope || "未標示單元").slice(0, 8);
+}
+
+function classOpsWeakHistory(meta) {
+  const units = classOpsWeakUnits({ ...meta, subject: meta.subject });
+  const groups = new Map();
+  units.forEach((unit) => {
+    const topic = weakTopicKey(unit.scope);
+    const key = `${unit.subject}|${topic}`;
+    if (!groups.has(key)) groups.set(key, { subject: unit.subject, topic, scopes: [], scores: [], lowCount: 0, count: 0, latestDate: "" });
+    const group = groups.get(key);
+    group.scopes.push(unit.scope);
+    group.scores.push(...unit.scores);
+    group.lowCount += unit.lowCount;
+    group.count += unit.count;
+    group.latestDate = [group.latestDate, unit.latestDate].filter(Boolean).sort().pop() || "";
+  });
+  return [...groups.values()]
+    .map((group) => ({
+      ...group,
+      average: averageScore(group.scores),
+      examples: [...new Set(group.scopes)].slice(0, 4),
+    }))
+    .sort((a, b) => b.lowCount - a.lowCount || a.average - b.average)
+    .slice(0, 8);
+}
+
+function classOpsStudentSegments(meta) {
+  const rows = classOpsRows(meta);
+  const byStudent = new Map();
+  rows.forEach((row) => {
+    if (!row.student) return;
+    if (!byStudent.has(row.student.id)) byStudent.set(row.student.id, { student: row.student, scores: [], bySubject: new Map() });
+    const item = byStudent.get(row.student.id);
+    item.scores.push(row.score);
+    if (!item.bySubject.has(row.subject)) item.bySubject.set(row.subject, []);
+    item.bySubject.get(row.subject).push(row.score);
+  });
+  const ranked = [...byStudent.values()]
+    .map((item) => {
+      const average = averageScore(item.scores);
+      const weakSubjects = [...item.bySubject.entries()]
+        .map(([subject, scores]) => ({ subject, average: averageScore(scores) }))
+        .filter((subject) => Number.isFinite(subject.average))
+        .sort((a, b) => a.average - b.average)
+        .slice(0, 2);
+      return { ...item, average, weakSubjects };
+    })
+    .filter((item) => Number.isFinite(item.average))
+    .sort((a, b) => b.average - a.average);
+  if (!ranked.length) return { top: [], middle: [], support: [] };
+  const topCount = Math.max(1, Math.ceil(ranked.length * .25));
+  const supportCount = Math.max(1, Math.ceil(ranked.length * .25));
+  return {
+    top: ranked.slice(0, topCount),
+    middle: ranked.slice(topCount, Math.max(topCount, ranked.length - supportCount)),
+    support: ranked.slice(Math.max(topCount, ranked.length - supportCount)),
+  };
+}
+
+function segmentStudentList(students) {
+  return students.map((item) => {
+    const weak = item.weakSubjects.length
+      ? `弱科：${item.weakSubjects.map((subject) => `${subject.subject} ${scoreDisplay(subject.average)}`).join("、")}`
+      : "弱科：暫無明顯落點";
+    return `<li><strong>${studentLabel(item.student)}</strong><span>平均 ${scoreDisplay(item.average)}｜${weak}</span></li>`;
+  }).join("");
+}
+
+function classOpsSegmentReport(meta) {
+  const segments = classOpsStudentSegments(meta);
+  if (!segments.top.length && !segments.middle.length && !segments.support.length) {
+    return `<div class="empty">目前沒有足夠成績可以分出前中後段學生。</div>`;
+  }
+  return `
+    <div class="segment-grid">
+      <article class="segment-card">
+        <div class="analysis-card-head"><strong>前段生</strong><b class="level-badge">拉高上限</b></div>
+        <p>給挑戰題、限時複合題與錯題講解任務，讓他們帶動同儕討論。</p>
+        <ul>${segmentStudentList(segments.top)}</ul>
+      </article>
+      <article class="segment-card">
+        <div class="analysis-card-head"><strong>中段生</strong><b class="level-badge">穩定轉強</b></div>
+        <p>先鎖定 1 到 2 個弱科單元，每週短測追蹤，把粗心與觀念缺口分開處理。</p>
+        <ul>${segmentStudentList(segments.middle)}</ul>
+      </article>
+      <article class="segment-card">
+        <div class="analysis-card-head"><strong>後段生</strong><b class="level-badge">補基本盤</b></div>
+        <p>拆小目標：基礎題正確率、作業完成率、錯題重練。先求穩定及格，再追分數。</p>
+        <ul>${segmentStudentList(segments.support)}</ul>
+      </article>
+    </div>
+  `;
+}
+
 function classOpsRadarSvg(stats) {
   const items = stats.filter((item) => item.count).slice(0, 8);
   if (items.length < 3) return `<div class="empty">至少需要 3 科有成績，才能形成整班雷達。</div>`;
@@ -1673,10 +1772,29 @@ function renderClassOps() {
         </article>
       `).join("") || `<div class="empty">目前沒有符合條件的班級成績。</div>`}
     </div>
+    <div class="class-report-block">
+      <div class="panel-title">
+        <h3>班級分析報告</h3>
+        <span>前中後段生與帶法</span>
+      </div>
+      ${classOpsSegmentReport(meta)}
+    </div>
   `;
   const weakUnits = classOpsWeakUnits(meta);
+  const weakHistory = classOpsWeakHistory(meta);
   $("#classOpsWeakUnits").innerHTML = weakUnits.length
-    ? `<div class="table-wrap"><table><thead><tr><th>科目</th><th>弱點單元</th><th>平均</th><th>低分次數</th><th>最近測驗</th></tr></thead><tbody>${weakUnits.map((unit) => `
+    ? `
+    <div class="weak-topic-grid">
+      ${weakHistory.map((topic) => `
+        <article class="weak-topic-card">
+          <strong>${topic.subject}｜${escapeHtml(topic.topic)}</strong>
+          <span>歷史平均 ${scoreDisplay(topic.average)}｜低分 ${topic.lowCount} / ${topic.count}</span>
+          <small>常見單元：${topic.examples.map(escapeHtml).join("、")}</small>
+        </article>
+      `).join("")}
+    </div>
+    <div class="subhead">單元明細</div>
+    <div class="table-wrap"><table><thead><tr><th>科目</th><th>弱點單元</th><th>平均</th><th>低分次數</th><th>最近測驗</th></tr></thead><tbody>${weakUnits.map((unit) => `
       <tr>
         <td>${unit.subject}</td>
         <td>${escapeHtml(unit.scope)}</td>
