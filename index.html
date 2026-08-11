@@ -50,6 +50,26 @@
   </section>
 
   <section class="parent-shell" id="parentShell" hidden>
+    <button class="parent-menu-button" id="parentMenuButton" type="button" aria-label="開啟家長端選單">
+      <span></span><span></span><span></span>
+    </button>
+    <div class="parent-scrim" id="parentScrim"></div>
+    <aside class="parent-drawer" aria-label="家長端選單">
+      <div class="parent-drawer-brand">
+        <img src="assets/logo.png" alt="金牌躍騰教育集團 logo">
+        <div>
+          <strong>家長端</strong>
+          <span id="parentDrawerStudent">學生生涯檔案</span>
+        </div>
+      </div>
+      <nav class="parent-drawer-nav">
+        <button type="button" data-parent-section="parentReportSection">報告區</button>
+        <button type="button" data-parent-section="parentScoreSection">成績調閱</button>
+        <button type="button" data-parent-section="parentEventSection">重大公告</button>
+        <button type="button" data-parent-section="parentLeaveSection">請假紀錄</button>
+        <button type="button" data-parent-section="parentCodeSection">家長代碼更新</button>
+      </nav>
+    </aside>
     <header class="topbar parent-topbar">
       <div>
         <p class="eyebrow">家長端網頁</p>
@@ -59,7 +79,7 @@
     </header>
     <main class="parent-main">
       <aside class="parent-side-stack" aria-label="家長端資訊">
-        <section class="panel parent-side-panel parent-code-panel">
+        <section class="panel parent-side-panel parent-code-panel" id="parentCodeSection">
           <div class="panel-title">
             <h2>家長登入代碼</h2>
             <span>可自行更改，不能與其他學生重複</span>
@@ -72,14 +92,14 @@
           </form>
           <p class="login-error" id="parentCodeUpdateError" hidden></p>
         </section>
-        <section class="panel parent-side-panel parent-event-panel">
+        <section class="panel parent-side-panel parent-event-panel" id="parentEventSection">
           <div class="panel-title">
             <h2>重大行事曆公告</h2>
             <span>老師張貼事項</span>
           </div>
           <div id="parentEventList" class="record-list"></div>
         </section>
-        <section class="panel parent-side-panel parent-leave-panel">
+        <section class="panel parent-side-panel parent-leave-panel" id="parentLeaveSection">
           <div class="panel-title">
             <h2>請假紀錄</h2>
             <span>保留歷史</span>
@@ -87,7 +107,7 @@
           <div id="parentLeaveList" class="record-list"></div>
         </section>
       </aside>
-      <section class="panel career-query-panel parent-score-panel">
+      <section class="panel career-query-panel parent-score-panel" id="parentScoreSection">
         <div class="panel-title">
           <h2>成績調閱</h2>
           <span>依學生科目與日期查詢</span>
@@ -147,10 +167,9 @@
         </div>
         <div id="parentTermAnalysisReport"></div>
       </section>
-      <section class="panel large-panel">
+      <section class="panel large-panel" id="parentReportSection">
         <div class="panel-title">
           <h2>學生週考分析報告</h2>
-          <button class="ghost" id="downloadParentReportImage" type="button">下載圖片報告</button>
         </div>
         <div id="parentReport"></div>
       </section>

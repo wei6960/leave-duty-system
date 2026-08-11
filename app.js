@@ -3755,6 +3755,24 @@ function setupForms() {
   });
 }
 
+function closeParentDrawer() {
+  document.body.classList.remove("parent-nav-open");
+}
+
+function setupParentDrawer() {
+  $("#parentMenuButton")?.addEventListener("click", () => {
+    document.body.classList.toggle("parent-nav-open");
+  });
+  $("#parentScrim")?.addEventListener("click", closeParentDrawer);
+  $$(".parent-drawer-nav [data-parent-section]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const target = $(`#${button.dataset.parentSection}`);
+      closeParentDrawer();
+      if (target) target.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  });
+}
+
 function updateClock() {
   const now = new Date();
   $("#currentDate").textContent = now.toLocaleDateString("zh-TW", {
@@ -4329,6 +4347,7 @@ function setupActions() {
 }
 
 function showLogin() {
+  closeParentDrawer();
   $("#loginScreen").hidden = false;
   $("#parentLoginScreen").hidden = true;
   $("#parentShell").hidden = true;
@@ -4338,6 +4357,7 @@ function showLogin() {
 }
 
 function showApp() {
+  closeParentDrawer();
   $("#loginScreen").hidden = true;
   $("#parentLoginScreen").hidden = true;
   $("#parentShell").hidden = true;
@@ -4346,6 +4366,7 @@ function showApp() {
 }
 
 function showParentLogin() {
+  closeParentDrawer();
   $("#loginScreen").hidden = true;
   $("#appShell").hidden = true;
   $("#parentShell").hidden = true;
@@ -4354,6 +4375,7 @@ function showParentLogin() {
 }
 
 function showParentShell() {
+  closeParentDrawer();
   $("#loginScreen").hidden = true;
   $("#appShell").hidden = true;
   $("#parentLoginScreen").hidden = true;
@@ -4567,6 +4589,7 @@ function renderParentPortal() {
   const student = getStudent(parentStudentId);
   if (!student) return;
   $("#parentStudentTitle").textContent = `${student.name} 生涯檔案`;
+  if ($("#parentDrawerStudent")) $("#parentDrawerStudent").textContent = `${student.grade} ${student.name}`;
   $("#parentOwnCode").value = student.parentCode || "";
   $("#parentCodeUpdateError").hidden = true;
   $("#parentEventList").innerHTML = sortedEvents(state.events.filter((record) => eventVisibleToStudent(record, student)))
@@ -4699,6 +4722,7 @@ function boot() {
   setupForms();
   setupActions();
   setupLogin();
+  setupParentDrawer();
   updateClock();
   setInterval(updateClock, 1000);
   if (parentMode) {
