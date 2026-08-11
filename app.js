@@ -557,6 +557,24 @@ function addDays(isoDate, amount) {
   return toISODate(date);
 }
 
+function weekStartISO(isoDate = todayISO()) {
+  const date = new Date(`${isoDate || todayISO()}T00:00:00`);
+  const day = date.getDay();
+  const offset = day === 0 ? -6 : 1 - day;
+  date.setDate(date.getDate() + offset);
+  return toISODate(date);
+}
+
+function weekDates(isoDate = todayISO()) {
+  const start = weekStartISO(isoDate);
+  return Array.from({ length: 7 }, (_item, index) => addDays(start, index));
+}
+
+function weekRangeLabel(isoDate = todayISO()) {
+  const dates = weekDates(isoDate);
+  return `${dateLabel(dates[0])} 到 ${dateLabel(dates[6])}`;
+}
+
 function maxDate(a, b) {
   return a > b ? a : b;
 }
@@ -1662,6 +1680,7 @@ function classOpsWeeklyRows(meta, includeAllGrades = false) {
       grade: exam.grade,
       subject: normalizeCourseName(exam.subject),
       score: row.score,
+      papers: row.papers,
       scope: exam.scope || "",
       date: exam.date,
       student: row.student,
@@ -1691,6 +1710,23 @@ function classOpsTermRows(meta, includeAllGrades = false) {
 function classOpsRows(meta, includeAllGrades = false) {
   return [...classOpsWeeklyRows(meta, includeAllGrades), ...classOpsTermRows(meta, includeAllGrades)]
     .filter((row) => reportSubjects.includes(row.subject));
+}
+
+function classOpsWeeklyReportRows(meta = classOpsMeta(), date = $("#classOpsWeekDate")?.value || todayISO()) {
+  const dates = new Set(weekDates(date));
+  return classOpsWeeklyRows(meta)
+    .filter((row) => dates.has(row.exam.date))
+    .filter((row) => meta.subject === "全部" || row.subject === meta.subject)
+    .sort((a, b) => a.exam.date.localeCompare(b.exam.date) || a.subject.localeCompare(b.subject, "zh-Hant") || a.student.name.localeCompare(b.student.name, "zh-Hant"))
+    .map((row) => ({
+      date: row.exam.date,
+      grade: row.grade,
+      name: row.student.name,
+      subject: row.exam.subject,
+      scope: row.exam.scope || "-",
+      papers: row.papers?.map(scoreDisplay).join(" / ") || scoreDisplay(row.score),
+      average: row.score,
+    }));
 }
 
 function summarizeScores(rows) {
@@ -2266,40 +2302,64 @@ function renderParentCareerSubjectButtons(student) {
   target.innerHTML = careerSubjectButtonsHtml(student, selectedParentCareerSubject(student), "data-parent-career-subject");
 }
 
+function examRankForStudent(exam, studentId) {
+  return currentScoreRows(exam).find((item) => item.student.id === studentId)?.rank || "-";
+}
+
 function careerScoreLookupHtml(student, queryDate, selectedSubject, options = {}) {
   if (!student) {
     return `<div class="empty">請先選擇學生。</div>`;
   }
   const period = options.period || null;
-  const dateSubjects = scheduledSubjectsForStudentDate(student, queryDate);
-  const rows = studentExamRows(student, period)
-    .filter((row) => !dateSubjects.length || dateSubjects.includes(row.exam.subject))
-    .sort((a, b) => b.exam.date.localeCompare(a.exam.date));
-  const dayRows = rows.filter((row) => row.exam.date === queryDate);
-  const termRows = state.termScores
-    .filter((item) => item.studentId === student.id)
-    .filter((item) => !dateSubjects.length || dateSubjects.includes(normalizeCourseName(item.subject)));
-  const subjectHistoryRows = studentExamRows(student, period)
+  const dates = weekDates(queryDate);
+  const dateSet = new Set(dates);
+  const weekRows = studentExamRows(student, period)
+    .filter((row) => dateSet.has(row.exam.date))
     .filter((row) => studentTakesSubject(student, row.exam.subject))
     .filter((row) => selectedSubject === "全部" || row.exam.subject === selectedSubject)
-    .sort((a, b) => b.exam.date.localeCompare(a.exam.date));
-  const subjectCardTitle = selectedSubject === "全部" ? "各科週考紀錄" : `${selectedSubject}週考紀錄`;
+    .sort((a, b) => a.exam.date.localeCompare(b.exam.date) || a.exam.subject.localeCompare(b.exam.subject, "zh-Hant"));
+  const termRows = state.termScores
+    .filter((item) => item.studentId === student.id)
+    .filter((item) => selectedSubject === "全部" || normalizeCourseName(item.subject) === selectedSubject);
+  const subjectCardTitle = selectedSubject === "全部" ? "本週各科成績" : `本週${selectedSubject}成績`;
   return `
     <div class="lookup-result">
-      <strong>${dateLabel(queryDate)} ${scheduledSubjectLabel(dateSubjects)}</strong>
+      <div class="week-browser-head">
+        <button class="ghost" type="button" data-career-week="-1">上一週</button>
+        <strong>${weekRangeLabel(queryDate)}</strong>
+        <button class="ghost" type="button" data-career-week="1">下一週</button>
+      </div>
       ${period ? `<span class="badge">${academicPeriodLabel(period)}</span>` : ""}
-      <div class="lookup-list">
-        ${dayRows.map((row) => `<article class="score-result-card"><b>${row.exam.subject}</b><span>${row.exam.scope || "未填重點"}</span><strong class="${scoreClass(row.score)}">${scoreDisplay(row.score)}</strong><small>各卷 ${row.papers.map(scoreDisplay).join(" / ")}</small></article>`).join("") || `<div class="empty small-empty">當日此科暫時沒有成績。</div>`}
+      <div class="weekly-score-grid">
+        ${dates.map((date) => {
+          const dateSubjects = scheduledSubjectsForStudentDate(student, date);
+          const dayRows = weekRows.filter((row) => row.exam.date === date);
+          return `<article class="weekly-score-day ${date === queryDate ? "is-current" : ""}">
+            <div class="weekly-day-head">
+              <strong>${dateLabel(date)}</strong>
+              <span>${scheduledSubjectLabel(dateSubjects)}</span>
+            </div>
+            ${dayRows.map((row) => {
+              const rank = examRankForStudent(row.exam, student.id);
+              return `<div class="score-result-card">
+                <b>${row.exam.subject}</b>
+                <span>${row.exam.scope || "未填重點"}</span>
+                <strong class="${scoreClass(row.score)}">${scoreDisplay(row.score)}</strong>
+                <small>各卷 ${row.papers.map(scoreDisplay).join(" / ")}｜當天排名 ${rank}</small>
+              </div>`;
+            }).join("") || `<div class="empty small-empty">本日尚無成績。</div>`}
+          </article>`;
+        }).join("")}
       </div>
     </div>
     <section class="career-score-browser">
       <div class="browser-head">
         <strong>${subjectCardTitle}</strong>
-        <span>${subjectHistoryRows.length} 筆</span>
+        <span>${weekRows.length} 筆</span>
       </div>
       <div class="score-card-rail" aria-label="${subjectCardTitle}">
-        ${subjectHistoryRows.map((row) => {
-          const rank = currentScoreRows(row.exam).find((item) => item.student.id === student.id)?.rank || "-";
+        ${weekRows.map((row) => {
+          const rank = examRankForStudent(row.exam, student.id);
           return `<article class="exam-mini-card">
             <div class="mini-card-top">
               <b>${row.exam.subject}</b>
@@ -2311,28 +2371,19 @@ function careerScoreLookupHtml(student, queryDate, selectedSubject, options = {}
               <small>排名 ${rank}</small>
             </div>
           </article>`;
-        }).join("") || `<div class="empty small-empty">尚無此科週考紀錄。</div>`}
+        }).join("") || `<div class="empty small-empty">本週尚無符合條件的週考紀錄。</div>`}
       </div>
     </section>
     ${options.hideDateHistory ? "" : `<div class="table-wrap career-history-table">
       <table>
-        <thead><tr><th>日期</th><th>科目</th><th>重點</th><th>各卷</th><th>平均</th><th>排名</th></tr></thead>
-        <tbody>${rows.map((row) => {
-          const rank = currentScoreRows(row.exam).find((item) => item.student.id === student.id)?.rank || "-";
+        <thead><tr><th colspan="6">本週成績明細</th></tr></thead>
+        <thead><tr><th>日期</th><th>科目</th><th>重點</th><th>各卷</th><th>平均</th><th>當天排名</th></tr></thead>
+        <tbody>${weekRows.map((row) => {
+          const rank = examRankForStudent(row.exam, student.id);
           return `<tr><td>${dateLabel(row.exam.date)}</td><td>${row.exam.subject}</td><td>${row.exam.scope || "-"}</td><td>${row.papers.map(scoreDisplay).join(" / ")}</td><td class="${scoreClass(row.score)}">${scoreDisplay(row.score)}</td><td>${rank}</td></tr>`;
-        }).join("") || `<tr><td colspan="6">尚無歷史成績</td></tr>`}</tbody>
+        }).join("") || `<tr><td colspan="6">本週尚無成績</td></tr>`}</tbody>
       </table>
     </div>`}
-    <div class="table-wrap career-history-table">
-      <table>
-        <thead><tr><th colspan="6">${selectedSubject === "全部" ? "各科" : selectedSubject} 歷史週考單元與成績</th></tr></thead>
-        <thead><tr><th>日期</th><th>科目</th><th>考試重點 / 單元</th><th>各卷</th><th>平均</th><th>排名</th></tr></thead>
-        <tbody>${subjectHistoryRows.map((row) => {
-          const rank = currentScoreRows(row.exam).find((item) => item.student.id === student.id)?.rank || "-";
-          return `<tr><td>${dateLabel(row.exam.date)}</td><td>${row.exam.subject}</td><td>${row.exam.scope || "-"}</td><td>${row.papers.map(scoreDisplay).join(" / ")}</td><td class="${scoreClass(row.score)}">${scoreDisplay(row.score)}</td><td>${rank}</td></tr>`;
-        }).join("") || `<tr><td colspan="6">尚無此科週考紀錄</td></tr>`}</tbody>
-      </table>
-    </div>
     <div class="meta">${termRows.map((item) => `<span class="badge">${item.term} ${item.stage} ${item.subject} ${scoreDisplay(Number(item.score))}</span>`).join("") || `<span class="badge">尚無段考成績</span>`}</div>
   `;
 }
@@ -2698,6 +2749,46 @@ function printClassReportPdf() {
   pdfDocument(title, `
     ${pagesHtml}
   `, layout);
+}
+
+function printClassOpsWeeklyReportPdf() {
+  const meta = classOpsMeta();
+  const queryDate = $("#classOpsWeekDate")?.value || todayISO();
+  const rows = classOpsWeeklyReportRows(meta, queryDate);
+  const title = `${meta.grade} 每週成績單`;
+  const reportTitle = `${branchReportTitle().replace("班級成績單", "").trim()} ${meta.grade} 每週成績單`.trim();
+  const subjectLabel = meta.subject === "全部" ? "全部科目" : meta.subject;
+  const semesterLabel = meta.semester === "全部" ? "全部學期" : meta.semester;
+  const rowsPerPage = 22;
+  const pages = rows.length ? chunkArray(rows, rowsPerPage) : [[]];
+  const tableHead = `<thead><tr><th>日期</th><th>班級</th><th class="left">姓名</th><th>科目</th><th class="left">重點 / 單元</th><th>各卷</th><th>平均</th></tr></thead>`;
+  const rowHtml = (row) => `<tr>
+    <td>${escapeHtml(dateLabel(row.date))}</td>
+    <td>${escapeHtml(row.grade)}</td>
+    <td class="left">${escapeHtml(row.name)}</td>
+    <td>${escapeHtml(row.subject)}</td>
+    <td class="left">${escapeHtml(row.scope)}</td>
+    <td>${escapeHtml(row.papers)}</td>
+    <td class="${scoreClass(row.average)}">${scoreDisplay(row.average)}</td>
+  </tr>`;
+  const body = pages.map((pageRows, index) => `
+    <section class="pdf-page">
+      <header class="doc-head">
+        <div class="brand"><img src="assets/logo.png" alt=""><div><h1>${escapeHtml(reportTitle)}</h1><div>${escapeHtml(weekRangeLabel(queryDate))}</div></div></div>
+        <div>列印日期：${escapeHtml(new Date().toLocaleDateString("zh-TW"))}</div>
+      </header>
+      <div class="meta">
+        <span class="pill">${escapeHtml(meta.year)} ${escapeHtml(semesterLabel)}</span>
+        <span class="pill">${escapeHtml(subjectLabel)}</span>
+        <span class="pill">第 ${index + 1} / ${pages.length} 頁</span>
+      </div>
+      <table>
+        ${tableHead}
+        <tbody>${pageRows.map(rowHtml).join("") || `<tr><td colspan="7">本週尚無符合條件的成績</td></tr>`}</tbody>
+      </table>
+    </section>
+  `).join("");
+  pdfDocument(title, body, "landscape");
 }
 
 function classReportFileName(exam, ext) {
@@ -3072,9 +3163,10 @@ function setupForms() {
     element.addEventListener("change", handler);
   };
 
-  ["classOpsYear", "classOpsSemester", "classOpsGrade", "classOpsSubject"].forEach((id) => {
+  ["classOpsYear", "classOpsSemester", "classOpsGrade", "classOpsSubject", "classOpsWeekDate"].forEach((id) => {
     onInputChange(id, renderClassOps);
   });
+  $("#printClassOpsWeeklyReport")?.addEventListener("click", printClassOpsWeeklyReportPdf);
 
   $("#studentForm").addEventListener("submit", (event) => {
     event.preventDefault();
@@ -3759,6 +3851,7 @@ function setupActions() {
     const deleteEventId = event.target.dataset.deleteEvent;
     const applyAcademicPeriod = event.target.dataset.applyAcademicPeriod;
     const openClassOpsPeriod = event.target.dataset.openClassOpsPeriod;
+    const careerWeek = event.target.dataset.careerWeek;
 
     if (pickLeaveStudentId) {
       const student = getStudent(pickLeaveStudentId);
@@ -3775,6 +3868,14 @@ function setupActions() {
         $("#careerStudentPicker").value = student.name;
         $("#careerStudentOptions").hidden = true;
         careerSubject = "全部";
+        renderStudentReport();
+      }
+    }
+    if (careerWeek) {
+      const target = $("#careerQueryDate");
+      const amount = Number(careerWeek) * 7;
+      if (target) {
+        target.value = addDays(target.value || todayISO(), amount);
         renderStudentReport();
       }
     }
@@ -4236,6 +4337,7 @@ function boot() {
   resetLeaveForm();
   $("#examDate").value = todayISO();
   $("#careerQueryDate").value = todayISO();
+  $("#classOpsWeekDate").value = todayISO();
   $("#parentScoreDate").value = todayISO();
   $("#termYear").value = String(new Date().getFullYear() - 1911);
   $("#careerTermAnalysisYear").value = String(new Date().getFullYear() - 1911);
