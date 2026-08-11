@@ -2908,6 +2908,49 @@ function studentReportFileName(student, pageIndex = null) {
   return `${student.name}_學生生涯報告${suffix}.png`;
 }
 
+function drawStudentReportGeometry(ctx, width, height) {
+  ctx.save();
+  ctx.fillStyle = "#f7f1e3";
+  ctx.fillRect(0, 0, width, height);
+  ctx.globalAlpha = .55;
+  ctx.fillStyle = "#efe0b8";
+  ctx.beginPath();
+  ctx.moveTo(width - 210, 0);
+  ctx.lineTo(width, 0);
+  ctx.lineTo(width, 250);
+  ctx.closePath();
+  ctx.fill();
+  ctx.globalAlpha = .42;
+  ctx.fillStyle = "#d7b766";
+  ctx.beginPath();
+  ctx.moveTo(0, height - 220);
+  ctx.lineTo(260, height);
+  ctx.lineTo(0, height);
+  ctx.closePath();
+  ctx.fill();
+  ctx.globalAlpha = .18;
+  ctx.strokeStyle = "#9a7330";
+  ctx.lineWidth = 1;
+  for (let x = -120; x < width + 120; x += 36) {
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x + 260, height);
+    ctx.stroke();
+  }
+  ctx.globalAlpha = .28;
+  ctx.strokeStyle = "#11151a";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(28, 28, width - 56, height - 56);
+  ctx.globalAlpha = .22;
+  ctx.fillStyle = "#11151a";
+  [120, 410, 690].forEach((x, index) => {
+    ctx.beginPath();
+    ctx.arc(x, 960 - index * 92, 34 + index * 8, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  ctx.restore();
+}
+
 function downloadStudentReportImage(student = getStudent($("#careerStudent")?.value)) {
   if (!student) return alert("請先選擇學生。");
   const examRows = studentExamRows(student);
@@ -2934,8 +2977,7 @@ function downloadStudentReportImage(student = getStudent($("#careerStudent")?.va
     canvas.height = height * scale;
     const ctx = canvas.getContext("2d");
     ctx.scale(scale, scale);
-    ctx.fillStyle = "#f7f1e3";
-    ctx.fillRect(0, 0, width, height);
+    drawStudentReportGeometry(ctx, width, height);
     return { canvas, ctx };
   };
 
