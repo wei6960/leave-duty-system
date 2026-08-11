@@ -1196,6 +1196,11 @@ function chunkArray(items, size) {
   return chunks;
 }
 
+function branchReportTitle() {
+  const branch = (currentBranch || "").trim();
+  return branch ? `${branch}${branch.endsWith("分校") ? "" : "分校"} 班級成績單` : "班級成績單";
+}
+
 function classReportData(exam) {
   const rows = currentScoreRows(exam);
   const average = rows.length ? rows.reduce((sum, row) => sum + row.score, 0) / rows.length : NaN;
@@ -2640,11 +2645,12 @@ function printClassReportPdf() {
     return;
   }
   const title = `${exam.grade} ${exam.subject} 班級成績單`;
+  const reportTitle = branchReportTitle();
   const scope = exam.scope ? `重點：${escapeHtml(exam.scope)}` : "未填考試重點";
   if (exam.noExam) {
     pdfDocument(title, `
       <header class="doc-head">
-        <div class="brand"><img src="assets/logo.png" alt=""><div><h1>金牌躍騰教育集團 班級成績單</h1><div>${escapeHtml(dateLabel(exam.date))} ${escapeHtml(exam.grade)} ${escapeHtml(exam.subject)}</div></div></div>
+        <div class="brand"><img src="assets/logo.png" alt=""><div><h1>${escapeHtml(reportTitle)}</h1><div>${escapeHtml(dateLabel(exam.date))} ${escapeHtml(exam.grade)} ${escapeHtml(exam.subject)}</div></div></div>
       </header>
       <div class="meta"><span class="pill">無考試</span><span class="pill">${scope}</span></div>
     `, "portrait");
@@ -2674,7 +2680,7 @@ function printClassReportPdf() {
   const pagesHtml = pages.map((pageRows, pageIndex) => `
     <section class="pdf-page">
       <header class="doc-head">
-        <div class="brand"><img src="assets/logo.png" alt=""><div><h1>金牌躍騰教育集團 班級成績單</h1><div>${escapeHtml(dateLabel(exam.date))} ${escapeHtml(exam.grade)} ${escapeHtml(exam.subject)}</div></div></div>
+        <div class="brand"><img src="assets/logo.png" alt=""><div><h1>${escapeHtml(reportTitle)}</h1><div>${escapeHtml(dateLabel(exam.date))} ${escapeHtml(exam.grade)} ${escapeHtml(exam.subject)}</div></div></div>
         <div>列印日期：${escapeHtml(new Date().toLocaleDateString("zh-TW"))}</div>
       </header>
       <div class="meta">
@@ -2777,6 +2783,7 @@ function downloadClassReportImage() {
   const pages = rows.length ? chunkArray(rows, rowsPerPage) : [[]];
   const totalPages = pages.length;
   const baseFileName = classReportFileName(exam, "png").replace(/\.png$/i, "");
+  const reportTitle = branchReportTitle();
 
   pages.forEach((pageRows, pageIndex) => {
     const canvas = document.createElement("canvas");
@@ -2796,7 +2803,7 @@ function downloadClassReportImage() {
 
     ctx.fillStyle = "#f5d47a";
     ctx.font = `bold ${landscape ? 28 : 30}px Microsoft JhengHei, Arial`;
-    canvasText(ctx, "金牌躍騰教育集團 班級成績單", margin, 58, width - margin * 2);
+    canvasText(ctx, reportTitle, margin, 58, width - margin * 2);
     ctx.fillStyle = "#fff7df";
     ctx.font = `${landscape ? 17 : 18}px Microsoft JhengHei, Arial`;
     canvasText(ctx, `${dateLabel(exam.date)}　${exam.grade}　${exam.subject}`, margin, 94, width - margin * 2 - 210);
