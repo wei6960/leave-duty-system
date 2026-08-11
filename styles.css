@@ -1069,8 +1069,20 @@ legend {
 
 .weekly-score-grid {
   display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
+  grid-template-columns: repeat(7, minmax(10.5rem, 1fr));
   gap: .65rem;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  padding-bottom: .3rem;
+}
+
+.weekly-score-grid::-webkit-scrollbar {
+  height: .45rem;
+}
+
+.weekly-score-grid::-webkit-scrollbar-thumb {
+  background: rgba(241, 211, 124, .25);
+  border-radius: 999px;
 }
 
 .weekly-score-day {
@@ -1114,6 +1126,16 @@ legend {
   background: rgba(0, 0, 0, .16);
 }
 
+.weekly-score-day .score-result-card {
+  grid-template-columns: 1fr auto;
+  align-items: start;
+}
+
+.weekly-score-day .score-result-card > span {
+  grid-column: 1 / -1;
+  overflow-wrap: anywhere;
+}
+
 .score-result-card b {
   color: var(--gold-2);
   font-size: 1.02rem;
@@ -1135,6 +1157,19 @@ legend {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: .35rem;
+}
+
+.weekly-score-day .score-stat-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.weekly-score-day .score-stat-grid span {
+  padding: .34rem .38rem;
+  font-size: .76rem;
+}
+
+.weekly-score-day .score-stat-grid b {
+  font-size: .9rem;
 }
 
 .score-stat-grid span,
