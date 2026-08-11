@@ -1598,6 +1598,13 @@ th {
   margin-bottom: 1rem;
 }
 
+.promotion-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: .85rem;
+  margin: 1rem 0;
+}
+
 .class-ops-layout {
   display: grid;
   grid-template-columns: minmax(18rem, .85fr) minmax(0, 1.15fr);
@@ -2149,6 +2156,7 @@ tbody tr:hover {
 
   .class-ops-toolbar,
   .class-ops-summary,
+  .promotion-grid,
   .class-ops-layout,
   .segment-grid,
   .weak-topic-grid {

@@ -304,6 +304,10 @@
             <strong>重大行事曆公告</strong>
             <span>固定與臨時重大事件張貼</span>
           </button>
+          <button class="portal-tile" type="button" data-tab="grade-promotion">
+            <strong>升級與校友</strong>
+            <span>學期結束後升年級，國三轉校友</span>
+          </button>
         </div>
       </section>
 
@@ -328,6 +332,13 @@
           <button class="primary" type="submit">儲存學年設定</button>
           <p class="hint form-span-2">新登記的週考會自動歸到這個學年學期；舊週考依考試日期自動保留在原本年度。</p>
         </form>
+        <section class="panel list-panel">
+          <div class="panel-title">
+            <h2>學年學期紀錄</h2>
+            <span>用來調閱、編輯各年度資料</span>
+          </div>
+          <div id="academicPeriodList" class="record-list"></div>
+        </section>
       </section>
 
       <section class="page" id="class-ops">
@@ -463,6 +474,7 @@
                   <option value="國一">國一</option>
                   <option value="國二">國二</option>
                   <option value="國三">國三</option>
+                  <option value="校友">校友</option>
                 </select>
               </label>
               <label>姓名
@@ -509,6 +521,7 @@
             <option value="國一">國一</option>
             <option value="國二">國二</option>
             <option value="國三">國三</option>
+            <option value="校友">校友</option>
           </select>
           <input id="studentSearch" placeholder="搜尋姓名">
         </div>
@@ -530,6 +543,27 @@
             <tbody id="studentTable"></tbody>
           </table>
         </div>
+      </section>
+
+      <section class="page" id="grade-promotion">
+        <header class="section-head">
+          <div>
+            <p class="eyebrow">升級與校友</p>
+            <h1>學期結束升年級</h1>
+          </div>
+          <button class="ghost back-button" type="button" data-back-tab="management">返回班務管理</button>
+        </header>
+        <section class="panel promotion-panel">
+          <div class="panel-title">
+            <h2>一鍵升級</h2>
+            <span>國一變國二，國二變國三，原國三變校友</span>
+          </div>
+          <p class="hint">升級只會調整學生目前身份；請假、晚到、週考、段考、生涯檔案等歷史資料會保留原本紀錄，方便依學年度調閱。</p>
+          <div class="promotion-grid" id="promotionPreview"></div>
+          <div class="action-row">
+            <button class="primary" id="promoteGradesButton" type="button">執行年級升級</button>
+          </div>
+        </section>
       </section>
 
       <section class="page" id="schedule">

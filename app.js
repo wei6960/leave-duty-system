@@ -6,6 +6,7 @@ const FIREBASE_SDK_VERSION = "12.17.1";
 const SUPABASE_SDK_VERSION = "2.86.0";
 const SUPABASE_COLLECTION = "leaveDutyBranches";
 const grades = ["國一", "國二", "國三"];
+const studentStatuses = [...grades, "校友"];
 const weekdays = ["一", "二", "三", "四", "五", "六", "日"];
 const periods = ["上午", "下午", "晚上"];
 const termStages = ["一段", "二段", "三段"];
@@ -55,6 +56,7 @@ const parentTabs = {
   "class-ops": "class-ops",
   career: "management",
   events: "management",
+  "grade-promotion": "management",
 };
 
 function academicPeriodForDate(date = todayISO()) {
@@ -90,6 +92,7 @@ function emptyState() {
     exams: [],
     termScores: [],
     termPeriods: {},
+    academicPeriods: [],
     events: [],
     archives: [],
   };
@@ -146,7 +149,7 @@ function normalizeState(raw) {
   return {
     students: (raw.students || []).map((student) => ({
       id: student.id || crypto.randomUUID(),
-      grade: grades.includes(student.grade) ? student.grade : "國一",
+      grade: studentStatuses.includes(student.grade) ? student.grade : "國一",
       name: student.name || "",
       weekdays: student.weekdays || [],
       courses: normalizeCourses(student.courses || student.subjects || []),
@@ -166,9 +169,35 @@ function normalizeState(raw) {
       date: item.date || item.createdAt?.slice(0, 10) || todayISO(),
     })),
     termPeriods: normalizeTermPeriods(raw.termPeriods || {}),
+    academicPeriods: normalizeAcademicPeriods(raw.academicPeriods || [], normalizeAcademicSettings(raw.settings)),
     events: normalizeEvents(raw.events || []),
     archives: raw.archives || [],
   };
+}
+
+function normalizeAcademicPeriods(records, currentSettings = defaultAcademicSettings()) {
+  const byKey = new Map();
+  const add = (record = {}) => {
+    const settings = normalizeAcademicSettings(record);
+    const key = `${settings.academicYear}|${settings.semester}`;
+    if (!byKey.has(key)) {
+      byKey.set(key, {
+        id: record.id || key,
+        academicYear: settings.academicYear,
+        semester: settings.semester,
+        note: record.note || "",
+        createdAt: record.createdAt || new Date().toISOString(),
+        updatedAt: record.updatedAt || record.createdAt || new Date().toISOString(),
+      });
+    } else {
+      const existing = byKey.get(key);
+      existing.note = record.note || existing.note;
+      existing.updatedAt = [existing.updatedAt, record.updatedAt || record.createdAt || ""].filter(Boolean).sort().pop() || existing.updatedAt;
+    }
+  };
+  records.forEach(add);
+  add(currentSettings);
+  return [...byKey.values()].sort((a, b) => `${b.academicYear}${b.semester}`.localeCompare(`${a.academicYear}${a.semester}`, "zh-Hant"));
 }
 
 function normalizeTermPeriods(raw) {
@@ -636,7 +665,7 @@ function studentHasClassOnDate(student, date) {
 }
 
 function dashboardStudents() {
-  return state.students.filter((student) => dashboardGrade === "全體" || student.grade === dashboardGrade);
+  return state.students.filter((student) => student.grade !== "校友").filter((student) => dashboardGrade === "全體" || student.grade === dashboardGrade);
 }
 
 function dashboardStudentIds() {
@@ -783,6 +812,93 @@ function renderAcademicSettings() {
   if ($("#academicYear")) $("#academicYear").value = settings.academicYear;
   if ($("#academicSemester")) $("#academicSemester").value = settings.semester;
   if ($("#examAcademicLabel")) $("#examAcademicLabel").textContent = academicPeriodLabel(settings);
+}
+
+function upsertAcademicPeriod(settings = activeAcademicPeriod()) {
+  const period = normalizeAcademicSettings(settings);
+  state.academicPeriods = normalizeAcademicPeriods([
+    ...(state.academicPeriods || []),
+    {
+      academicYear: period.academicYear,
+      semester: period.semester,
+      updatedAt: new Date().toISOString(),
+    },
+  ], period);
+}
+
+function renderAcademicPeriodList() {
+  const target = $("#academicPeriodList");
+  if (!target) return;
+  upsertAcademicPeriod(activeAcademicPeriod());
+  const current = academicPeriodLabel();
+  target.innerHTML = (state.academicPeriods || []).map((period) => {
+    const label = academicPeriodLabel(period);
+    const examCount = state.exams.filter((exam) => exam.academicYear === period.academicYear && exam.semester === period.semester).length;
+    const termCount = state.termScores.filter((item) => item.year === period.academicYear && item.semester === period.semester).length;
+    return `
+      <article class="record-card academic-period-card ${label === current ? "done" : ""}">
+        <strong>${label}</strong>
+        <div class="meta">
+          <span class="badge">週考 ${examCount} 份</span>
+          <span class="badge">段考 ${termCount} 筆</span>
+          <span class="badge">${label === current ? "目前使用中" : "可切換調閱"}</span>
+        </div>
+        <div class="action-row">
+          <button class="ghost" data-apply-academic-period="${period.academicYear}|${period.semester}">設為目前</button>
+          <button class="ghost" data-open-class-ops-period="${period.academicYear}|${period.semester}">看班級經營</button>
+        </div>
+      </article>
+    `;
+  }).join("") || `<div class="empty">尚無學年學期紀錄。</div>`;
+}
+
+function renderPromotionPreview() {
+  const target = $("#promotionPreview");
+  if (!target) return;
+  const counts = Object.fromEntries(studentStatuses.map((grade) => [grade, state.students.filter((student) => student.grade === grade).length]));
+  target.innerHTML = `
+    <article class="metric"><span>國一 → 國二</span><strong>${counts["國一"]}</strong></article>
+    <article class="metric"><span>國二 → 國三</span><strong>${counts["國二"]}</strong></article>
+    <article class="metric"><span>國三 → 校友</span><strong>${counts["國三"]}</strong></article>
+    <article class="metric"><span>目前校友</span><strong>${counts["校友"]}</strong></article>
+  `;
+}
+
+function promoteGrades() {
+  const counts = {
+    first: state.students.filter((student) => student.grade === "國一").length,
+    second: state.students.filter((student) => student.grade === "國二").length,
+    third: state.students.filter((student) => student.grade === "國三").length,
+  };
+  if (!counts.first && !counts.second && !counts.third) return alert("目前沒有國一到國三學生可以升級。");
+  const message = `確定執行年級升級？\n國一 ${counts.first} 人會變國二\n國二 ${counts.second} 人會變國三\n國三 ${counts.third} 人會變校友\n\n歷史成績與請假紀錄會保留。`;
+  if (!confirm(message)) return;
+  state.students = state.students.map((student) => {
+    if (student.grade === "國一") return { ...student, grade: "國二", promotedAt: new Date().toISOString() };
+    if (student.grade === "國二") return { ...student, grade: "國三", promotedAt: new Date().toISOString() };
+    if (student.grade === "國三") return { ...student, grade: "校友", alumniAt: new Date().toISOString() };
+    return student;
+  });
+  clearStudentForm();
+  saveState();
+  renderAll();
+  alert("年級升級完成。現在可以建立新國一學生。");
+}
+
+function applyAcademicPeriodKey(key, openClassOps = false) {
+  const [academicYear, semester] = String(key || "").split("|");
+  if (!academicYear || !semester) return;
+  state.settings = normalizeAcademicSettings({ academicYear, semester });
+  upsertAcademicPeriod(state.settings);
+  if ($("#academicYear")) $("#academicYear").value = academicYear;
+  if ($("#academicSemester")) $("#academicSemester").value = semester;
+  if (openClassOps) {
+    navigateToTab("class-ops");
+    if ($("#classOpsYear")) $("#classOpsYear").value = academicYear;
+    if ($("#classOpsSemester")) $("#classOpsSemester").value = semester;
+  }
+  saveState();
+  renderAll();
 }
 
 function weeklyExamYears(student = null) {
@@ -1492,6 +1608,7 @@ function renderTermHistoryList() {
 
 function classOpsYears() {
   const years = new Set([activeAcademicPeriod().academicYear]);
+  (state.academicPeriods || []).forEach((period) => period.academicYear && years.add(String(period.academicYear)));
   state.exams.forEach((exam) => exam.academicYear && years.add(String(exam.academicYear)));
   state.termScores.forEach((item) => item.year && years.add(String(item.year)));
   return [...years].sort((a, b) => String(b).localeCompare(String(a), "zh-Hant"));
@@ -3030,10 +3147,13 @@ function setupForms() {
       academicYear: $("#academicYear").value.trim(),
       semester: $("#academicSemester").value,
     });
+    upsertAcademicPeriod(state.settings);
     saveState();
     renderAll();
     flashButton(event.submitter, "已儲存");
   });
+
+  $("#promoteGradesButton")?.addEventListener("click", promoteGrades);
 
   $("#examForm").addEventListener("submit", saveExam);
   $("#resetExamForm").addEventListener("click", resetExamForm);
@@ -3597,6 +3717,8 @@ function setupActions() {
     const deleteTermReportKey = event.target.dataset.deleteTermReport;
     const editEventId = event.target.dataset.editEvent;
     const deleteEventId = event.target.dataset.deleteEvent;
+    const applyAcademicPeriod = event.target.dataset.applyAcademicPeriod;
+    const openClassOpsPeriod = event.target.dataset.openClassOpsPeriod;
 
     if (pickLeaveStudentId) {
       const student = getStudent(pickLeaveStudentId);
@@ -3692,6 +3814,12 @@ function setupActions() {
         saveState();
         renderAll();
       }
+    }
+    if (applyAcademicPeriod) {
+      applyAcademicPeriodKey(applyAcademicPeriod);
+    }
+    if (openClassOpsPeriod) {
+      applyAcademicPeriodKey(openClassOpsPeriod, true);
     }
     if (editEventId) {
       const record = state.events.find((item) => item.id === editEventId);
@@ -4035,6 +4163,7 @@ function setupLogin() {
 function renderAll() {
   $("#studentCount").textContent = dashboardStudents().length;
   renderAcademicSettings();
+  renderAcademicPeriodList();
   renderExamSubjectOptions();
   renderScoreStudentFilter();
   renderExpectedAttendance();
@@ -4052,6 +4181,7 @@ function renderAll() {
   renderTermReport();
   renderTermHistoryList();
   renderClassOps();
+  renderPromotionPreview();
   renderEventManageList();
   renderActiveLeaves();
   renderLateBoard();
