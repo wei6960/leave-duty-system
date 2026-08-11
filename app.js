@@ -2884,6 +2884,188 @@ function canvasText(ctx, text, x, y, maxWidth) {
   ctx.fillText(String(text ?? ""), x, y, maxWidth);
 }
 
+function canvasWrappedText(ctx, text, x, y, maxWidth, lineHeight, maxLines = 3) {
+  const chars = [...String(text ?? "")];
+  const lines = [];
+  let line = "";
+  chars.forEach((char) => {
+    const next = line + char;
+    if (ctx.measureText(next).width > maxWidth && line) {
+      lines.push(line);
+      line = char;
+    } else {
+      line = next;
+    }
+  });
+  if (line) lines.push(line);
+  const visible = lines.slice(0, maxLines);
+  visible.forEach((item, index) => canvasText(ctx, index === maxLines - 1 && lines.length > maxLines ? `${item.slice(0, -1)}…` : item, x, y + index * lineHeight, maxWidth));
+  return y + visible.length * lineHeight;
+}
+
+function studentReportFileName(student, pageIndex = null) {
+  const suffix = pageIndex === null ? "" : `_第${pageIndex}頁`;
+  return `${student.name}_學生生涯報告${suffix}.png`;
+}
+
+function downloadStudentReportImage(student = getStudent($("#careerStudent")?.value)) {
+  if (!student) return alert("請先選擇學生。");
+  const examRows = studentExamRows(student);
+  const analyses = subjectPerformanceRows(student);
+  const scores = examRows.map((row) => row.score).filter(Number.isFinite);
+  const recentScores = examRows.slice(-6).map((row) => row.score).filter(Number.isFinite);
+  const recentAverage = averageScore(recentScores);
+  const overallAverage = averageScore(scores);
+  const latestRow = examRows.at(-1);
+  const strongest = analyses.slice().sort((a, b) => b.recentAvg - a.recentAvg)[0];
+  const priority = analyses.slice().sort((a, b) => a.recentAvg - b.recentAvg)[0];
+  const reportTitle = studentReportTitle();
+  const scale = 2;
+  const width = 794;
+  const height = 1123;
+  const margin = 46;
+  const tableRows = examRows.slice().reverse();
+  const historyPages = chunkArray(tableRows, 18);
+  const totalPages = Math.max(1, 1 + historyPages.length);
+
+  const makeCanvas = () => {
+    const canvas = document.createElement("canvas");
+    canvas.width = width * scale;
+    canvas.height = height * scale;
+    const ctx = canvas.getContext("2d");
+    ctx.scale(scale, scale);
+    ctx.fillStyle = "#f7f1e3";
+    ctx.fillRect(0, 0, width, height);
+    return { canvas, ctx };
+  };
+
+  const drawFooter = (ctx, page) => {
+    ctx.fillStyle = "#76623a";
+    ctx.font = "13px Microsoft JhengHei, Arial";
+    canvasText(ctx, "本報告依週考、段考與趨勢輔助判讀，實際輔導仍以課堂狀況與訂正品質為準。", margin, height - 24, width - margin * 2 - 80);
+    canvasText(ctx, `${page}/${totalPages}`, width - margin - 44, height - 24, 44);
+  };
+
+  const { canvas, ctx } = makeCanvas();
+  const gradient = ctx.createLinearGradient(0, 0, width, 0);
+  gradient.addColorStop(0, "#11151a");
+  gradient.addColorStop(.62, "#2a3039");
+  gradient.addColorStop(1, "#9a7330");
+  ctx.fillStyle = gradient;
+  drawRoundRect(ctx, margin, 38, width - margin * 2, 142, 14);
+  ctx.fill();
+  ctx.fillStyle = "#f5d47a";
+  ctx.font = "bold 30px Microsoft JhengHei, Arial";
+  canvasText(ctx, reportTitle, margin + 24, 82, width - margin * 2 - 48);
+  ctx.fillStyle = "#fff7df";
+  ctx.font = "18px Microsoft JhengHei, Arial";
+  canvasText(ctx, `${studentLabel(student)}｜補習科目：${studentCoursesLabel(student)}`, margin + 24, 118, width - margin * 2 - 48);
+  ctx.font = "14px Microsoft JhengHei, Arial";
+  canvasText(ctx, `產出日期：${new Date().toLocaleDateString("zh-TW")}`, margin + 24, 150, 260);
+
+  const kpis = [
+    ["近期週考平均", scoreDisplay(recentAverage)],
+    ["歷程總平均", scoreDisplay(overallAverage)],
+    ["最新成績", latestRow ? `${latestRow.exam.subject} ${scoreDisplay(latestRow.score)}` : "-"],
+    ["優勢 / 補強", `${strongest ? strongest.subject : "-"} / ${priority ? priority.subject : "-"}`],
+  ];
+  const kpiY = 204;
+  const kpiW = (width - margin * 2 - 24) / 4;
+  kpis.forEach(([label, value], index) => {
+    const x = margin + index * (kpiW + 8);
+    ctx.fillStyle = "#fffaf0";
+    drawRoundRect(ctx, x, kpiY, kpiW, 76, 8);
+    ctx.fill();
+    ctx.strokeStyle = "#e1d0a3";
+    ctx.stroke();
+    ctx.fillStyle = "#755927";
+    ctx.font = "12px Microsoft JhengHei, Arial";
+    canvasText(ctx, label, x + 12, kpiY + 25, kpiW - 24);
+    ctx.fillStyle = "#1f252d";
+    ctx.font = "bold 19px Microsoft JhengHei, Arial";
+    canvasWrappedText(ctx, value, x + 12, kpiY + 52, kpiW - 24, 20, 1);
+  });
+
+  let y = 318;
+  ctx.fillStyle = "#7a551a";
+  ctx.font = "bold 18px Microsoft JhengHei, Arial";
+  canvasText(ctx, "顧問摘要", margin, y, 160);
+  y += 18;
+  ctx.fillStyle = "#fff9ea";
+  ctx.fillRect(margin, y, width - margin * 2, 76);
+  ctx.fillStyle = "#1f252d";
+  ctx.font = "14px Microsoft JhengHei, Arial";
+  const suggestion = priority ? `優先追蹤 ${priority.subject}：${priority.note} 建議下一週鎖定錯題與低分單元，搭配短測確認是否回穩。` : "目前週考資料不足，建議先建立每週固定成績紀錄。";
+  canvasWrappedText(ctx, suggestion, margin + 14, y + 24, width - margin * 2 - 28, 21, 3);
+
+  y += 112;
+  ctx.fillStyle = "#7a551a";
+  ctx.font = "bold 18px Microsoft JhengHei, Arial";
+  canvasText(ctx, "各科概況", margin, y, 160);
+  y += 16;
+  const cardW = (width - margin * 2 - 12) / 2;
+  analyses.slice(0, 6).forEach((item, index) => {
+    const x = margin + (index % 2) * (cardW + 12);
+    const cy = y + Math.floor(index / 2) * 126;
+    ctx.fillStyle = "#fffdf7";
+    drawRoundRect(ctx, x, cy, cardW, 110, 8);
+    ctx.fill();
+    ctx.strokeStyle = "#dfcfaa";
+    ctx.stroke();
+    ctx.fillStyle = "#1f252d";
+    ctx.font = "bold 16px Microsoft JhengHei, Arial";
+    canvasText(ctx, `${item.subject}｜${item.level}`, x + 12, cy + 26, cardW - 24);
+    ctx.font = "13px Microsoft JhengHei, Arial";
+    canvasText(ctx, `近期 ${scoreDisplay(item.recentAvg)}｜長期 ${scoreDisplay(item.longAvg)}｜最新 ${scoreDisplay(item.latest)}`, x + 12, cy + 52, cardW - 24);
+    canvasWrappedText(ctx, item.note, x + 12, cy + 76, cardW - 24, 17, 2);
+  });
+  drawFooter(ctx, 1);
+  canvas.toBlob((blob) => blob && downloadBlob(blob, "image/png", studentReportFileName(student, totalPages > 1 ? 1 : null)), "image/png");
+
+  historyPages.forEach((pageRows, pageIndex) => {
+    const { canvas: pageCanvas, ctx: pageCtx } = makeCanvas();
+    pageCtx.fillStyle = "#11151a";
+    pageCtx.fillRect(0, 0, width, 72);
+    pageCtx.fillStyle = "#f5d47a";
+    pageCtx.font = "bold 22px Microsoft JhengHei, Arial";
+    canvasText(pageCtx, `${student.name} 週考紀錄`, margin, 44, 360);
+    pageCtx.fillStyle = "#fff7df";
+    pageCtx.font = "14px Microsoft JhengHei, Arial";
+    canvasText(pageCtx, reportTitle, width - margin - 250, 44, 250);
+    const cols = [78, 80, 210, 118, 72, 62];
+    const headers = ["日期", "科目", "重點 / 單元", "各卷", "平均", "排名"];
+    let x = margin;
+    let ty = 104;
+    pageCtx.fillStyle = "#2a3039";
+    pageCtx.fillRect(margin, ty, width - margin * 2, 34);
+    pageCtx.fillStyle = "#f7df9b";
+    pageCtx.font = "bold 13px Microsoft JhengHei, Arial";
+    headers.forEach((header, index) => {
+      canvasText(pageCtx, header, x + 8, ty + 22, cols[index] - 10);
+      x += cols[index];
+    });
+    ty += 34;
+    pageRows.forEach((row, rowIndex) => {
+      x = margin;
+      pageCtx.fillStyle = rowIndex % 2 ? "#f4ead2" : "#fffaf0";
+      pageCtx.fillRect(margin, ty, width - margin * 2, 42);
+      pageCtx.fillStyle = "#1f252d";
+      pageCtx.font = "13px Microsoft JhengHei, Arial";
+      const rank = examRankForStudent(row.exam, student.id);
+      const values = [dateLabel(row.exam.date), row.exam.subject, row.exam.scope || "-", row.papers.map(scoreDisplay).join(" / "), scoreDisplay(row.score), rank];
+      values.forEach((value, index) => {
+        if (index === 4 && row.score < 60) pageCtx.fillStyle = "#e60012";
+        canvasText(pageCtx, value, x + 8, ty + 26, cols[index] - 10);
+        pageCtx.fillStyle = "#1f252d";
+        x += cols[index];
+      });
+      ty += 42;
+    });
+    drawFooter(pageCtx, pageIndex + 2);
+    pageCanvas.toBlob((blob) => blob && downloadBlob(blob, "image/png", studentReportFileName(student, pageIndex + 2)), "image/png");
+  });
+}
+
 function downloadClassReportImage() {
   const exam = displayedClassReportExam();
   if (!exam) return alert("尚無成績單可匯出。");
@@ -3363,6 +3545,8 @@ function setupForms() {
   $("#downloadClassReportImage").addEventListener("click", downloadClassReportImage);
   $("#downloadClassReportExcel").addEventListener("click", downloadClassReportExcel);
   $("#printStudentReport").addEventListener("click", printStudentReportPdf);
+  $("#downloadStudentReportImage")?.addEventListener("click", () => downloadStudentReportImage());
+  $("#downloadParentReportImage")?.addEventListener("click", () => downloadStudentReportImage(getStudent(parentStudentId)));
   $("#printTermReport").addEventListener("click", printTermReportPdf);
   $("#downloadTermReportImage").addEventListener("click", downloadTermReportImage);
   $("#downloadTermReportExcel").addEventListener("click", downloadTermReportExcel);

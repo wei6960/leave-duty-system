@@ -148,7 +148,7 @@
       <section class="panel large-panel">
         <div class="panel-title">
           <h2>學生週考分析報告</h2>
-          <span>僅顯示該學生</span>
+          <button class="ghost" id="downloadParentReportImage" type="button">下載圖片</button>
         </div>
         <div id="parentReport"></div>
       </section>
@@ -782,7 +782,10 @@
           <section class="panel large-panel">
             <div class="panel-title">
               <h2>學生週考分析報告</h2>
-              <button class="ghost" id="printStudentReport" type="button">列印家長報告</button>
+              <div class="compact-actions">
+                <button class="ghost" id="downloadStudentReportImage" type="button">圖片</button>
+                <button class="ghost" id="printStudentReport" type="button">PDF</button>
+              </div>
             </div>
             <div id="studentReport"></div>
           </section>
