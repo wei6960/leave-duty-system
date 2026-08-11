@@ -1219,6 +1219,11 @@ function branchReportTitle() {
   return branch ? `${branch}${branch.endsWith("分校") ? "" : "分校"} 班級成績單` : "班級成績單";
 }
 
+function studentReportTitle() {
+  const branch = (currentBranch || "").trim();
+  return branch ? `${branch}${branch.endsWith("分校") ? "" : "分校"} 學生生涯報告` : "學生生涯報告";
+}
+
 function classReportData(exam) {
   const rows = currentScoreRows(exam);
   const average = rows.length ? rows.reduce((sum, row) => sum + row.score, 0) / rows.length : NaN;
@@ -2677,6 +2682,29 @@ function pdfDocument(title, body, layout = "portrait") {
     .level { display: inline-block; min-width: 46px; padding: 3px 8px; border-radius: 999px; color: #161616; background: #f3c75f; font-weight: 900; text-align: center; }
     .pdf-page { break-after: page; page-break-after: always; }
     .pdf-page:last-child { break-after: auto; page-break-after: auto; }
+    .student-report { color: #1f252d; }
+    .student-hero { display: grid; grid-template-columns: 1fr auto; gap: 18px; padding: 22px; border-radius: 10px; color: #fff7df; background: linear-gradient(135deg, #11151a, #2a3039 62%, #9a7330); }
+    .student-hero h1 { font-size: 28px; margin-bottom: 8px; }
+    .student-hero .subtitle { color: #f7df9b; font-size: 15px; }
+    .student-hero .stamp { display: grid; place-content: center; min-width: 118px; padding: 12px; border: 1px solid rgba(255,255,255,.26); border-radius: 8px; text-align: center; }
+    .student-hero .stamp b { display: block; font-size: 22px; }
+    .kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 14px 0; }
+    .kpi { padding: 12px; border: 1px solid #e1d0a3; border-radius: 8px; background: #fffaf0; }
+    .kpi span { display: block; color: #755927; font-size: 12px; margin-bottom: 4px; }
+    .kpi strong { font-size: 21px; }
+    .report-section { margin-top: 18px; break-inside: avoid; }
+    .section-title { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; color: #7a551a; font-size: 17px; }
+    .section-title::before { content: ""; width: 7px; height: 20px; border-radius: 999px; background: #b9872f; }
+    .subject-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+    .subject-card { padding: 12px; border: 1px solid #dfcfaa; border-radius: 8px; background: #fffdf7; break-inside: avoid; }
+    .subject-card header { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+    .subject-card h3 { margin: 0; font-size: 16px; }
+    .subject-card p { margin: 8px 0 0; line-height: 1.6; }
+    .subject-metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; font-size: 12px; }
+    .subject-metrics span { padding: 7px; border-radius: 6px; background: #f6efd9; }
+    .recommendation { padding: 12px 14px; border-left: 5px solid #b9872f; background: #fff9ea; line-height: 1.75; }
+    .report-table { font-size: 12px; }
+    .report-table th { background: #2a3039; }
     @media print { button { display: none; } }
   </style>
 </head>
@@ -2984,26 +3012,62 @@ function printStudentReportPdf() {
   const analyses = subjectPerformanceRows(student);
   const levelSummary = analyses.length ? analyses.map((item) => `${item.subject} ${item.level}`).join("、") : "資料不足";
   const termRows = state.termScores.filter((item) => item.studentId === student.id);
+  const scores = examRows.map((row) => row.score).filter(Number.isFinite);
+  const recentScores = examRows.slice(-6).map((row) => row.score).filter(Number.isFinite);
+  const recentAverage = averageScore(recentScores);
+  const overallAverage = averageScore(scores);
+  const latestRow = examRows.at(-1);
+  const strongest = analyses.slice().sort((a, b) => b.recentAvg - a.recentAvg)[0];
+  const priority = analyses.slice().sort((a, b) => a.recentAvg - b.recentAvg)[0];
+  const reportTitle = studentReportTitle();
+  const suggestion = priority
+    ? `優先追蹤 ${priority.subject}：${priority.note} 建議下一週先鎖定該科最近錯題與低分單元，搭配短測確認是否回穩。`
+    : "目前週考資料不足，建議先建立每週固定成績紀錄，再進行趨勢判讀。";
   const weeklyRows = examRows.slice().reverse().map((row) => {
-    const rank = currentScoreRows(row.exam).find((item) => item.student.id === student.id)?.rank || "-";
+    const rank = examRankForStudent(row.exam, student.id);
     return `<tr><td>${escapeHtml(dateLabel(row.exam.date))}</td><td>${escapeHtml(row.exam.subject)}</td><td class="left">${escapeHtml(row.exam.scope || "-")}</td><td>${escapeHtml(row.papers.map(scoreDisplay).join(" / "))}</td><td class="${scoreClass(row.score)}">${scoreDisplay(row.score)}</td><td>${rank}</td></tr>`;
   }).join("");
   pdfDocument(`${student.name} 學生生涯報告`, `
-    <header class="doc-head">
-      <div class="brand"><img src="assets/logo.png" alt=""><div><h1>金牌躍騰教育集團 學生生涯報告</h1><div>${escapeHtml(studentLabel(student))}</div></div></div>
-      <div>列印日期：${escapeHtml(new Date().toLocaleDateString("zh-TW"))}</div>
-    </header>
-    <div class="meta">
-      <span class="pill">補習科目：${escapeHtml(studentCoursesLabel(student))}</span>
-      <span class="pill">各科推估：${escapeHtml(levelSummary)}</span>
-    </div>
-    <p class="summary">本報告採各科獨立分析，優先參考近期考試、分數起伏與進退步趨勢，不用全部科目總平均直接推估。</p>
-    <h2>各科概況</h2>
-    <div class="grid">${analyses.map((item) => `<section class="card"><strong>${escapeHtml(item.subject)} <span class="level">${escapeHtml(item.level)}</span></strong><div>近期加權 ${scoreDisplay(item.recentAvg)}，最新 ${scoreDisplay(item.latest)}</div><div>${escapeHtml(trendLabel(item.trend))}｜${escapeHtml(stabilityLabel(item.range))}｜近 ${item.count} 次</div><div>${escapeHtml(item.note)}</div></section>`).join("") || `<section class="card">尚無週考成績</section>`}</div>
-    <h2>週考紀錄</h2>
-    <table><thead><tr><th>日期</th><th>科目</th><th class="left">重點/單元</th><th>各卷</th><th>平均</th><th>班排名</th></tr></thead><tbody>${weeklyRows || `<tr><td colspan="6">尚無週考紀錄</td></tr>`}</tbody></table>
-    <h2>段考紀錄</h2>
-    <table><thead><tr><th>學期</th><th>段別</th><th>科目</th><th>成績</th></tr></thead><tbody>${termRows.map((item) => `<tr><td>${escapeHtml(item.term)}</td><td>${escapeHtml(item.stage)}</td><td>${escapeHtml(item.subject)}</td><td class="${scoreClass(Number(item.score))}">${scoreDisplay(Number(item.score))}</td></tr>`).join("") || `<tr><td colspan="4">尚無段考紀錄</td></tr>`}</tbody></table>
+    <article class="student-report">
+      <header class="student-hero">
+        <div>
+          <h1>${escapeHtml(reportTitle)}</h1>
+          <div class="subtitle">${escapeHtml(studentLabel(student))}｜補習科目：${escapeHtml(studentCoursesLabel(student))}</div>
+        </div>
+        <div class="stamp"><span>列印日期</span><b>${escapeHtml(new Date().toLocaleDateString("zh-TW"))}</b></div>
+      </header>
+      <section class="kpi-grid">
+        <div class="kpi"><span>近期週考平均</span><strong>${scoreDisplay(recentAverage)}</strong></div>
+        <div class="kpi"><span>歷程總平均</span><strong>${scoreDisplay(overallAverage)}</strong></div>
+        <div class="kpi"><span>最新成績</span><strong>${latestRow ? `${escapeHtml(latestRow.exam.subject)} ${scoreDisplay(latestRow.score)}` : "-"}</strong></div>
+        <div class="kpi"><span>優勢 / 優先補強</span><strong>${strongest ? escapeHtml(strongest.subject) : "-"} / ${priority ? escapeHtml(priority.subject) : "-"}</strong></div>
+      </section>
+      <section class="report-section">
+        <h2 class="section-title">顧問摘要</h2>
+        <div class="recommendation">本報告採各科獨立分析，優先參考近期週考、分數起伏與進退步趨勢。各科推估：${escapeHtml(levelSummary)}。${escapeHtml(suggestion)}</div>
+      </section>
+      <section class="report-section">
+        <h2 class="section-title">各科概況</h2>
+        <div class="subject-grid">${analyses.map((item) => `<section class="subject-card">
+          <header><h3>${escapeHtml(item.subject)}</h3><span class="level">${escapeHtml(item.level)}</span></header>
+          <div class="subject-metrics">
+            <span>近期 ${scoreDisplay(item.recentAvg)}</span>
+            <span>長期 ${scoreDisplay(item.longAvg)}</span>
+            <span>最新 ${scoreDisplay(item.latest)}</span>
+          </div>
+          <p>${escapeHtml(trendLabel(item.trend))}｜${escapeHtml(stabilityLabel(item.range))}｜近 ${item.count} 次</p>
+          <p>${escapeHtml(item.note)}</p>
+        </section>`).join("") || `<section class="subject-card">尚無週考成績</section>`}</div>
+      </section>
+      <section class="report-section">
+        <h2 class="section-title">週考紀錄</h2>
+        <table class="report-table"><thead><tr><th>日期</th><th>科目</th><th class="left">重點 / 單元</th><th>各卷</th><th>平均</th><th>班排名</th></tr></thead><tbody>${weeklyRows || `<tr><td colspan="6">尚無週考紀錄</td></tr>`}</tbody></table>
+      </section>
+      <section class="report-section">
+        <h2 class="section-title">段考紀錄</h2>
+        <table class="report-table"><thead><tr><th>學期</th><th>段別</th><th>科目</th><th>成績</th></tr></thead><tbody>${termRows.map((item) => `<tr><td>${escapeHtml(item.term)}</td><td>${escapeHtml(item.stage)}</td><td>${escapeHtml(item.subject)}</td><td class="${scoreClass(Number(item.score))}">${scoreDisplay(Number(item.score))}</td></tr>`).join("") || `<tr><td colspan="4">尚無段考紀錄</td></tr>`}</tbody></table>
+      </section>
+    </article>
   `, "portrait");
 }
 
