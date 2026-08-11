@@ -1106,17 +1106,54 @@ legend {
 .score-result-card {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
-  gap: .35rem .7rem;
+  gap: .45rem .75rem;
   align-items: center;
-  padding: .75rem;
+  padding: .85rem;
   border: 1px solid rgba(241, 211, 124, .14);
   border-radius: .38rem;
   background: rgba(0, 0, 0, .16);
 }
 
+.score-result-card b {
+  color: var(--gold-2);
+  font-size: 1.02rem;
+}
+
+.score-result-card strong {
+  font-size: 1.35rem;
+}
+
 .score-result-card small {
   grid-column: 1 / -1;
   color: var(--muted);
+  font-size: .92rem;
+}
+
+.score-stat-grid,
+.mini-stat-grid {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: .35rem;
+}
+
+.score-stat-grid span,
+.mini-stat-grid span {
+  display: grid;
+  gap: .08rem;
+  min-width: 0;
+  padding: .42rem .48rem;
+  border: 1px solid rgba(241, 211, 124, .16);
+  border-radius: .35rem;
+  color: var(--muted);
+  font-size: .82rem;
+  background: rgba(255, 255, 255, .045);
+}
+
+.score-stat-grid b,
+.mini-stat-grid b {
+  color: #fff4d2;
+  font-size: .98rem;
 }
 
 .career-score-browser {
@@ -1168,7 +1205,7 @@ legend {
 
 .exam-mini-card {
   scroll-snap-align: start;
-  min-height: 9.5rem;
+  min-height: 12rem;
   display: grid;
   align-content: space-between;
   gap: .7rem;
@@ -1198,6 +1235,7 @@ legend {
 
 .mini-card-meta small {
   color: var(--muted);
+  font-size: .9rem;
 }
 
 /* Professional visual pass */
@@ -2171,6 +2209,11 @@ tbody tr:hover {
 
   .score-result-card span {
     grid-column: 1 / -1;
+  }
+
+  .score-stat-grid,
+  .mini-stat-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .score-line-chart {

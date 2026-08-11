@@ -2311,6 +2311,33 @@ function examRankForStudent(exam, studentId) {
   return currentScoreRows(exam).find((item) => item.student.id === studentId)?.rank || "-";
 }
 
+function examStatsForStudent(exam, studentId) {
+  const rows = currentScoreRows(exam);
+  const current = rows.find((item) => item.student.id === studentId);
+  const scores = rows.map((row) => row.score).filter(Number.isFinite);
+  const average = averageScore(scores);
+  const rank = current?.rank || "-";
+  let segment = "資料不足";
+  if (current && rows.length >= 3) {
+    const percentile = current.rank / rows.length;
+    segment = percentile <= .25 ? "前段" : percentile >= .75 ? "後段" : "中段";
+  } else if (current) {
+    segment = "中段";
+  }
+  return {
+    rank,
+    segment,
+    count: rows.length,
+    high: scores.length ? Math.max(...scores) : NaN,
+    low: scores.length ? Math.min(...scores) : NaN,
+    average,
+  };
+}
+
+function examStatsInline(stats) {
+  return `排名 ${stats.rank}｜${stats.segment}｜最高 ${scoreDisplay(stats.high)}｜最低 ${scoreDisplay(stats.low)}｜班平均 ${scoreDisplay(stats.average)}`;
+}
+
 function careerScoreLookupHtml(student, queryDate, selectedSubject, options = {}) {
   if (!student) {
     return `<div class="empty">請先選擇學生。</div>`;
@@ -2345,12 +2372,19 @@ function careerScoreLookupHtml(student, queryDate, selectedSubject, options = {}
               <span>${scheduledSubjectLabel(dateSubjects)}</span>
             </div>
             ${dayRows.map((row) => {
-              const rank = examRankForStudent(row.exam, student.id);
+              const stats = examStatsForStudent(row.exam, student.id);
               return `<div class="score-result-card">
                 <b>${row.exam.subject}</b>
                 <span>${row.exam.scope || "未填重點"}</span>
                 <strong class="${scoreClass(row.score)}">${scoreDisplay(row.score)}</strong>
-                <small>各卷 ${row.papers.map(scoreDisplay).join(" / ")}｜當天排名 ${rank}</small>
+                <small>各卷 ${row.papers.map(scoreDisplay).join(" / ")}</small>
+                <div class="score-stat-grid">
+                  <span>排名 <b>${stats.rank}</b></span>
+                  <span>定位 <b>${stats.segment}</b></span>
+                  <span>最高 <b>${scoreDisplay(stats.high)}</b></span>
+                  <span>最低 <b>${scoreDisplay(stats.low)}</b></span>
+                  <span>班平均 <b>${scoreDisplay(stats.average)}</b></span>
+                </div>
               </div>`;
             }).join("") || `<div class="empty small-empty">本日尚無成績。</div>`}
           </article>`;
@@ -2364,7 +2398,7 @@ function careerScoreLookupHtml(student, queryDate, selectedSubject, options = {}
       </div>
       <div class="score-card-rail" aria-label="${subjectCardTitle}">
         ${weekRows.map((row) => {
-          const rank = examRankForStudent(row.exam, student.id);
+          const stats = examStatsForStudent(row.exam, student.id);
           return `<article class="exam-mini-card">
             <div class="mini-card-top">
               <b>${row.exam.subject}</b>
@@ -2373,7 +2407,13 @@ function careerScoreLookupHtml(student, queryDate, selectedSubject, options = {}
             <span>${row.exam.scope || "未填考試單元"}</span>
             <div class="mini-card-meta">
               <small>${dateLabel(row.exam.date)}</small>
-              <small>排名 ${rank}</small>
+              <small>${stats.segment}</small>
+            </div>
+            <div class="mini-stat-grid">
+              <span>排名 <b>${stats.rank}</b></span>
+              <span>最高 <b>${scoreDisplay(stats.high)}</b></span>
+              <span>最低 <b>${scoreDisplay(stats.low)}</b></span>
+              <span>班平均 <b>${scoreDisplay(stats.average)}</b></span>
             </div>
           </article>`;
         }).join("") || `<div class="empty small-empty">本週尚無符合條件的週考紀錄。</div>`}
@@ -2382,10 +2422,10 @@ function careerScoreLookupHtml(student, queryDate, selectedSubject, options = {}
     ${options.hideDateHistory ? "" : `<div class="table-wrap career-history-table">
       <table>
         <thead><tr><th colspan="6">本週成績明細</th></tr></thead>
-        <thead><tr><th>日期</th><th>科目</th><th>重點</th><th>各卷</th><th>平均</th><th>當天排名</th></tr></thead>
+        <thead><tr><th>日期</th><th>科目</th><th>重點</th><th>各卷</th><th>平均</th><th>當天統計</th></tr></thead>
         <tbody>${weekRows.map((row) => {
-          const rank = examRankForStudent(row.exam, student.id);
-          return `<tr><td>${dateLabel(row.exam.date)}</td><td>${row.exam.subject}</td><td>${row.exam.scope || "-"}</td><td>${row.papers.map(scoreDisplay).join(" / ")}</td><td class="${scoreClass(row.score)}">${scoreDisplay(row.score)}</td><td>${rank}</td></tr>`;
+          const stats = examStatsForStudent(row.exam, student.id);
+          return `<tr><td>${dateLabel(row.exam.date)}</td><td>${row.exam.subject}</td><td>${row.exam.scope || "-"}</td><td>${row.papers.map(scoreDisplay).join(" / ")}</td><td class="${scoreClass(row.score)}">${scoreDisplay(row.score)}</td><td>${examStatsInline(stats)}</td></tr>`;
         }).join("") || `<tr><td colspan="6">本週尚無成績</td></tr>`}</tbody>
       </table>
     </div>`}
@@ -2616,6 +2656,8 @@ function renderStudentReportHtml(student, subjectOverride = null) {
   const analyses = subjectPerformanceRows(student)
     .filter((item) => studentTakesSubject(student, item.subject))
     .filter((item) => subject === "全部" || item.subject === subject);
+  const latestRow = studentExamRows(student).at(-1);
+  const latestStats = latestRow ? examStatsForStudent(latestRow.exam, student.id) : null;
   const levelSummary = analyses.length
     ? analyses.map((item) => `${item.subject} ${item.level}`).join("、")
     : "資料不足";
@@ -2623,6 +2665,7 @@ function renderStudentReportHtml(student, subjectOverride = null) {
     <div class="report-head">
       <strong>${studentLabel(student)}</strong>
       <span>補習科目：${studentCoursesLabel(student)}</span>
+      <span>最近定位：${latestStats ? `${latestRow.exam.subject} ${latestStats.segment}｜排名 ${latestStats.rank}｜班平均 ${scoreDisplay(latestStats.average)}` : "資料不足"}</span>
       <span>週考推估：${levelSummary}</span>
     </div>
     <div class="analysis-grid">
@@ -2960,6 +3003,7 @@ function downloadStudentReportImage(student = getStudent($("#careerStudent")?.va
   const recentAverage = averageScore(recentScores);
   const overallAverage = averageScore(scores);
   const latestRow = examRows.at(-1);
+  const latestStats = latestRow ? examStatsForStudent(latestRow.exam, student.id) : null;
   const strongest = analyses.slice().sort((a, b) => b.recentAvg - a.recentAvg)[0];
   const priority = analyses.slice().sort((a, b) => a.recentAvg - b.recentAvg)[0];
   const reportTitle = studentReportTitle();
@@ -3009,7 +3053,7 @@ function downloadStudentReportImage(student = getStudent($("#careerStudent")?.va
     ["近期週考平均", scoreDisplay(recentAverage)],
     ["歷程總平均", scoreDisplay(overallAverage)],
     ["最新成績", latestRow ? `${latestRow.exam.subject} ${scoreDisplay(latestRow.score)}` : "-"],
-    ["優勢 / 補強", `${strongest ? strongest.subject : "-"} / ${priority ? priority.subject : "-"}`],
+    ["最新定位", latestStats ? `${latestStats.segment}｜排名 ${latestStats.rank}` : "-"],
   ];
   const kpiY = 204;
   const kpiW = (width - margin * 2 - 24) / 4;
@@ -3037,10 +3081,22 @@ function downloadStudentReportImage(student = getStudent($("#careerStudent")?.va
   ctx.fillRect(margin, y, width - margin * 2, 76);
   ctx.fillStyle = "#1f252d";
   ctx.font = "14px Microsoft JhengHei, Arial";
-  const suggestion = priority ? `優先追蹤 ${priority.subject}：${priority.note} 建議下一週鎖定錯題與低分單元，搭配短測確認是否回穩。` : "目前週考資料不足，建議先建立每週固定成績紀錄。";
+  const suggestion = priority ? `前中後段定位依每次週考當天排名判斷。優先追蹤 ${priority.subject}：${priority.note} 建議下一週鎖定錯題與低分單元，搭配短測確認是否回穩。` : "目前週考資料不足，建議先建立每週固定成績紀錄。";
   canvasWrappedText(ctx, suggestion, margin + 14, y + 24, width - margin * 2 - 28, 21, 3);
 
-  y += 112;
+  if (latestStats) {
+    y += 94;
+    ctx.fillStyle = "#fffdf7";
+    drawRoundRect(ctx, margin, y, width - margin * 2, 58, 8);
+    ctx.fill();
+    ctx.strokeStyle = "#dfcfaa";
+    ctx.stroke();
+    ctx.fillStyle = "#1f252d";
+    ctx.font = "bold 15px Microsoft JhengHei, Arial";
+    canvasText(ctx, `最近一次當天統計：最高 ${scoreDisplay(latestStats.high)}｜最低 ${scoreDisplay(latestStats.low)}｜班平均 ${scoreDisplay(latestStats.average)}｜排名 ${latestStats.rank}｜${latestStats.segment}`, margin + 14, y + 36, width - margin * 2 - 28);
+  }
+
+  y += latestStats ? 92 : 112;
   ctx.fillStyle = "#7a551a";
   ctx.font = "bold 18px Microsoft JhengHei, Arial";
   canvasText(ctx, "各科概況", margin, y, 160);
@@ -3074,8 +3130,8 @@ function downloadStudentReportImage(student = getStudent($("#careerStudent")?.va
     pageCtx.fillStyle = "#fff7df";
     pageCtx.font = "14px Microsoft JhengHei, Arial";
     canvasText(pageCtx, reportTitle, width - margin - 250, 44, 250);
-    const cols = [78, 80, 210, 118, 72, 62];
-    const headers = ["日期", "科目", "重點 / 單元", "各卷", "平均", "排名"];
+    const cols = [72, 66, 160, 94, 56, 48, 56, 56, 64];
+    const headers = ["日期", "科目", "重點", "各卷", "平均", "排名", "最高", "最低", "班平均"];
     let x = margin;
     let ty = 104;
     pageCtx.fillStyle = "#2a3039";
@@ -3093,8 +3149,8 @@ function downloadStudentReportImage(student = getStudent($("#careerStudent")?.va
       pageCtx.fillRect(margin, ty, width - margin * 2, 42);
       pageCtx.fillStyle = "#1f252d";
       pageCtx.font = "13px Microsoft JhengHei, Arial";
-      const rank = examRankForStudent(row.exam, student.id);
-      const values = [dateLabel(row.exam.date), row.exam.subject, row.exam.scope || "-", row.papers.map(scoreDisplay).join(" / "), scoreDisplay(row.score), rank];
+      const stats = examStatsForStudent(row.exam, student.id);
+      const values = [dateLabel(row.exam.date), row.exam.subject, row.exam.scope || "-", row.papers.map(scoreDisplay).join(" / "), scoreDisplay(row.score), stats.rank, scoreDisplay(stats.high), scoreDisplay(stats.low), scoreDisplay(stats.average)];
       values.forEach((value, index) => {
         if (index === 4 && row.score < 60) pageCtx.fillStyle = "#e60012";
         canvasText(pageCtx, value, x + 8, ty + 26, cols[index] - 10);
@@ -3245,11 +3301,11 @@ function printStudentReportPdf() {
   const priority = analyses.slice().sort((a, b) => a.recentAvg - b.recentAvg)[0];
   const reportTitle = studentReportTitle();
   const suggestion = priority
-    ? `優先追蹤 ${priority.subject}：${priority.note} 建議下一週先鎖定該科最近錯題與低分單元，搭配短測確認是否回穩。`
+    ? `前中後段定位會依每次週考當天排名判斷。優先追蹤 ${priority.subject}：${priority.note} 建議下一週先鎖定該科最近錯題與低分單元，搭配短測確認是否回穩。`
     : "目前週考資料不足，建議先建立每週固定成績紀錄，再進行趨勢判讀。";
   const weeklyRows = examRows.slice().reverse().map((row) => {
-    const rank = examRankForStudent(row.exam, student.id);
-    return `<tr><td>${escapeHtml(dateLabel(row.exam.date))}</td><td>${escapeHtml(row.exam.subject)}</td><td class="left">${escapeHtml(row.exam.scope || "-")}</td><td>${escapeHtml(row.papers.map(scoreDisplay).join(" / "))}</td><td class="${scoreClass(row.score)}">${scoreDisplay(row.score)}</td><td>${rank}</td></tr>`;
+    const stats = examStatsForStudent(row.exam, student.id);
+    return `<tr><td>${escapeHtml(dateLabel(row.exam.date))}</td><td>${escapeHtml(row.exam.subject)}</td><td class="left">${escapeHtml(row.exam.scope || "-")}</td><td>${escapeHtml(row.papers.map(scoreDisplay).join(" / "))}</td><td class="${scoreClass(row.score)}">${scoreDisplay(row.score)}</td><td>${escapeHtml(examStatsInline(stats))}</td></tr>`;
   }).join("");
   pdfDocument(`${student.name} 學生生涯報告`, `
     <article class="student-report">
@@ -3285,7 +3341,7 @@ function printStudentReportPdf() {
       </section>
       <section class="report-section">
         <h2 class="section-title">週考紀錄</h2>
-        <table class="report-table"><thead><tr><th>日期</th><th>科目</th><th class="left">重點 / 單元</th><th>各卷</th><th>平均</th><th>班排名</th></tr></thead><tbody>${weeklyRows || `<tr><td colspan="6">尚無週考紀錄</td></tr>`}</tbody></table>
+        <table class="report-table"><thead><tr><th>日期</th><th>科目</th><th class="left">重點 / 單元</th><th>各卷</th><th>平均</th><th>當天統計</th></tr></thead><tbody>${weeklyRows || `<tr><td colspan="6">尚無週考紀錄</td></tr>`}</tbody></table>
       </section>
       <section class="report-section">
         <h2 class="section-title">段考紀錄</h2>
