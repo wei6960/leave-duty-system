@@ -52,6 +52,7 @@ const parentTabs = {
   schedule: "management",
   scores: "management",
   term: "management",
+  "class-ops": "class-ops",
   career: "management",
   events: "management",
 };
@@ -1489,6 +1490,204 @@ function renderTermHistoryList() {
   `).join("") || `<div class="empty">尚無歷史段考成績單。</div>`;
 }
 
+function classOpsYears() {
+  const years = new Set([activeAcademicPeriod().academicYear]);
+  state.exams.forEach((exam) => exam.academicYear && years.add(String(exam.academicYear)));
+  state.termScores.forEach((item) => item.year && years.add(String(item.year)));
+  return [...years].sort((a, b) => String(b).localeCompare(String(a), "zh-Hant"));
+}
+
+function renderClassOpsFilters() {
+  const yearTarget = $("#classOpsYear");
+  const subjectTarget = $("#classOpsSubject");
+  if (!yearTarget || !subjectTarget) return;
+  const previousYear = yearTarget.value;
+  const years = classOpsYears();
+  yearTarget.innerHTML = years.map((year) => `<option value="${year}">${year}</option>`).join("");
+  yearTarget.value = previousYear && years.includes(previousYear) ? previousYear : activeAcademicPeriod().academicYear;
+  const previousSubject = subjectTarget.value;
+  subjectTarget.innerHTML = [`<option value="全部">全部科目</option>`, ...reportSubjects.map((subject) => `<option value="${subject}">${subject}</option>`)].join("");
+  subjectTarget.value = previousSubject && ["全部", ...reportSubjects].includes(previousSubject) ? previousSubject : "全部";
+}
+
+function classOpsMeta() {
+  return {
+    year: $("#classOpsYear")?.value || activeAcademicPeriod().academicYear,
+    semester: $("#classOpsSemester")?.value || "全部",
+    grade: $("#classOpsGrade")?.value || grades[0],
+    subject: $("#classOpsSubject")?.value || "全部",
+  };
+}
+
+function classOpsWeeklyRows(meta, includeAllGrades = false) {
+  return state.exams
+    .filter((exam) => !exam.noExam)
+    .filter((exam) => String(exam.academicYear || "") === String(meta.year))
+    .filter((exam) => meta.semester === "全部" || exam.semester === meta.semester)
+    .filter((exam) => includeAllGrades || exam.grade === meta.grade)
+    .filter((exam) => meta.subject === "全部" || exam.subject === meta.subject)
+    .flatMap((exam) => currentScoreRows(exam).map((row) => ({
+      source: "週考",
+      grade: exam.grade,
+      subject: normalizeCourseName(exam.subject),
+      score: row.score,
+      scope: exam.scope || "",
+      date: exam.date,
+      student: row.student,
+      exam,
+    })));
+}
+
+function classOpsTermRows(meta, includeAllGrades = false) {
+  return state.termScores
+    .filter((item) => String(item.year || "") === String(meta.year))
+    .filter((item) => meta.semester === "全部" || item.semester === meta.semester)
+    .filter((item) => includeAllGrades || item.grade === meta.grade)
+    .filter((item) => meta.subject === "全部" || normalizeCourseName(item.subject) === meta.subject)
+    .map((item) => ({
+      source: "段考",
+      grade: item.grade,
+      subject: normalizeCourseName(item.subject),
+      score: Number(item.score),
+      scope: item.stage || "",
+      date: item.date || item.updatedAt || item.createdAt || "",
+      student: getStudent(item.studentId),
+      raw: item,
+    }))
+    .filter((row) => Number.isFinite(row.score));
+}
+
+function classOpsRows(meta, includeAllGrades = false) {
+  return [...classOpsWeeklyRows(meta, includeAllGrades), ...classOpsTermRows(meta, includeAllGrades)]
+    .filter((row) => reportSubjects.includes(row.subject));
+}
+
+function summarizeScores(rows) {
+  const scores = rows.map((row) => Number(row.score)).filter(Number.isFinite);
+  const average = averageScore(scores);
+  const passRate = scores.length ? scores.filter((score) => score >= 60).length / scores.length * 100 : NaN;
+  const lowRate = scores.length ? scores.filter((score) => score < 70).length / scores.length * 100 : NaN;
+  const high = scores.length ? Math.max(...scores) : NaN;
+  const low = scores.length ? Math.min(...scores) : NaN;
+  return { count: scores.length, average, passRate, lowRate, high, low, range: Number.isFinite(high) && Number.isFinite(low) ? high - low : NaN };
+}
+
+function classOpsSubjectStats(meta) {
+  const rows = classOpsRows(meta);
+  const allRows = classOpsRows(meta, true);
+  const subjectList = meta.subject === "全部" ? reportSubjects : [meta.subject];
+  return subjectList.map((subject) => {
+    const subjectRows = rows.filter((row) => row.subject === subject);
+    const allSubjectRows = allRows.filter((row) => row.subject === subject);
+    const summary = summarizeScores(subjectRows);
+    const allSummary = summarizeScores(allSubjectRows);
+    return {
+      subject,
+      rows: subjectRows,
+      ...summary,
+      benchmark: allSummary.average,
+      gap: Number.isFinite(summary.average) && Number.isFinite(allSummary.average) ? summary.average - allSummary.average : NaN,
+    };
+  }).filter((item) => item.count || meta.subject !== "全部");
+}
+
+function classOpsWeakUnits(meta) {
+  const weekly = classOpsWeeklyRows(meta)
+    .filter((row) => row.scope)
+    .filter((row) => meta.subject === "全部" || row.subject === meta.subject);
+  const groups = new Map();
+  weekly.forEach((row) => {
+    const key = `${row.subject}|${row.scope}`;
+    if (!groups.has(key)) groups.set(key, { subject: row.subject, scope: row.scope, scores: [], dates: [] });
+    const group = groups.get(key);
+    group.scores.push(row.score);
+    if (row.date) group.dates.push(row.date);
+  });
+  return [...groups.values()]
+    .map((group) => {
+      const average = averageScore(group.scores);
+      const lowCount = group.scores.filter((score) => score < 70).length;
+      return { ...group, average, lowCount, count: group.scores.length, latestDate: group.dates.sort().pop() || "" };
+    })
+    .filter((group) => group.lowCount || group.average < 75)
+    .sort((a, b) => b.lowCount - a.lowCount || a.average - b.average)
+    .slice(0, 12);
+}
+
+function classOpsRadarSvg(stats) {
+  const items = stats.filter((item) => item.count).slice(0, 8);
+  if (items.length < 3) return `<div class="empty">至少需要 3 科有成績，才能形成整班雷達。</div>`;
+  const cx = 150;
+  const cy = 150;
+  const radius = 102;
+  const axis = items.map((item, index) => {
+    const angle = -Math.PI / 2 + index * Math.PI * 2 / items.length;
+    return { item, x: cx + Math.cos(angle) * radius, y: cy + Math.sin(angle) * radius, angle };
+  });
+  const polygon = axis.map(({ item, angle }) => {
+    const value = Math.max(0, Math.min(100, item.average || 0)) / 100 * radius;
+    return `${cx + Math.cos(angle) * value},${cy + Math.sin(angle) * value}`;
+  }).join(" ");
+  const rings = [25, 50, 75, 100].map((value) => `<circle cx="${cx}" cy="${cy}" r="${radius * value / 100}" class="radar-ring"></circle>`).join("");
+  return `<svg class="class-radar" viewBox="0 0 300 300" role="img" aria-label="整班各科雷達圖">
+    ${rings}
+    ${axis.map(({ x, y }) => `<line x1="${cx}" y1="${cy}" x2="${x}" y2="${y}" class="radar-axis"></line>`).join("")}
+    <polygon points="${polygon}" class="radar-area"></polygon>
+    ${axis.map(({ item, x, y }) => `<text x="${x}" y="${y}" class="radar-label">${escapeHtml(item.subject)}</text>`).join("")}
+  </svg>`;
+}
+
+function renderClassOps() {
+  if (!$("#classOpsSummary")) return;
+  renderClassOpsFilters();
+  const meta = classOpsMeta();
+  const rows = classOpsRows(meta);
+  const stats = classOpsSubjectStats(meta);
+  const summary = summarizeScores(rows);
+  const best = stats.filter((item) => item.count).sort((a, b) => b.average - a.average)[0];
+  const weakest = stats.filter((item) => item.count).sort((a, b) => a.average - b.average)[0];
+  $("#classOpsSummary").innerHTML = `
+    <article class="metric"><span>班級平均</span><strong>${scoreDisplay(summary.average)}</strong></article>
+    <article class="metric"><span>及格率</span><strong>${scoreDisplay(summary.passRate)}%</strong></article>
+    <article class="metric"><span>優勢科目</span><strong>${best ? best.subject : "-"}</strong></article>
+    <article class="metric"><span>優先補強</span><strong>${weakest ? weakest.subject : "-"}</strong></article>
+  `;
+  $("#classOpsRadar").innerHTML = classOpsRadarSvg(stats);
+  $("#classOpsLevel").innerHTML = stats.filter((item) => item.count).map((item) => `
+    <article class="level-row">
+      <div><strong>${item.subject}</strong><span>班平均 ${scoreDisplay(item.average)}｜全體 ${scoreDisplay(item.benchmark)}</span></div>
+      <b class="${item.gap >= 0 ? "positive-gap" : "negative-gap"}">${Number.isFinite(item.gap) ? `${item.gap >= 0 ? "+" : ""}${scoreDisplay(item.gap)}` : "-"}</b>
+    </article>
+  `).join("") || `<div class="empty">這個學年學期尚無可比較成績。</div>`;
+  $("#classOpsSubjectAnalysis").innerHTML = `
+    <div class="analysis-grid">
+      ${stats.filter((item) => item.count).map((item) => `
+        <article class="analysis-card">
+          <div class="analysis-card-head">
+            <strong>${item.subject}</strong>
+            <b class="level-badge">${levelFromScore(item.average)}</b>
+          </div>
+          <span>平均 ${scoreDisplay(item.average)}｜及格率 ${scoreDisplay(item.passRate)}%｜低於 70：${scoreDisplay(item.lowRate)}%</span>
+          <small>最高 ${scoreDisplay(item.high)}，最低 ${scoreDisplay(item.low)}，波動 ${scoreDisplay(item.range)}，共 ${item.count} 筆</small>
+          <div class="subject-bar"><i style="width:${Math.max(0, Math.min(100, item.average || 0))}%"></i></div>
+        </article>
+      `).join("") || `<div class="empty">目前沒有符合條件的班級成績。</div>`}
+    </div>
+  `;
+  const weakUnits = classOpsWeakUnits(meta);
+  $("#classOpsWeakUnits").innerHTML = weakUnits.length
+    ? `<div class="table-wrap"><table><thead><tr><th>科目</th><th>弱點單元</th><th>平均</th><th>低分次數</th><th>最近測驗</th></tr></thead><tbody>${weakUnits.map((unit) => `
+      <tr>
+        <td>${unit.subject}</td>
+        <td>${escapeHtml(unit.scope)}</td>
+        <td class="${scoreClass(unit.average)}">${scoreDisplay(unit.average)}</td>
+        <td>${unit.lowCount} / ${unit.count}</td>
+        <td>${unit.latestDate ? dateLabel(unit.latestDate) : "-"}</td>
+      </tr>
+    `).join("")}</tbody></table></div>`
+    : `<div class="empty">目前沒有明顯弱點單元。若週考有填「範圍 / 單元」，這裡會自動整理低分熱點。</div>`;
+}
+
 function applyTermReportKey(key) {
   const [year, semester, grade, stage] = key.split("|");
   $("#termYear").value = year;
@@ -2545,7 +2744,7 @@ function setupTabs() {
 function enforceMobilePages() {
   if (!mobileQuery.matches) return;
   const activePage = $(".page.active");
-  if (activePage && !["dashboard", "attendance", "management", "academic", ...Object.keys(parentTabs)].includes(activePage.id)) navigateToTab("dashboard");
+  if (activePage && !["dashboard", "attendance", "management", "class-ops", "academic", ...Object.keys(parentTabs)].includes(activePage.id)) navigateToTab("dashboard");
 }
 
 function setupDashboardFilter() {
@@ -2597,6 +2796,10 @@ function setupForms() {
     element.addEventListener("input", handler);
     element.addEventListener("change", handler);
   };
+
+  ["classOpsYear", "classOpsSemester", "classOpsGrade", "classOpsSubject"].forEach((id) => {
+    onInputChange(id, renderClassOps);
+  });
 
   $("#studentForm").addEventListener("submit", (event) => {
     event.preventDefault();
@@ -3730,6 +3933,7 @@ function renderAll() {
   renderTermScoreEntryList();
   renderTermReport();
   renderTermHistoryList();
+  renderClassOps();
   renderEventManageList();
   renderActiveLeaves();
   renderLateBoard();

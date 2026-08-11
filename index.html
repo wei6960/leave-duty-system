@@ -174,6 +174,7 @@
         <button class="tab-button active" data-tab="dashboard">主頁看板</button>
         <button class="tab-button" data-tab="attendance">出缺勤</button>
         <button class="tab-button" data-tab="management">班務管理</button>
+        <button class="tab-button" data-tab="class-ops">班級經營</button>
         <button class="tab-button" data-tab="academic">學年設定</button>
       </nav>
       <button class="logout-button" id="logoutButton" type="button">登出 / 切換分校</button>
@@ -287,6 +288,10 @@
             <strong>段考成績</strong>
             <span>段考登記、排名、圖片 PDF Excel</span>
           </button>
+          <button class="portal-tile" type="button" data-tab="class-ops">
+            <strong>班級經營</strong>
+            <span>整班雷達、各科水平與弱點單元分析</span>
+          </button>
           <button class="portal-tile" type="button" data-tab="career">
             <strong>生涯檔案</strong>
             <span>學生歷程、折線圖與家長報告</span>
@@ -323,6 +328,74 @@
           <button class="primary" type="submit">儲存學年設定</button>
           <p class="hint form-span-2">新登記的週考會自動歸到這個學年學期；舊週考依考試日期自動保留在原本年度。</p>
         </form>
+      </section>
+
+      <section class="page" id="class-ops">
+        <header class="section-head">
+          <div>
+            <p class="eyebrow">班級經營</p>
+            <h1>各年級各科狀況分析</h1>
+          </div>
+          <button class="ghost back-button" type="button" data-back-tab="management">返回班務管理</button>
+        </header>
+
+        <section class="panel class-ops-toolbar">
+          <label>學年
+            <select id="classOpsYear"></select>
+          </label>
+          <label>學期
+            <select id="classOpsSemester">
+              <option value="全部">全部學期</option>
+              <option value="上學期">上學期</option>
+              <option value="下學期">下學期</option>
+            </select>
+          </label>
+          <label>年級
+            <select id="classOpsGrade">
+              <option value="國一">國一</option>
+              <option value="國二">國二</option>
+              <option value="國三">國三</option>
+            </select>
+          </label>
+          <label>科目
+            <select id="classOpsSubject"></select>
+          </label>
+        </section>
+
+        <div class="class-ops-summary" id="classOpsSummary"></div>
+
+        <div class="class-ops-layout">
+          <section class="panel">
+            <div class="panel-title">
+              <h2>整班雷達分析</h2>
+              <span>各科平均</span>
+            </div>
+            <div id="classOpsRadar"></div>
+          </section>
+          <section class="panel">
+            <div class="panel-title">
+              <h2>班級水平</h2>
+              <span>和同期間全體年級比較</span>
+            </div>
+            <div id="classOpsLevel"></div>
+          </section>
+        </div>
+
+        <section class="panel list-panel">
+          <div class="panel-title">
+            <h2>該班該科分析</h2>
+            <span>平均、及格率、波動與資料量</span>
+          </div>
+          <div id="classOpsSubjectAnalysis"></div>
+        </section>
+
+        <section class="panel list-panel">
+          <div class="panel-title">
+            <h2>該班弱點單元</h2>
+            <span>由週考範圍與低分次數推估</span>
+          </div>
+          <div id="classOpsWeakUnits"></div>
+        </section>
       </section>
 
       <section class="page" id="events">
