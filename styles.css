@@ -1774,23 +1774,34 @@ body.parent-nav-open .parent-drawer {
 }
 
 .parent-main {
-  display: grid;
-  grid-template-columns: minmax(17rem, .68fr) minmax(0, 1.55fr);
-  align-items: start;
-  gap: .85rem 1rem;
+  display: block;
   padding: 0;
 }
 
 .parent-side-stack {
-  grid-column: 1;
-  display: grid;
-  align-content: start;
-  gap: .85rem;
-  min-width: 0;
+  display: contents;
 }
 
-.parent-main .large-panel {
-  grid-column: 1 / -1;
+.parent-page-section {
+  display: none;
+  width: 100%;
+}
+
+.parent-page-section.is-active {
+  display: block;
+}
+
+.parent-report-stack.is-active {
+  display: grid;
+  gap: .9rem;
+}
+
+.parent-drawer-nav button.is-active {
+  border-color: rgba(241, 211, 124, .5);
+  background:
+    linear-gradient(135deg, rgba(198, 151, 53, .24), transparent 58%),
+    rgba(255, 255, 255, .055);
+  color: var(--gold-2);
 }
 
 .parent-side-panel {
@@ -1836,8 +1847,6 @@ body.parent-nav-open .parent-drawer {
 }
 
 .parent-score-panel {
-  grid-column: 2;
-  grid-row: 1;
   min-width: 0;
   overflow: hidden;
 }
@@ -2306,18 +2315,6 @@ tbody tr:hover {
   .portal-grid,
   .management-grid {
     grid-template-columns: 1fr;
-  }
-
-  .parent-code-panel,
-  .parent-event-panel,
-  .parent-leave-panel,
-  .parent-score-panel {
-    grid-column: 1;
-    grid-row: auto;
-  }
-
-  .parent-side-stack {
-    grid-column: 1;
   }
 
   #parentLeaveList {

@@ -41,6 +41,7 @@ let supabaseClient = null;
 let supabasePollTimer = null;
 let lastRemoteUpdatedAt = "";
 let parentStudentId = null;
+let parentActiveSection = "parentReportSection";
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -3759,6 +3760,18 @@ function closeParentDrawer() {
   document.body.classList.remove("parent-nav-open");
 }
 
+function setParentSection(sectionId) {
+  if (!sectionId || !$(`#${sectionId}`)) return;
+  parentActiveSection = sectionId;
+  $$(".parent-page-section").forEach((section) => {
+    section.classList.toggle("is-active", section.id === parentActiveSection);
+  });
+  $$(".parent-drawer-nav [data-parent-section]").forEach((button) => {
+    button.classList.toggle("is-active", button.dataset.parentSection === parentActiveSection);
+  });
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
 function setupParentDrawer() {
   $("#parentMenuButton")?.addEventListener("click", () => {
     document.body.classList.toggle("parent-nav-open");
@@ -3766,9 +3779,8 @@ function setupParentDrawer() {
   $("#parentScrim")?.addEventListener("click", closeParentDrawer);
   $$(".parent-drawer-nav [data-parent-section]").forEach((button) => {
     button.addEventListener("click", () => {
-      const target = $(`#${button.dataset.parentSection}`);
+      setParentSection(button.dataset.parentSection);
       closeParentDrawer();
-      if (target) target.scrollIntoView({ behavior: "smooth", block: "start" });
     });
   });
 }
@@ -4607,6 +4619,7 @@ function renderParentPortal() {
   renderParentTermTrend(student);
   renderParentTermAnalysisReport(student);
   $("#parentReport").innerHTML = renderStudentReportHtml(student, selectedParentCareerSubject(student));
+  setParentSection(parentActiveSection);
 }
 
 function setupLogin() {
