@@ -55,9 +55,11 @@ const parentTabs = {
   scores: "management",
   term: "management",
   "class-ops": "class-ops",
-  career: "management",
-  events: "management",
-  "grade-promotion": "management",
+  career: "class-ops",
+  events: "contact-book",
+  "grade-promotion": "class-ops",
+  "contact-book": "contact-book",
+  "about-admin": "about-admin",
 };
 
 function academicPeriodForDate(date = todayISO()) {
@@ -95,7 +97,27 @@ function emptyState() {
     termPeriods: {},
     academicPeriods: [],
     events: [],
+    contactBooks: [],
+    about: defaultAboutSettings(),
     archives: [],
+  };
+}
+
+function defaultAboutSettings() {
+  return {
+    publicEnabled: true,
+    branch: "平鎮分校",
+    slogan: "改變從金牌躍騰開始，一起見證孩子的成長",
+    address: "",
+    phone: "",
+    lineUrl: "",
+    facebookUrl: "",
+    intro: "金牌躍騰教育集團以完整追蹤、即時回饋與分層輔導，陪伴孩子建立穩定成長節奏。",
+    courses: "國中各科課程、段考複習、週考追蹤、個別弱點補強。",
+    teachers: "",
+    planning: "依學生程度安排前中後段目標，定期檢視週考、段考與作業完成狀態。",
+    environmentPhotos: "",
+    teacherPhotos: "",
   };
 }
 
@@ -172,8 +194,28 @@ function normalizeState(raw) {
     termPeriods: normalizeTermPeriods(raw.termPeriods || {}),
     academicPeriods: normalizeAcademicPeriods(raw.academicPeriods || [], normalizeAcademicSettings(raw.settings)),
     events: normalizeEvents(raw.events || []),
+    contactBooks: normalizeContactBooks(raw.contactBooks || []),
+    about: normalizeAboutSettings(raw.about || {}),
     archives: raw.archives || [],
   };
+}
+
+function normalizeContactBooks(records) {
+  return (records || []).map((record) => ({
+    id: record.id || crypto.randomUUID(),
+    date: record.date || todayISO(),
+    grade: ["全體", ...grades].includes(record.grade) ? record.grade : "全體",
+    subject: normalizeCourseName(record.subject || "國文"),
+    todayTest: record.todayTest || "",
+    nextTest: record.nextTest || "",
+    homework: record.homework || "",
+    createdAt: record.createdAt || new Date().toISOString(),
+    updatedAt: record.updatedAt || record.createdAt || new Date().toISOString(),
+  }));
+}
+
+function normalizeAboutSettings(settings = {}) {
+  return { ...defaultAboutSettings(), ...settings, publicEnabled: settings.publicEnabled !== false };
 }
 
 function normalizeAcademicPeriods(records, currentSettings = defaultAcademicSettings()) {
@@ -866,6 +908,7 @@ function renderAcademicPeriodList() {
         </div>
         <div class="action-row">
           <button class="ghost" data-apply-academic-period="${period.academicYear}|${period.semester}">設為目前</button>
+          <button class="ghost" data-edit-academic-period="${period.academicYear}|${period.semester}">編輯</button>
           <button class="ghost" data-open-class-ops-period="${period.academicYear}|${period.semester}">看班級經營</button>
         </div>
       </article>
@@ -1423,8 +1466,10 @@ function fillExamForm(exam) {
 
 function renderExamHistory() {
   const period = weeklyPeriodFilter("scoreHistory");
+  const historyGrade = $("#scoreHistoryGrade")?.value || "全部";
   const items = state.exams
     .filter((exam) => examMatchesWeeklyPeriod(exam, period))
+    .filter((exam) => historyGrade === "全部" || exam.grade === historyGrade)
     .sort((a, b) => b.date.localeCompare(a.date))
     .slice(0, 40);
   $("#examHistoryList").innerHTML = items.map((exam) => {
@@ -1671,7 +1716,7 @@ function classOpsMeta() {
   return {
     year: $("#classOpsYear")?.value || activeAcademicPeriod().academicYear,
     semester: $("#classOpsSemester")?.value || "全部",
-    grade: $("#classOpsGrade")?.value || grades[0],
+    grade: $("#classOpsGrade")?.value || "全部",
     subject: $("#classOpsSubject")?.value || "全部",
   };
 }
@@ -1681,7 +1726,7 @@ function classOpsWeeklyRows(meta, includeAllGrades = false) {
     .filter((exam) => !exam.noExam)
     .filter((exam) => String(exam.academicYear || "") === String(meta.year))
     .filter((exam) => meta.semester === "全部" || exam.semester === meta.semester)
-    .filter((exam) => includeAllGrades || exam.grade === meta.grade)
+    .filter((exam) => includeAllGrades || meta.grade === "全部" || exam.grade === meta.grade)
     .filter((exam) => meta.subject === "全部" || exam.subject === meta.subject)
     .flatMap((exam) => currentScoreRows(exam).map((row) => ({
       source: "週考",
@@ -1700,7 +1745,7 @@ function classOpsTermRows(meta, includeAllGrades = false) {
   return state.termScores
     .filter((item) => String(item.year || "") === String(meta.year))
     .filter((item) => meta.semester === "全部" || item.semester === meta.semester)
-    .filter((item) => includeAllGrades || item.grade === meta.grade)
+    .filter((item) => includeAllGrades || meta.grade === "全部" || item.grade === meta.grade)
     .filter((item) => meta.subject === "全部" || normalizeCourseName(item.subject) === meta.subject)
     .map((item) => ({
       source: "段考",
@@ -1764,6 +1809,27 @@ function classOpsSubjectStats(meta) {
       gap: Number.isFinite(summary.average) && Number.isFinite(allSummary.average) ? summary.average - allSummary.average : NaN,
     };
   }).filter((item) => item.count || meta.subject !== "全部");
+}
+
+function classOpsEnrollmentHtml(meta) {
+  const subjectList = meta.subject === "全部" ? courses : [meta.subject];
+  const visibleGrades = meta.grade === "全部" ? grades : [meta.grade];
+  const rows = visibleGrades.map((grade) => {
+    const students = state.students.filter((student) => student.grade === grade);
+    const cells = subjectList.map((subject) => {
+      const count = students.filter((student) => studentTakesSubject(student, subject)).length;
+      return `<td><strong>${count}</strong></td>`;
+    }).join("");
+    return `<tr><th>${grade}</th><td>${students.length}</td>${cells}</tr>`;
+  }).join("");
+  return `
+    <div class="table-wrap compact-count-table">
+      <table>
+        <thead><tr><th>年級</th><th>總學生</th>${subjectList.map((subject) => `<th>${subject}</th>`).join("")}</tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+  `;
 }
 
 function classOpsWeakUnits(meta) {
@@ -1926,6 +1992,7 @@ function renderClassOps() {
     <article class="metric"><span>優勢科目</span><strong>${best ? best.subject : "-"}</strong></article>
     <article class="metric"><span>優先補強</span><strong>${weakest ? weakest.subject : "-"}</strong></article>
   `;
+  if ($("#classOpsEnrollment")) $("#classOpsEnrollment").innerHTML = classOpsEnrollmentHtml(meta);
   $("#classOpsRadar").innerHTML = classOpsRadarSvg(stats);
   $("#classOpsLevel").innerHTML = stats.filter((item) => item.count).map((item) => `
     <article class="level-row">
@@ -2310,25 +2377,22 @@ function renderParentCareerSubjectButtons(student) {
   target.innerHTML = careerSubjectButtonsHtml(student, selectedParentCareerSubject(student), "data-parent-career-subject");
 }
 
-function examRankForStudent(exam, studentId) {
-  return currentScoreRows(exam).find((item) => item.student.id === studentId)?.rank || "-";
-}
-
 function examStatsForStudent(exam, studentId) {
   const rows = currentScoreRows(exam);
   const current = rows.find((item) => item.student.id === studentId);
   const scores = rows.map((row) => row.score).filter(Number.isFinite);
   const average = averageScore(scores);
   const rank = current?.rank || "-";
+  const pr = current && rows.length ? Math.round(((rows.length - current.rank + 1) / rows.length) * 100) : NaN;
   let segment = "資料不足";
   if (current && rows.length >= 3) {
-    const percentile = current.rank / rows.length;
-    segment = percentile <= .25 ? "前段" : percentile >= .75 ? "後段" : "中段";
+    segment = pr >= 75 ? "前段" : pr <= 25 ? "後段" : "中段";
   } else if (current) {
     segment = "中段";
   }
   return {
     rank,
+    pr,
     segment,
     count: rows.length,
     high: scores.length ? Math.max(...scores) : NaN,
@@ -2338,7 +2402,7 @@ function examStatsForStudent(exam, studentId) {
 }
 
 function examStatsInline(stats) {
-  return `排名 ${stats.rank}｜${stats.segment}｜最高 ${scoreDisplay(stats.high)}｜最低 ${scoreDisplay(stats.low)}｜班平均 ${scoreDisplay(stats.average)}`;
+  return `排名 ${stats.rank}｜PR ${scoreDisplay(stats.pr)}｜${stats.segment}｜班級 ${stats.count} 人｜最高 ${scoreDisplay(stats.high)}｜最低 ${scoreDisplay(stats.low)}｜班平均 ${scoreDisplay(stats.average)}`;
 }
 
 function careerScoreLookupHtml(student, queryDate, selectedSubject, options = {}) {
@@ -2383,7 +2447,9 @@ function careerScoreLookupHtml(student, queryDate, selectedSubject, options = {}
                 <small>各卷 ${row.papers.map(scoreDisplay).join(" / ")}</small>
                 <div class="score-stat-grid">
                   <span>排名 <b>${stats.rank}</b></span>
+                  <span>PR <b>${scoreDisplay(stats.pr)}</b></span>
                   <span>定位 <b>${stats.segment}</b></span>
+                  <span>班級 <b>${stats.count}人</b></span>
                   <span>最高 <b>${scoreDisplay(stats.high)}</b></span>
                   <span>最低 <b>${scoreDisplay(stats.low)}</b></span>
                   <span>班平均 <b>${scoreDisplay(stats.average)}</b></span>
@@ -2414,6 +2480,8 @@ function careerScoreLookupHtml(student, queryDate, selectedSubject, options = {}
             </div>
             <div class="mini-stat-grid">
               <span>排名 <b>${stats.rank}</b></span>
+              <span>PR <b>${scoreDisplay(stats.pr)}</b></span>
+              <span>班級 <b>${stats.count}人</b></span>
               <span>最高 <b>${scoreDisplay(stats.high)}</b></span>
               <span>最低 <b>${scoreDisplay(stats.low)}</b></span>
               <span>班平均 <b>${scoreDisplay(stats.average)}</b></span>
@@ -2668,7 +2736,7 @@ function renderStudentReportHtml(student, subjectOverride = null) {
     <div class="report-head">
       <strong>${studentLabel(student)}</strong>
       <span>補習科目：${studentCoursesLabel(student)}</span>
-      <span>最近定位：${latestStats ? `${latestRow.exam.subject} ${latestStats.segment}｜排名 ${latestStats.rank}｜班平均 ${scoreDisplay(latestStats.average)}` : "資料不足"}</span>
+      <span>最近定位：${latestStats ? `${latestRow.exam.subject} ${latestStats.segment}｜排名 ${latestStats.rank}｜PR ${scoreDisplay(latestStats.pr)}｜班級 ${latestStats.count} 人｜班平均 ${scoreDisplay(latestStats.average)}` : "資料不足"}</span>
       <span>週考推估：${levelSummary}</span>
     </div>
     <div class="analysis-grid">
@@ -3056,7 +3124,7 @@ function downloadStudentReportImage(student = getStudent($("#careerStudent")?.va
     ["近期週考平均", scoreDisplay(recentAverage)],
     ["歷程總平均", scoreDisplay(overallAverage)],
     ["最新成績", latestRow ? `${latestRow.exam.subject} ${scoreDisplay(latestRow.score)}` : "-"],
-    ["最新定位", latestStats ? `${latestStats.segment}｜排名 ${latestStats.rank}` : "-"],
+    ["最新定位", latestStats ? `${latestStats.segment}｜PR ${scoreDisplay(latestStats.pr)}` : "-"],
   ];
   const kpiY = 204;
   const kpiW = (width - margin * 2 - 24) / 4;
@@ -3096,7 +3164,7 @@ function downloadStudentReportImage(student = getStudent($("#careerStudent")?.va
     ctx.stroke();
     ctx.fillStyle = "#1f252d";
     ctx.font = "bold 15px Microsoft JhengHei, Arial";
-    canvasText(ctx, `最近一次當天統計：最高 ${scoreDisplay(latestStats.high)}｜最低 ${scoreDisplay(latestStats.low)}｜班平均 ${scoreDisplay(latestStats.average)}｜排名 ${latestStats.rank}｜${latestStats.segment}`, margin + 14, y + 36, width - margin * 2 - 28);
+    canvasText(ctx, `最近一次當天統計：最高 ${scoreDisplay(latestStats.high)}｜最低 ${scoreDisplay(latestStats.low)}｜班平均 ${scoreDisplay(latestStats.average)}｜排名 ${latestStats.rank}｜PR ${scoreDisplay(latestStats.pr)}｜班級 ${latestStats.count} 人｜${latestStats.segment}`, margin + 14, y + 36, width - margin * 2 - 28);
   }
 
   y += latestStats ? 92 : 112;
@@ -3133,8 +3201,8 @@ function downloadStudentReportImage(student = getStudent($("#careerStudent")?.va
     pageCtx.fillStyle = "#fff7df";
     pageCtx.font = "14px Microsoft JhengHei, Arial";
     canvasText(pageCtx, reportTitle, width - margin - 250, 44, 250);
-    const cols = [72, 66, 160, 94, 56, 48, 56, 56, 64];
-    const headers = ["日期", "科目", "重點", "各卷", "平均", "排名", "最高", "最低", "班平均"];
+    const cols = [68, 58, 134, 80, 48, 42, 42, 44, 44, 44, 54];
+    const headers = ["日期", "科目", "重點", "各卷", "平均", "排名", "PR", "人數", "最高", "最低", "班平均"];
     let x = margin;
     let ty = 104;
     pageCtx.fillStyle = "#2a3039";
@@ -3153,7 +3221,7 @@ function downloadStudentReportImage(student = getStudent($("#careerStudent")?.va
       pageCtx.fillStyle = "#1f252d";
       pageCtx.font = "13px Microsoft JhengHei, Arial";
       const stats = examStatsForStudent(row.exam, student.id);
-      const values = [dateLabel(row.exam.date), row.exam.subject, row.exam.scope || "-", row.papers.map(scoreDisplay).join(" / "), scoreDisplay(row.score), stats.rank, scoreDisplay(stats.high), scoreDisplay(stats.low), scoreDisplay(stats.average)];
+      const values = [dateLabel(row.exam.date), row.exam.subject, row.exam.scope || "-", row.papers.map(scoreDisplay).join(" / "), scoreDisplay(row.score), stats.rank, scoreDisplay(stats.pr), stats.count, scoreDisplay(stats.high), scoreDisplay(stats.low), scoreDisplay(stats.average)];
       values.forEach((value, index) => {
         if (index === 4 && row.score < 60) pageCtx.fillStyle = "#e60012";
         canvasText(pageCtx, value, x + 8, ty + 26, cols[index] - 10);
@@ -3427,7 +3495,7 @@ function fillStudentForm(student) {
   $("#cancelStudentEdit").hidden = false;
 }
 
-function navigateToTab(tabId) {
+function navigateToTab(tabId, options = {}) {
   if (!tabId || !$(`#${tabId}`)) return;
   if ($("#scores")?.classList.contains("active")) captureScoreDraft();
   $$(".tab-button").forEach((tab) => {
@@ -3438,7 +3506,7 @@ function navigateToTab(tabId) {
   $(`#${tabId}`).classList.add("active");
   document.body.classList.remove("nav-open");
   renderAll();
-  window.scrollTo({ top: 0, behavior: "smooth" });
+  if (!options.preserveScroll) window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
 function setupTabs() {
@@ -3628,6 +3696,49 @@ function setupForms() {
     renderAll();
   });
 
+  $("#contactBookForm")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    state.contactBooks.push(normalizeContactBooks([{
+      id: crypto.randomUUID(),
+      date: $("#contactDate").value,
+      grade: $("#contactGrade").value,
+      subject: $("#contactSubject").value,
+      todayTest: $("#contactTodayTest").value.trim(),
+      nextTest: $("#contactNextTest").value.trim(),
+      homework: $("#contactHomework").value.trim(),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    }])[0]);
+    $("#contactTodayTest").value = "";
+    $("#contactNextTest").value = "";
+    $("#contactHomework").value = "";
+    saveState();
+    renderAll();
+    flashButton(event.submitter, "已儲存");
+  });
+
+  $("#aboutForm")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    state.about = normalizeAboutSettings({
+      publicEnabled: $("#aboutPublicEnabled").checked,
+      branch: $("#aboutBranch").value.trim(),
+      phone: $("#aboutPhone").value.trim(),
+      address: $("#aboutAddress").value.trim(),
+      slogan: $("#aboutSlogan").value.trim(),
+      lineUrl: $("#aboutLineUrl").value.trim(),
+      facebookUrl: $("#aboutFacebookUrl").value.trim(),
+      intro: $("#aboutIntro").value.trim(),
+      courses: $("#aboutCourses").value.trim(),
+      teachers: $("#aboutTeachers").value.trim(),
+      planning: $("#aboutPlanning").value.trim(),
+      environmentPhotos: $("#aboutEnvironmentPhotos").value.trim(),
+      teacherPhotos: $("#aboutTeacherPhotos").value.trim(),
+    });
+    saveState();
+    renderAll();
+    flashButton(event.submitter, "已儲存");
+  });
+
   $("#academicForm")?.addEventListener("submit", (event) => {
     event.preventDefault();
     state.settings = normalizeAcademicSettings({
@@ -3742,7 +3853,7 @@ function setupForms() {
     }
   });
 
-  ["studentFilter", "studentSearch", "lateGrade", "historyType", "historySearch", "scheduleGrade", "examGrade", "examSubject", "examPaperCount", "examNoTest", "scoreHistoryYear", "scoreHistorySemester", "careerQueryDate", "careerExamYear", "careerExamSemester", "careerTermYear", "careerTermAnalysisYear", "careerTermAnalysisSemester", "careerTermAnalysisStage", "termYear", "termSemester", "termGrade", "termStage"].forEach((id) => {
+  ["studentFilter", "studentSearch", "lateGrade", "historyType", "historySearch", "scheduleGrade", "examGrade", "examSubject", "examPaperCount", "examNoTest", "scoreHistoryYear", "scoreHistorySemester", "scoreHistoryGrade", "careerQueryDate", "careerExamYear", "careerExamSemester", "careerTermYear", "careerTermAnalysisYear", "careerTermAnalysisSemester", "careerTermAnalysisStage", "termYear", "termSemester", "termGrade", "termStage"].forEach((id) => {
     onInputChange(id, renderAll);
   });
 
@@ -4230,6 +4341,90 @@ function renderEventManageList() {
     .join("") || `<div class="empty">尚未張貼重大行事曆公告。</div>`;
 }
 
+function renderContactSubjectOptions() {
+  const target = $("#contactSubject");
+  if (!target) return;
+  const previous = target.value;
+  target.innerHTML = courses.map((subject) => `<option value="${subject}">${subject}</option>`).join("");
+  target.value = previous && courses.includes(previous) ? previous : courses[0];
+}
+
+function renderContactBookCard(record, withActions = false) {
+  return `
+    <article class="record-card contact-card">
+      <strong>${dateLabel(record.date)} ${record.grade} ${record.subject}</strong>
+      <div class="meta">
+        <span class="badge">今天考試：${record.todayTest || "無"}</span>
+        <span class="badge">下次考試：${record.nextTest || "未填"}</span>
+        <span class="badge gold">作業：${record.homework || "未填"}</span>
+      </div>
+      ${withActions ? `<div class="action-row"><button class="ghost danger" data-delete-contact="${record.id}">刪除</button></div>` : ""}
+    </article>
+  `;
+}
+
+function sortedContactBooks(records = state.contactBooks) {
+  return records.slice().sort((a, b) => b.date.localeCompare(a.date) || (b.updatedAt || "").localeCompare(a.updatedAt || ""));
+}
+
+function renderContactBooks() {
+  const target = $("#contactBookList");
+  if (!target) return;
+  target.innerHTML = sortedContactBooks()
+    .map((record) => renderContactBookCard(record, true))
+    .join("") || `<div class="empty">尚無聯絡本紀錄。</div>`;
+}
+
+function aboutImageGrid(text) {
+  const urls = String(text || "").split(/\r?\n/).map((item) => item.trim()).filter(Boolean).slice(0, 8);
+  if (!urls.length) return "";
+  return `<div class="about-photo-grid">${urls.map((url) => `<img src="${escapeHtml(url)}" alt="金牌躍騰照片">`).join("")}</div>`;
+}
+
+function aboutHtml(settings = state.about) {
+  if (settings.publicEnabled === false) return `<div class="empty">關於我們更新中。</div>`;
+  return `
+    <article class="about-showcase">
+      <p class="eyebrow">金牌躍騰教育集團 ${settings.branch || "平鎮分校"}</p>
+      <h2>${settings.slogan || defaultAboutSettings().slogan}</h2>
+      <p>${settings.intro || ""}</p>
+      <div class="analysis-grid">
+        <article class="analysis-card"><strong>課程介紹</strong><span>${settings.courses || "-"}</span></article>
+        <article class="analysis-card"><strong>師資陣容</strong><span>${settings.teachers || "-"}</span></article>
+        <article class="analysis-card"><strong>學生規劃</strong><span>${settings.planning || "-"}</span></article>
+      </div>
+      <div class="meta">
+        ${settings.address ? `<span class="badge">地址：${settings.address}</span>` : ""}
+        ${settings.phone ? `<span class="badge">電話：${settings.phone}</span>` : ""}
+        ${settings.lineUrl ? `<a class="badge gold" href="${escapeHtml(settings.lineUrl)}" target="_blank" rel="noopener">官方 LINE</a>` : ""}
+        ${settings.facebookUrl ? `<a class="badge gold" href="${escapeHtml(settings.facebookUrl)}" target="_blank" rel="noopener">官方 Facebook</a>` : ""}
+      </div>
+      ${aboutImageGrid(settings.environmentPhotos)}
+      ${aboutImageGrid(settings.teacherPhotos)}
+    </article>
+  `;
+}
+
+function renderAboutSettings() {
+  const about = normalizeAboutSettings(state.about || {});
+  state.about = about;
+  if (!$("#aboutForm")) return;
+  $("#aboutPublicEnabled").checked = about.publicEnabled !== false;
+  $("#aboutBranch").value = about.branch || "";
+  $("#aboutPhone").value = about.phone || "";
+  $("#aboutAddress").value = about.address || "";
+  $("#aboutSlogan").value = about.slogan || "";
+  $("#aboutLineUrl").value = about.lineUrl || "";
+  $("#aboutFacebookUrl").value = about.facebookUrl || "";
+  $("#aboutIntro").value = about.intro || "";
+  $("#aboutCourses").value = about.courses || "";
+  $("#aboutTeachers").value = about.teachers || "";
+  $("#aboutPlanning").value = about.planning || "";
+  $("#aboutEnvironmentPhotos").value = about.environmentPhotos || "";
+  $("#aboutTeacherPhotos").value = about.teacherPhotos || "";
+  $("#aboutPreview").innerHTML = aboutHtml(about);
+}
+
 function setupActions() {
   document.addEventListener("click", (event) => {
     const deleteStudentId = event.target.dataset.deleteStudent;
@@ -4248,7 +4443,9 @@ function setupActions() {
     const deleteTermReportKey = event.target.dataset.deleteTermReport;
     const editEventId = event.target.dataset.editEvent;
     const deleteEventId = event.target.dataset.deleteEvent;
+    const deleteContactId = event.target.dataset.deleteContact;
     const applyAcademicPeriod = event.target.dataset.applyAcademicPeriod;
+    const editAcademicPeriod = event.target.dataset.editAcademicPeriod;
     const openClassOpsPeriod = event.target.dataset.openClassOpsPeriod;
     const careerWeek = event.target.dataset.careerWeek;
 
@@ -4281,9 +4478,12 @@ function setupActions() {
     if (editStudentId) {
       const student = getStudent(editStudentId);
       if (student) {
+        const keepScroll = $("#students")?.classList.contains("active");
+        const scrollY = window.scrollY;
         fillStudentForm(student);
-        navigateToTab("students");
-        $("#studentName").focus();
+        navigateToTab("students", { preserveScroll: keepScroll });
+        if (keepScroll) window.scrollTo({ top: scrollY });
+        $("#studentName").focus({ preventScroll: keepScroll });
       }
     }
     if (deleteStudentId && confirm("確定移除這位學生檔案？相關請假與晚到紀錄也會一起移除。")) {
@@ -4358,6 +4558,13 @@ function setupActions() {
     if (applyAcademicPeriod) {
       applyAcademicPeriodKey(applyAcademicPeriod);
     }
+    if (editAcademicPeriod) {
+      const [academicYear, semester] = String(editAcademicPeriod).split("|");
+      if ($("#academicYear")) $("#academicYear").value = academicYear;
+      if ($("#academicSemester")) $("#academicSemester").value = semester;
+      navigateToTab("academic");
+      $("#academicYear")?.focus();
+    }
     if (openClassOpsPeriod) {
       applyAcademicPeriodKey(openClassOpsPeriod, true);
     }
@@ -4373,8 +4580,11 @@ function setupActions() {
       state.events = state.events.filter((item) => item.id !== deleteEventId);
       if (editingEventId === deleteEventId) clearEventForm();
     }
+    if (deleteContactId && confirm("確定刪除這筆聯絡本？")) {
+      state.contactBooks = state.contactBooks.filter((item) => item.id !== deleteContactId);
+    }
 
-    if (deleteStudentId || dismissLeaveId || deleteLeaveId || removeLateId || deleteLateId || deleteExamId || deleteEventId) {
+    if (deleteStudentId || dismissLeaveId || deleteLeaveId || removeLateId || deleteLateId || deleteExamId || deleteEventId || deleteContactId) {
       saveState();
       renderAll();
     }
@@ -4630,6 +4840,12 @@ function renderParentPortal() {
   $("#parentEventList").innerHTML = sortedEvents(state.events.filter((record) => eventVisibleToStudent(record, student)))
     .map((record) => renderEventCard(record))
     .join("") || `<div class="empty">目前尚無重大行事曆公告。</div>`;
+  if ($("#parentContactBookList")) {
+    $("#parentContactBookList").innerHTML = sortedContactBooks(state.contactBooks.filter((record) => record.grade === "全體" || record.grade === student.grade))
+      .map((record) => renderContactBookCard(record))
+      .join("") || `<div class="empty">目前尚無聯絡本紀錄。</div>`;
+  }
+  if ($("#parentAboutContent")) $("#parentAboutContent").innerHTML = aboutHtml(normalizeAboutSettings(state.about || {}));
   $("#parentLeaveList").innerHTML = state.leaves
     .filter((record) => record.studentId === student.id)
     .sort((a, b) => getLeaveStart(b).localeCompare(getLeaveStart(a)))
@@ -4730,6 +4946,8 @@ function renderAll() {
   renderClassOps();
   renderPromotionPreview();
   renderEventManageList();
+  renderContactBooks();
+  renderAboutSettings();
   renderActiveLeaves();
   renderLateBoard();
   renderManageLists();
@@ -4751,7 +4969,9 @@ function boot() {
   state.settings = normalizeAcademicSettings(state.settings);
   renderAcademicSettings();
   renderExamSubjectOptions();
+  renderContactSubjectOptions();
   $("#lateDate").value = todayISO();
+  $("#contactDate").value = todayISO();
   $("#eventStartDate").value = todayISO();
   $("#eventEndDate").value = todayISO();
   setupTabs();

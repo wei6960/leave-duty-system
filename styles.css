@@ -1155,7 +1155,7 @@ legend {
 .mini-stat-grid {
   grid-column: 1 / -1;
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(4.4rem, 1fr));
   gap: .35rem;
 }
 
@@ -1867,6 +1867,36 @@ body.parent-nav-open .parent-drawer {
   margin-top: .45rem;
   color: var(--muted);
   line-height: 1.55;
+}
+
+.about-showcase {
+  display: grid;
+  gap: 1rem;
+}
+
+.about-showcase h2 {
+  color: #fff6d9;
+  font-size: clamp(1.35rem, 2.6vw, 2rem);
+}
+
+.about-showcase p {
+  color: var(--muted);
+  line-height: 1.8;
+}
+
+.about-photo-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: .65rem;
+}
+
+.about-photo-grid img {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  border: 1px solid rgba(241, 211, 124, .16);
+  border-radius: .45rem;
+  background: rgba(255, 255, 255, .04);
 }
 
 .parent-side-panel {

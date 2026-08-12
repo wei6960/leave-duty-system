@@ -66,6 +66,8 @@
         <button type="button" data-parent-section="parentScoreSection">成績調閱</button>
         <button type="button" data-parent-section="parentReportSection">報告區</button>
         <button type="button" data-parent-section="parentEventSection">重大公告</button>
+        <button type="button" data-parent-section="parentContactSection">聯絡本</button>
+        <button type="button" data-parent-section="parentAboutSection">關於金牌躍騰</button>
         <button type="button" data-parent-section="parentLeaveSection">請假紀錄</button>
         <button type="button" data-parent-section="parentCodeSection">家長代碼更新</button>
       </nav>
@@ -97,6 +99,14 @@
             <strong>重大公告</strong>
             <span>老師張貼的重要事項</span>
           </button>
+          <button type="button" data-parent-section="parentContactSection">
+            <strong>聯絡本</strong>
+            <span>今日與歷史課程、考試、作業</span>
+          </button>
+          <button type="button" data-parent-section="parentAboutSection">
+            <strong>關於金牌躍騰</strong>
+            <span>分校介紹、課程與師資規劃</span>
+          </button>
           <button type="button" data-parent-section="parentLeaveSection">
             <strong>請假紀錄</strong>
             <span>查看請假歷史與狀態</span>
@@ -127,6 +137,20 @@
             <span>老師張貼事項</span>
           </div>
           <div id="parentEventList" class="record-list"></div>
+        </section>
+        <section class="panel parent-side-panel parent-page-section" id="parentContactSection">
+          <div class="panel-title">
+            <h2>聯絡本</h2>
+            <span>今日與歷史課程紀錄</span>
+          </div>
+          <div id="parentContactBookList" class="record-list"></div>
+        </section>
+        <section class="panel parent-side-panel parent-page-section" id="parentAboutSection">
+          <div class="panel-title">
+            <h2>關於金牌躍騰教育集團</h2>
+            <span>平鎮分校</span>
+          </div>
+          <div id="parentAboutContent"></div>
         </section>
         <section class="panel parent-side-panel parent-leave-panel parent-page-section" id="parentLeaveSection">
           <div class="panel-title">
@@ -227,7 +251,9 @@
         <button class="tab-button" data-tab="attendance">出缺勤</button>
         <button class="tab-button" data-tab="management">班務管理</button>
         <button class="tab-button" data-tab="class-ops">班級經營</button>
+        <button class="tab-button" data-tab="contact-book">聯絡本系統</button>
         <button class="tab-button" data-tab="academic">學年設定</button>
+        <button class="tab-button" data-tab="about-admin">關於我們</button>
       </nav>
       <button class="logout-button" id="logoutButton" type="button">登出 / 切換分校</button>
     </aside>
@@ -402,6 +428,17 @@
           <button class="ghost back-button" type="button" data-back-tab="management">返回班務管理</button>
         </header>
 
+        <div class="portal-grid compact-portal-grid">
+          <button class="portal-tile" type="button" data-tab="career">
+            <strong>學生生涯檔案</strong>
+            <span>學生歷程、折線圖與家長報告</span>
+          </button>
+          <button class="portal-tile" type="button" data-tab="grade-promotion">
+            <strong>升級與校友</strong>
+            <span>學期結束後升年級，國三轉校友</span>
+          </button>
+        </div>
+
         <section class="panel class-ops-toolbar">
           <label>學年
             <select id="classOpsYear"></select>
@@ -415,6 +452,7 @@
           </label>
           <label>年級
             <select id="classOpsGrade">
+              <option value="全部">全體</option>
               <option value="國一">國一</option>
               <option value="國二">國二</option>
               <option value="國三">國三</option>
@@ -430,6 +468,14 @@
         </section>
 
         <div class="class-ops-summary" id="classOpsSummary"></div>
+
+        <section class="panel list-panel">
+          <div class="panel-title">
+            <h2>各年級各科人數</h2>
+            <span>依學生檔案補習科目統計</span>
+          </div>
+          <div id="classOpsEnrollment"></div>
+        </section>
 
         <div class="class-ops-layout">
           <section class="panel">
@@ -462,6 +508,110 @@
             <span>由週考範圍與低分次數推估</span>
           </div>
           <div id="classOpsWeakUnits"></div>
+        </section>
+      </section>
+
+      <section class="page" id="contact-book">
+        <header class="section-head">
+          <div>
+            <p class="eyebrow">聯絡本系統</p>
+            <h1>每日聯絡本與重大公告</h1>
+          </div>
+        </header>
+        <div class="portal-grid">
+          <button class="portal-tile" type="button" data-tab="events">
+            <strong>重大公告</strong>
+            <span>設定公告日期區間與家長端顯示</span>
+          </button>
+        </div>
+        <form class="form-grid panel" id="contactBookForm">
+          <label>日期
+            <input id="contactDate" type="date" required>
+          </label>
+          <label>年級
+            <select id="contactGrade">
+              <option value="全體">全體</option>
+              <option value="國一">國一</option>
+              <option value="國二">國二</option>
+              <option value="國三">國三</option>
+            </select>
+          </label>
+          <label>科目
+            <select id="contactSubject"></select>
+          </label>
+          <label>今天考試
+            <input id="contactTodayTest" placeholder="例：自然 1-2 小考">
+          </label>
+          <label>下次考試
+            <input id="contactNextTest" placeholder="例：08/20 英文單字">
+          </label>
+          <label class="wide-field">作業
+            <textarea id="contactHomework" rows="3" placeholder="輸入作業內容"></textarea>
+          </label>
+          <button class="primary" type="submit">儲存聯絡本</button>
+        </form>
+        <section class="panel list-panel">
+          <div class="panel-title">
+            <h2>歷史聯絡本</h2>
+            <span>可查看與刪除之前紀錄</span>
+          </div>
+          <div id="contactBookList" class="record-list"></div>
+        </section>
+      </section>
+
+      <section class="page" id="about-admin">
+        <header class="section-head">
+          <div>
+            <p class="eyebrow">關於我們</p>
+            <h1>家長端品牌介紹設定</h1>
+          </div>
+        </header>
+        <form class="form-grid panel" id="aboutForm">
+          <label class="check-pill"><input id="aboutPublicEnabled" type="checkbox">家長端顯示關於我們</label>
+          <label>分校
+            <input id="aboutBranch" placeholder="例：平鎮分校">
+          </label>
+          <label>電話
+            <input id="aboutPhone" placeholder="例：03-000-0000">
+          </label>
+          <label class="wide-field">地址
+            <input id="aboutAddress" placeholder="輸入分校地址">
+          </label>
+          <label class="wide-field">Slogan
+            <input id="aboutSlogan">
+          </label>
+          <label>官方 LINE 連結
+            <input id="aboutLineUrl" placeholder="https://">
+          </label>
+          <label>官方 Facebook 連結
+            <input id="aboutFacebookUrl" placeholder="https://">
+          </label>
+          <label class="wide-field">分校介紹
+            <textarea id="aboutIntro" rows="3"></textarea>
+          </label>
+          <label class="wide-field">課程介紹
+            <textarea id="aboutCourses" rows="3"></textarea>
+          </label>
+          <label class="wide-field">師資陣容與經歷
+            <textarea id="aboutTeachers" rows="3" placeholder="可貼老師介紹、形象照或獎狀連結"></textarea>
+          </label>
+          <label class="wide-field">對學生的規劃
+            <textarea id="aboutPlanning" rows="3"></textarea>
+          </label>
+          <label class="wide-field">環境照片連結
+            <textarea id="aboutEnvironmentPhotos" rows="2" placeholder="每行一個圖片連結"></textarea>
+          </label>
+          <label class="wide-field">師資/獎狀照片連結
+            <textarea id="aboutTeacherPhotos" rows="2" placeholder="每行一個圖片連結"></textarea>
+          </label>
+          <button class="primary" type="submit">儲存關於我們</button>
+        </form>
+        <section class="panel list-panel">
+          <div class="panel-title">
+            <h2>家長端顯示預覽</h2>
+            <span>依設定同步呈現</span>
+          </div>
+          <div id="aboutPreview"></div>
         </section>
       </section>
 
@@ -730,6 +880,14 @@
               <option value="全部">全部</option>
               <option value="上學期">上學期</option>
               <option value="下學期">下學期</option>
+            </select>
+          </label>
+          <label>年級
+            <select id="scoreHistoryGrade">
+              <option value="全部">全體</option>
+              <option value="國一">國一</option>
+              <option value="國二">國二</option>
+              <option value="國三">國三</option>
             </select>
           </label>
         </div>
