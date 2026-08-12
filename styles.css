@@ -254,7 +254,7 @@ button.button-confirmed {
 }
 
 .management-grid {
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 .portal-tile {
@@ -292,6 +292,50 @@ button.button-confirmed {
 .portal-tile span {
   color: var(--muted);
   line-height: 1.55;
+}
+
+.compact-portal-grid {
+  grid-template-columns: repeat(3, minmax(13rem, 1fr));
+  margin-bottom: 1rem;
+}
+
+.layer-panel {
+  animation: panelIn .18s ease;
+}
+
+.feature-tile,
+.grade-entry-tile {
+  min-height: 11rem;
+  padding: 1.15rem;
+  background:
+    linear-gradient(145deg, rgba(241, 211, 124, .18), transparent 48%),
+    linear-gradient(180deg, rgba(255, 255, 255, .05), rgba(0, 0, 0, .1)),
+    #121820;
+}
+
+.feature-tile strong,
+.grade-entry-tile strong {
+  font-size: 1.45rem;
+}
+
+.grade-entry-tile {
+  overflow: hidden;
+}
+
+.grade-entry-tile::after,
+.feature-tile::after {
+  content: "";
+  justify-self: end;
+  align-self: end;
+  width: 4.4rem;
+  height: 4.4rem;
+  border: 1px solid rgba(241, 211, 124, .18);
+  transform: rotate(45deg);
+}
+
+@keyframes panelIn {
+  from { opacity: 0; transform: translateY(.35rem); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 .back-button {
@@ -1874,6 +1918,29 @@ body.parent-nav-open .parent-drawer {
   gap: 1rem;
 }
 
+.about-hero {
+  position: relative;
+  overflow: hidden;
+  padding: 1.35rem;
+  border: 1px solid rgba(241, 211, 124, .22);
+  border-radius: .55rem;
+  background:
+    linear-gradient(135deg, rgba(198, 151, 53, .22), transparent 50%),
+    linear-gradient(155deg, rgba(111, 182, 232, .12), transparent 54%),
+    #11171f;
+}
+
+.about-hero::after {
+  content: "";
+  position: absolute;
+  right: 1.1rem;
+  bottom: -1.8rem;
+  width: 8rem;
+  height: 8rem;
+  border: 1px solid rgba(241, 211, 124, .16);
+  transform: rotate(45deg);
+}
+
 .about-showcase h2 {
   color: #fff6d9;
   font-size: clamp(1.35rem, 2.6vw, 2rem);
@@ -1882,6 +1949,173 @@ body.parent-nav-open .parent-drawer {
 .about-showcase p {
   color: var(--muted);
   line-height: 1.8;
+}
+
+.about-info-grid,
+.teacher-showcase-grid,
+.contact-book-grid,
+.teacher-admin-list {
+  display: grid;
+  gap: .8rem;
+}
+
+.about-info-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.about-info-card,
+.teacher-showcase-card,
+.teacher-admin-card,
+.contact-card {
+  border: 1px solid rgba(241, 211, 124, .18);
+  border-radius: .5rem;
+  background:
+    linear-gradient(135deg, rgba(198, 151, 53, .12), transparent 55%),
+    linear-gradient(180deg, rgba(255, 255, 255, .04), rgba(0, 0, 0, .08)),
+    #11161d;
+}
+
+.about-info-card {
+  display: grid;
+  gap: .5rem;
+  padding: 1rem;
+}
+
+.about-info-card strong {
+  color: var(--gold-2);
+  font-size: 1.05rem;
+}
+
+.about-info-card span {
+  color: var(--muted);
+  line-height: 1.7;
+  white-space: pre-wrap;
+}
+
+.teacher-showcase-grid {
+  grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
+}
+
+.teacher-showcase-card {
+  display: grid;
+  grid-template-columns: 8rem minmax(0, 1fr);
+  gap: 1rem;
+  padding: 1rem;
+  overflow: hidden;
+}
+
+.teacher-photo {
+  width: 8rem;
+  aspect-ratio: 3 / 4;
+  object-fit: cover;
+  border-radius: .45rem;
+  border: 1px solid rgba(241, 211, 124, .24);
+  background: rgba(255, 255, 255, .04);
+}
+
+.placeholder-photo,
+.teacher-admin-avatar {
+  display: grid;
+  place-items: center;
+  color: var(--gold-2);
+  font-size: 2rem;
+  font-weight: 900;
+}
+
+.teacher-copy {
+  display: grid;
+  align-content: start;
+  gap: .35rem;
+  min-width: 0;
+}
+
+.teacher-copy h3 {
+  margin: 0;
+  color: #fff8df;
+  font-size: 1.35rem;
+}
+
+.teacher-copy strong {
+  color: var(--gold-2);
+}
+
+.certificate-strip {
+  display: flex;
+  gap: .45rem;
+  flex-wrap: wrap;
+  margin-top: .25rem;
+}
+
+.certificate-strip img {
+  width: 4.8rem;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  border-radius: .32rem;
+  border: 1px solid rgba(241, 211, 124, .2);
+}
+
+.teacher-builder {
+  margin: 0;
+}
+
+.nested-form-grid {
+  margin-bottom: .8rem;
+}
+
+.teacher-admin-card {
+  display: grid;
+  grid-template-columns: 4rem minmax(0, 1fr) auto;
+  align-items: center;
+  gap: .8rem;
+  padding: .75rem;
+}
+
+.teacher-admin-card img,
+.teacher-admin-avatar {
+  width: 4rem;
+  height: 4rem;
+  object-fit: cover;
+  border-radius: .45rem;
+  border: 1px solid rgba(241, 211, 124, .2);
+}
+
+.teacher-admin-card span,
+.teacher-admin-card small {
+  display: block;
+  margin-top: .2rem;
+  color: var(--muted);
+}
+
+.contact-editor-panel {
+  border-color: rgba(241, 211, 124, .26);
+}
+
+.contact-book-grid {
+  grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr));
+}
+
+.contact-card {
+  padding: 1rem;
+  min-height: 9rem;
+}
+
+.contact-card strong {
+  color: var(--gold-2);
+  font-size: 1.08rem;
+}
+
+.parent-top-actions {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.parent-top-actions .logout-button {
+  width: auto;
+  margin-top: 0;
+  padding-inline: 1rem;
 }
 
 .about-photo-grid {
@@ -2405,6 +2639,9 @@ tbody tr:hover {
   .board-layout,
   .form-grid,
   .analysis-grid,
+  .about-info-grid,
+  .teacher-showcase-grid,
+  .contact-book-grid,
   .weekly-score-grid,
   .parent-main,
   .portal-grid,
@@ -2466,6 +2703,18 @@ tbody tr:hover {
 
   .score-card-rail {
     grid-auto-columns: minmax(12.5rem, 82vw);
+  }
+
+  .teacher-showcase-card,
+  .teacher-admin-card {
+    grid-template-columns: 1fr;
+  }
+
+  .teacher-photo,
+  .teacher-admin-card img,
+  .teacher-admin-avatar {
+    width: 100%;
+    max-width: 12rem;
   }
 }
 

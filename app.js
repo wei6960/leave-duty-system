@@ -42,6 +42,12 @@ let supabasePollTimer = null;
 let lastRemoteUpdatedAt = "";
 let parentStudentId = null;
 let parentActiveSection = "parentHomeSection";
+let parentBackStack = [];
+let teacherBackStack = [];
+let classOpsSection = "menu";
+let classOpsSelectedGrade = "國一";
+let contactBookSection = "menu";
+let aboutSection = "display";
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -215,7 +221,22 @@ function normalizeContactBooks(records) {
 }
 
 function normalizeAboutSettings(settings = {}) {
-  return { ...defaultAboutSettings(), ...settings, publicEnabled: settings.publicEnabled !== false };
+  return {
+    ...defaultAboutSettings(),
+    ...settings,
+    teachers: settings.teachers || "",
+    teacherCards: (settings.teacherCards || []).map((teacher) => ({
+      id: teacher.id || crypto.randomUUID(),
+      name: teacher.name || "",
+      role: teacher.role || "",
+      specialty: teacher.specialty || "",
+      experience: teacher.experience || "",
+      photo: teacher.photo || "",
+      certificates: teacher.certificates || [],
+      createdAt: teacher.createdAt || new Date().toISOString(),
+    })),
+    publicEnabled: settings.publicEnabled !== false,
+  };
 }
 
 function normalizeAcademicPeriods(records, currentSettings = defaultAcademicSettings()) {
@@ -1721,6 +1742,50 @@ function classOpsMeta() {
   };
 }
 
+function renderLayerVisibility() {
+  if ($("#classOpsMenu")) $("#classOpsMenu").hidden = classOpsSection !== "menu";
+  if ($("#classOpsGradeMenu")) $("#classOpsGradeMenu").hidden = classOpsSection !== "grade";
+  if ($("#classOpsReportPanel")) $("#classOpsReportPanel").hidden = classOpsSection !== "report";
+  if ($("#contactBookMenu")) $("#contactBookMenu").hidden = contactBookSection !== "menu";
+  if ($("#contactBookPanel")) $("#contactBookPanel").hidden = contactBookSection !== "book";
+  if ($("#aboutForm")) $("#aboutForm").hidden = aboutSection !== "settings";
+  if ($("#aboutDisplayPanel")) $("#aboutDisplayPanel").hidden = aboutSection !== "display";
+}
+
+function setClassOpsSection(section, options = {}) {
+  if (!["menu", "grade", "report"].includes(section)) return;
+  if (!options.skipHistory) pushTeacherBack();
+  classOpsSection = section;
+  renderAll();
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+function openClassOpsGrade(grade) {
+  if (!grades.includes(grade)) return;
+  pushTeacherBack();
+  classOpsSelectedGrade = grade;
+  classOpsSection = "report";
+  if ($("#classOpsGrade")) $("#classOpsGrade").value = grade;
+  renderAll();
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+function setContactBookSection(section) {
+  if (!["menu", "book"].includes(section)) return;
+  pushTeacherBack();
+  contactBookSection = section;
+  renderAll();
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+function setAboutSection(section) {
+  if (!["display", "settings"].includes(section)) return;
+  pushTeacherBack();
+  aboutSection = section;
+  renderAll();
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
 function classOpsWeeklyRows(meta, includeAllGrades = false) {
   return state.exams
     .filter((exam) => !exam.noExam)
@@ -1979,7 +2044,10 @@ function classOpsRadarSvg(stats) {
 
 function renderClassOps() {
   if (!$("#classOpsSummary")) return;
+  renderLayerVisibility();
+  if (classOpsSection !== "report") return;
   renderClassOpsFilters();
+  if (grades.includes(classOpsSelectedGrade) && $("#classOpsGrade")) $("#classOpsGrade").value = classOpsSelectedGrade;
   const meta = classOpsMeta();
   const rows = classOpsRows(meta);
   const stats = classOpsSubjectStats(meta);
@@ -3461,6 +3529,36 @@ function flashButton(button, label = "已完成") {
   }, 900);
 }
 
+function imageFileToDataUrl(file, maxWidth = 1200, quality = .82) {
+  return new Promise((resolve, reject) => {
+    if (!file) return resolve("");
+    const reader = new FileReader();
+    reader.onerror = reject;
+    reader.onload = () => {
+      const image = new Image();
+      image.onerror = reject;
+      image.onload = () => {
+        const scale = Math.min(1, maxWidth / image.width);
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.max(1, Math.round(image.width * scale));
+        canvas.height = Math.max(1, Math.round(image.height * scale));
+        const context = canvas.getContext("2d");
+        context.drawImage(image, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL("image/jpeg", quality));
+      };
+      image.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+async function imageFilesToDataUrls(fileList, maxWidth = 1200) {
+  const files = [...(fileList || [])].filter((file) => file.type.startsWith("image/"));
+  const urls = [];
+  for (const file of files) urls.push(await imageFileToDataUrl(file, maxWidth));
+  return urls.filter(Boolean);
+}
+
 function resetLeaveForm() {
   $("#leaveStudentPicker").value = "";
   $("#leaveStudent").value = "";
@@ -3495,9 +3593,45 @@ function fillStudentForm(student) {
   $("#cancelStudentEdit").hidden = false;
 }
 
+function currentTeacherView() {
+  const activePage = $(".page.active");
+  if (!activePage) return null;
+  return {
+    tab: activePage.id,
+    classOpsSection,
+    classOpsSelectedGrade,
+    contactBookSection,
+    aboutSection,
+  };
+}
+
+function restoreTeacherView(view) {
+  if (!view?.tab) return;
+  classOpsSection = view.classOpsSection || classOpsSection;
+  classOpsSelectedGrade = view.classOpsSelectedGrade || classOpsSelectedGrade;
+  contactBookSection = view.contactBookSection || contactBookSection;
+  aboutSection = view.aboutSection || aboutSection;
+  navigateToTab(view.tab, { skipHistory: true });
+}
+
+function pushTeacherBack(view = currentTeacherView()) {
+  if (view) teacherBackStack.push(view);
+}
+
+function goTeacherBack(fallback = "dashboard") {
+  const previous = teacherBackStack.pop();
+  if (previous) {
+    restoreTeacherView(previous);
+    return;
+  }
+  navigateToTab(fallback, { skipHistory: true });
+}
+
 function navigateToTab(tabId, options = {}) {
   if (!tabId || !$(`#${tabId}`)) return;
   if ($("#scores")?.classList.contains("active")) captureScoreDraft();
+  const previous = currentTeacherView();
+  if (!options.skipHistory && previous?.tab && previous.tab !== tabId) teacherBackStack.push(previous);
   $$(".tab-button").forEach((tab) => {
     const activeTop = tab.dataset.tab === tabId || tab.dataset.tab === parentTabs[tabId];
     tab.classList.toggle("active", activeTop);
@@ -3512,11 +3646,32 @@ function navigateToTab(tabId, options = {}) {
 function setupTabs() {
   $$(".tab-button").forEach((button) => {
     button.addEventListener("click", () => {
+      if (button.dataset.tab === "class-ops") classOpsSection = "menu";
+      if (button.dataset.tab === "contact-book") contactBookSection = "menu";
+      if (button.dataset.tab === "about-admin") aboutSection = "display";
       navigateToTab(button.dataset.tab);
     });
   });
-  $$("[data-back-tab], .portal-tile").forEach((button) => {
-    button.addEventListener("click", () => navigateToTab(button.dataset.backTab || button.dataset.tab));
+  $$(".back-button").forEach((button) => {
+    button.addEventListener("click", () => goTeacherBack(button.dataset.backTab || "dashboard"));
+  });
+  $$(".portal-tile[data-tab]").forEach((button) => {
+    button.addEventListener("click", () => {
+      if (button.dataset.tab === "events") contactBookSection = "menu";
+      navigateToTab(button.dataset.tab);
+    });
+  });
+  $$("[data-class-ops-section]").forEach((button) => {
+    button.addEventListener("click", () => setClassOpsSection(button.dataset.classOpsSection));
+  });
+  $$("[data-class-ops-grade]").forEach((button) => {
+    button.addEventListener("click", () => openClassOpsGrade(button.dataset.classOpsGrade));
+  });
+  $$("[data-contact-section]").forEach((button) => {
+    button.addEventListener("click", () => setContactBookSection(button.dataset.contactSection));
+  });
+  $$("[data-about-section]").forEach((button) => {
+    button.addEventListener("click", () => setAboutSection(button.dataset.aboutSection));
   });
   $("#mobileMenuButton")?.addEventListener("click", () => document.body.classList.toggle("nav-open"));
   $("#mobileScrim")?.addEventListener("click", () => document.body.classList.remove("nav-open"));
@@ -3581,7 +3736,13 @@ function setupForms() {
   };
 
   ["classOpsYear", "classOpsSemester", "classOpsGrade", "classOpsSubject", "classOpsWeekDate"].forEach((id) => {
-    onInputChange(id, renderClassOps);
+    onInputChange(id, () => {
+      if (id === "classOpsGrade" && grades.includes($("#classOpsGrade")?.value)) classOpsSelectedGrade = $("#classOpsGrade").value;
+      renderClassOps();
+    });
+  });
+  ["contactDate", "contactGrade"].forEach((id) => {
+    onInputChange(id, renderContactSubjectOptions);
   });
   $("#printClassOpsWeeklyReport")?.addEventListener("click", printClassOpsWeeklyReportPdf);
 
@@ -3717,8 +3878,42 @@ function setupForms() {
     flashButton(event.submitter, "已儲存");
   });
 
-  $("#aboutForm")?.addEventListener("submit", (event) => {
+  $("#addTeacherCard")?.addEventListener("click", async (event) => {
+    const name = $("#teacherName")?.value.trim();
+    const role = $("#teacherRole")?.value.trim();
+    const specialty = $("#teacherSpecialty")?.value.trim();
+    const experience = $("#teacherExperience")?.value.trim();
+    if (!name) return alert("請先輸入老師姓名");
+    const photo = await imageFileToDataUrl($("#teacherPhotoUpload")?.files?.[0], 900);
+    const certificates = await imageFilesToDataUrls($("#teacherCertUpload")?.files, 900);
+    state.about = normalizeAboutSettings(state.about || {});
+    state.about.teacherCards.push({
+      id: crypto.randomUUID(),
+      name,
+      role,
+      specialty,
+      experience,
+      photo,
+      certificates,
+      createdAt: new Date().toISOString(),
+    });
+    ["teacherName", "teacherRole", "teacherSpecialty", "teacherExperience", "teacherPhotoUpload", "teacherCertUpload"].forEach((id) => {
+      const field = $(`#${id}`);
+      if (field) field.value = "";
+    });
+    saveState();
+    renderAll();
+    flashButton(event.currentTarget, "已新增");
+  });
+
+  $("#aboutForm")?.addEventListener("submit", async (event) => {
     event.preventDefault();
+    const currentAbout = normalizeAboutSettings(state.about || {});
+    const uploadedEnvironment = await imageFilesToDataUrls($("#aboutEnvironmentUpload")?.files, 1200);
+    const environmentPhotos = [
+      $("#aboutEnvironmentPhotos").value.trim(),
+      ...uploadedEnvironment,
+    ].filter(Boolean).join("\n");
     state.about = normalizeAboutSettings({
       publicEnabled: $("#aboutPublicEnabled").checked,
       branch: $("#aboutBranch").value.trim(),
@@ -3730,10 +3925,12 @@ function setupForms() {
       intro: $("#aboutIntro").value.trim(),
       courses: $("#aboutCourses").value.trim(),
       teachers: $("#aboutTeachers").value.trim(),
+      teacherCards: currentAbout.teacherCards,
       planning: $("#aboutPlanning").value.trim(),
-      environmentPhotos: $("#aboutEnvironmentPhotos").value.trim(),
+      environmentPhotos,
       teacherPhotos: $("#aboutTeacherPhotos").value.trim(),
     });
+    if ($("#aboutEnvironmentUpload")) $("#aboutEnvironmentUpload").value = "";
     saveState();
     renderAll();
     flashButton(event.submitter, "已儲存");
@@ -3881,8 +4078,9 @@ function closeParentDrawer() {
   document.body.classList.remove("parent-nav-open");
 }
 
-function setParentSection(sectionId) {
+function setParentSection(sectionId, options = {}) {
   if (!sectionId || !$(`#${sectionId}`)) return;
+  if (!options.skipHistory && parentActiveSection && parentActiveSection !== sectionId) parentBackStack.push(parentActiveSection);
   parentActiveSection = sectionId;
   $$(".parent-page-section").forEach((section) => {
     section.classList.toggle("is-active", section.id === parentActiveSection);
@@ -3891,6 +4089,11 @@ function setParentSection(sectionId) {
     button.classList.toggle("is-active", button.dataset.parentSection === parentActiveSection);
   });
   window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+function goParentBack() {
+  const previous = parentBackStack.pop();
+  setParentSection(previous || "parentHomeSection", { skipHistory: true });
 }
 
 function setupParentDrawer() {
@@ -3907,6 +4110,7 @@ function setupParentDrawer() {
   $$(".parent-home-grid [data-parent-section]").forEach((button) => {
     button.addEventListener("click", () => setParentSection(button.dataset.parentSection));
   });
+  $("#parentBackButton")?.addEventListener("click", goParentBack);
 }
 
 function updateClock() {
@@ -4345,8 +4549,20 @@ function renderContactSubjectOptions() {
   const target = $("#contactSubject");
   if (!target) return;
   const previous = target.value;
-  target.innerHTML = courses.map((subject) => `<option value="${subject}">${subject}</option>`).join("");
-  target.value = previous && courses.includes(previous) ? previous : courses[0];
+  const date = $("#contactDate")?.value || todayISO();
+  const grade = $("#contactGrade")?.value || "全體";
+  const day = weekdayFromDate(date);
+  const visibleGrades = grade === "全體" ? grades : [grade];
+  const scheduled = new Set();
+  visibleGrades.forEach((itemGrade) => {
+    periods.forEach((period) => {
+      const subject = normalizeCourseName(state.schedule?.[itemGrade]?.[day]?.[period]);
+      if (courses.includes(subject)) scheduled.add(subject);
+    });
+  });
+  const subjects = scheduled.size ? [...scheduled] : courses;
+  target.innerHTML = subjects.map((subject) => `<option value="${subject}">${subject}</option>`).join("");
+  target.value = previous && subjects.includes(previous) ? previous : subjects[0];
 }
 
 function renderContactBookCard(record, withActions = false) {
@@ -4368,8 +4584,10 @@ function sortedContactBooks(records = state.contactBooks) {
 }
 
 function renderContactBooks() {
+  renderLayerVisibility();
   const target = $("#contactBookList");
   if (!target) return;
+  renderContactSubjectOptions();
   target.innerHTML = sortedContactBooks()
     .map((record) => renderContactBookCard(record, true))
     .join("") || `<div class="empty">尚無聯絡本紀錄。</div>`;
@@ -4382,20 +4600,38 @@ function aboutImageGrid(text) {
 }
 
 function aboutHtml(settings = state.about) {
+  settings = normalizeAboutSettings(settings || {});
   if (settings.publicEnabled === false) return `<div class="empty">關於我們更新中。</div>`;
+  const teacherCards = settings.teacherCards || [];
   return `
     <article class="about-showcase">
-      <p class="eyebrow">金牌躍騰教育集團 ${settings.branch || "平鎮分校"}</p>
-      <h2>${settings.slogan || defaultAboutSettings().slogan}</h2>
-      <p>${settings.intro || ""}</p>
-      <div class="analysis-grid">
-        <article class="analysis-card"><strong>課程介紹</strong><span>${settings.courses || "-"}</span></article>
-        <article class="analysis-card"><strong>師資陣容</strong><span>${settings.teachers || "-"}</span></article>
-        <article class="analysis-card"><strong>學生規劃</strong><span>${settings.planning || "-"}</span></article>
+      <section class="about-hero">
+        <div>
+          <p class="eyebrow">金牌躍騰教育集團 ${escapeHtml(settings.branch || "平鎮分校")}</p>
+          <h2>${escapeHtml(settings.slogan || defaultAboutSettings().slogan)}</h2>
+          <p>${escapeHtml(settings.intro || "")}</p>
+        </div>
+      </section>
+      <div class="about-info-grid">
+        <article class="about-info-card"><strong>課程介紹</strong><span>${escapeHtml(settings.courses || "-")}</span></article>
+        <article class="about-info-card"><strong>對學生的規劃</strong><span>${escapeHtml(settings.planning || "-")}</span></article>
+        <article class="about-info-card"><strong>師資特色</strong><span>${escapeHtml(settings.teachers || "可於設定層新增完整師資卡")}</span></article>
       </div>
+      ${teacherCards.length ? `<section class="teacher-showcase-grid">${teacherCards.map((teacher) => `
+        <article class="teacher-showcase-card">
+          ${teacher.photo ? `<img class="teacher-photo" src="${escapeHtml(teacher.photo)}" alt="${escapeHtml(teacher.name)}">` : `<div class="teacher-photo placeholder-photo">${escapeHtml((teacher.name || "師").slice(0, 1))}</div>`}
+          <div class="teacher-copy">
+            <p class="eyebrow">${escapeHtml(teacher.role || "專任教師")}</p>
+            <h3>${escapeHtml(teacher.name)}</h3>
+            <strong>${escapeHtml(teacher.specialty || "專長待補")}</strong>
+            <p>${escapeHtml(teacher.experience || "")}</p>
+            ${teacher.certificates?.length ? `<div class="certificate-strip">${teacher.certificates.slice(0, 4).map((url) => `<img src="${escapeHtml(url)}" alt="${escapeHtml(teacher.name)} 獎狀">`).join("")}</div>` : ""}
+          </div>
+        </article>
+      `).join("")}</section>` : ""}
       <div class="meta">
-        ${settings.address ? `<span class="badge">地址：${settings.address}</span>` : ""}
-        ${settings.phone ? `<span class="badge">電話：${settings.phone}</span>` : ""}
+        ${settings.address ? `<span class="badge">地址：${escapeHtml(settings.address)}</span>` : ""}
+        ${settings.phone ? `<span class="badge">電話：${escapeHtml(settings.phone)}</span>` : ""}
         ${settings.lineUrl ? `<a class="badge gold" href="${escapeHtml(settings.lineUrl)}" target="_blank" rel="noopener">官方 LINE</a>` : ""}
         ${settings.facebookUrl ? `<a class="badge gold" href="${escapeHtml(settings.facebookUrl)}" target="_blank" rel="noopener">官方 Facebook</a>` : ""}
       </div>
@@ -4408,6 +4644,7 @@ function aboutHtml(settings = state.about) {
 function renderAboutSettings() {
   const about = normalizeAboutSettings(state.about || {});
   state.about = about;
+  renderLayerVisibility();
   if (!$("#aboutForm")) return;
   $("#aboutPublicEnabled").checked = about.publicEnabled !== false;
   $("#aboutBranch").value = about.branch || "";
@@ -4422,6 +4659,20 @@ function renderAboutSettings() {
   $("#aboutPlanning").value = about.planning || "";
   $("#aboutEnvironmentPhotos").value = about.environmentPhotos || "";
   $("#aboutTeacherPhotos").value = about.teacherPhotos || "";
+  if ($("#teacherCardList")) {
+    $("#teacherCardList").innerHTML = about.teacherCards.map((teacher) => `
+      <article class="teacher-admin-card">
+        ${teacher.photo ? `<img src="${escapeHtml(teacher.photo)}" alt="${escapeHtml(teacher.name)}">` : `<div class="teacher-admin-avatar">${escapeHtml((teacher.name || "師").slice(0, 1))}</div>`}
+        <div>
+          <strong>${escapeHtml(teacher.name)}</strong>
+          <span>${escapeHtml(teacher.role || "未填職位")}｜${escapeHtml(teacher.specialty || "未填專長")}</span>
+          <small>${escapeHtml(teacher.experience || "")}</small>
+          ${teacher.certificates?.length ? `<small>獎狀照片 ${teacher.certificates.length} 張</small>` : ""}
+        </div>
+        <button class="ghost danger" type="button" data-delete-teacher="${teacher.id}">刪除</button>
+      </article>
+    `).join("") || `<div class="empty">尚未新增師資卡。</div>`;
+  }
   $("#aboutPreview").innerHTML = aboutHtml(about);
 }
 
@@ -4444,6 +4695,7 @@ function setupActions() {
     const editEventId = event.target.dataset.editEvent;
     const deleteEventId = event.target.dataset.deleteEvent;
     const deleteContactId = event.target.dataset.deleteContact;
+    const deleteTeacherId = event.target.dataset.deleteTeacher;
     const applyAcademicPeriod = event.target.dataset.applyAcademicPeriod;
     const editAcademicPeriod = event.target.dataset.editAcademicPeriod;
     const openClassOpsPeriod = event.target.dataset.openClassOpsPeriod;
@@ -4567,6 +4819,8 @@ function setupActions() {
     }
     if (openClassOpsPeriod) {
       applyAcademicPeriodKey(openClassOpsPeriod, true);
+      classOpsSection = "grade";
+      navigateToTab("class-ops");
     }
     if (editEventId) {
       const record = state.events.find((item) => item.id === editEventId);
@@ -4583,8 +4837,12 @@ function setupActions() {
     if (deleteContactId && confirm("確定刪除這筆聯絡本？")) {
       state.contactBooks = state.contactBooks.filter((item) => item.id !== deleteContactId);
     }
+    if (deleteTeacherId && confirm("確定刪除這張師資卡？")) {
+      state.about = normalizeAboutSettings(state.about || {});
+      state.about.teacherCards = state.about.teacherCards.filter((teacher) => teacher.id !== deleteTeacherId);
+    }
 
-    if (deleteStudentId || dismissLeaveId || deleteLeaveId || removeLateId || deleteLateId || deleteExamId || deleteEventId || deleteContactId) {
+    if (deleteStudentId || dismissLeaveId || deleteLeaveId || removeLateId || deleteLateId || deleteExamId || deleteEventId || deleteContactId || deleteTeacherId) {
       saveState();
       renderAll();
     }
@@ -4904,6 +5162,7 @@ function setupLogin() {
     }
     parentStudentId = student.id;
     parentActiveSection = "parentHomeSection";
+    parentBackStack = [];
     $("#parentLoginError").hidden = true;
     showParentShell();
     renderParentPortal();
@@ -4969,9 +5228,9 @@ function boot() {
   state.settings = normalizeAcademicSettings(state.settings);
   renderAcademicSettings();
   renderExamSubjectOptions();
-  renderContactSubjectOptions();
   $("#lateDate").value = todayISO();
   $("#contactDate").value = todayISO();
+  renderContactSubjectOptions();
   $("#eventStartDate").value = todayISO();
   $("#eventEndDate").value = todayISO();
   setupTabs();

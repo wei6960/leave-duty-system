@@ -77,7 +77,10 @@
         <p class="eyebrow">家長端網頁</p>
         <h1 id="parentStudentTitle">學生生涯檔案</h1>
       </div>
-      <button class="logout-button" id="parentLogout" type="button">離開家長端</button>
+      <div class="parent-top-actions">
+        <button class="ghost" id="parentBackButton" type="button">返回上一層</button>
+        <button class="logout-button" id="parentLogout" type="button">離開家長端</button>
+      </div>
     </header>
     <main class="parent-main">
       <section class="parent-home-section parent-page-section" id="parentHomeSection">
@@ -366,25 +369,9 @@
             <strong>段考成績</strong>
             <span>段考登記、排名、圖片 PDF Excel</span>
           </button>
-          <button class="portal-tile" type="button" data-tab="class-ops">
-            <strong>班級經營</strong>
-            <span>整班雷達、各科水平與弱點單元分析</span>
-          </button>
-          <button class="portal-tile" type="button" data-tab="career">
-            <strong>生涯檔案</strong>
-            <span>學生歷程、折線圖與家長報告</span>
-          </button>
           <button class="portal-tile" type="button" data-tab="schedule">
             <strong>課表設定</strong>
             <span>國一到國三上午、下午、晚上課程</span>
-          </button>
-          <button class="portal-tile" type="button" data-tab="events">
-            <strong>重大行事曆公告</strong>
-            <span>固定與臨時重大事件張貼</span>
-          </button>
-          <button class="portal-tile" type="button" data-tab="grade-promotion">
-            <strong>升級與校友</strong>
-            <span>學期結束後升年級，國三轉校友</span>
           </button>
         </div>
       </section>
@@ -428,87 +415,108 @@
           <button class="ghost back-button" type="button" data-back-tab="management">返回班務管理</button>
         </header>
 
-        <div class="portal-grid compact-portal-grid">
-          <button class="portal-tile" type="button" data-tab="career">
+        <div class="portal-grid compact-portal-grid layer-panel" id="classOpsMenu">
+          <button class="portal-tile feature-tile" type="button" data-tab="career">
             <strong>學生生涯檔案</strong>
             <span>學生歷程、折線圖與家長報告</span>
           </button>
-          <button class="portal-tile" type="button" data-tab="grade-promotion">
+          <button class="portal-tile feature-tile" type="button" data-tab="grade-promotion">
             <strong>升級與校友</strong>
             <span>學期結束後升年級，國三轉校友</span>
           </button>
+          <button class="portal-tile feature-tile" type="button" data-class-ops-section="grade">
+            <strong>班級經營</strong>
+            <span>先選國一、國二、國三，再進入整班雷達與弱點分析</span>
+          </button>
         </div>
 
-        <section class="panel class-ops-toolbar">
-          <label>學年
-            <select id="classOpsYear"></select>
-          </label>
-          <label>學期
-            <select id="classOpsSemester">
-              <option value="全部">全部學期</option>
-              <option value="上學期">上學期</option>
-              <option value="下學期">下學期</option>
-            </select>
-          </label>
-          <label>年級
-            <select id="classOpsGrade">
-              <option value="全部">全體</option>
-              <option value="國一">國一</option>
-              <option value="國二">國二</option>
-              <option value="國三">國三</option>
-            </select>
-          </label>
-          <label>科目
-            <select id="classOpsSubject"></select>
-          </label>
-          <label>週別日期
-            <input id="classOpsWeekDate" type="date">
-          </label>
-          <button class="ghost" id="printClassOpsWeeklyReport" type="button">列印每週成績單</button>
-        </section>
-
-        <div class="class-ops-summary" id="classOpsSummary"></div>
-
-        <section class="panel list-panel">
-          <div class="panel-title">
-            <h2>各年級各科人數</h2>
-            <span>依學生檔案補習科目統計</span>
-          </div>
-          <div id="classOpsEnrollment"></div>
-        </section>
-
-        <div class="class-ops-layout">
-          <section class="panel">
-            <div class="panel-title">
-              <h2>整班雷達分析</h2>
-              <span>各科平均</span>
-            </div>
-            <div id="classOpsRadar"></div>
-          </section>
-          <section class="panel">
-            <div class="panel-title">
-              <h2>班級水平</h2>
-              <span>和同期間全體年級比較</span>
-            </div>
-            <div id="classOpsLevel"></div>
-          </section>
+        <div class="portal-grid compact-portal-grid layer-panel" id="classOpsGradeMenu" hidden>
+          <button class="portal-tile grade-entry-tile" type="button" data-class-ops-grade="國一">
+            <strong>國一</strong>
+            <span>查看國一各科班級經營狀況</span>
+          </button>
+          <button class="portal-tile grade-entry-tile" type="button" data-class-ops-grade="國二">
+            <strong>國二</strong>
+            <span>查看國二各科班級經營狀況</span>
+          </button>
+          <button class="portal-tile grade-entry-tile" type="button" data-class-ops-grade="國三">
+            <strong>國三</strong>
+            <span>查看國三各科班級經營狀況</span>
+          </button>
         </div>
 
-        <section class="panel list-panel">
-          <div class="panel-title">
-            <h2>該班該科分析</h2>
-            <span>平均、及格率、波動與資料量</span>
-          </div>
-          <div id="classOpsSubjectAnalysis"></div>
-        </section>
+        <div id="classOpsReportPanel" hidden>
+          <section class="panel class-ops-toolbar">
+            <label>學年
+              <select id="classOpsYear"></select>
+            </label>
+            <label>學期
+              <select id="classOpsSemester">
+                <option value="全部">全部學期</option>
+                <option value="上學期">上學期</option>
+                <option value="下學期">下學期</option>
+              </select>
+            </label>
+            <label>年級
+              <select id="classOpsGrade">
+                <option value="全部">全體</option>
+                <option value="國一">國一</option>
+                <option value="國二">國二</option>
+                <option value="國三">國三</option>
+              </select>
+            </label>
+            <label>科目
+              <select id="classOpsSubject"></select>
+            </label>
+            <label>週別日期
+              <input id="classOpsWeekDate" type="date">
+            </label>
+            <button class="ghost" id="printClassOpsWeeklyReport" type="button">列印每週成績單</button>
+          </section>
 
-        <section class="panel list-panel">
-          <div class="panel-title">
-            <h2>該班弱點單元</h2>
-            <span>由週考範圍與低分次數推估</span>
+          <div class="class-ops-summary" id="classOpsSummary"></div>
+
+          <section class="panel list-panel">
+            <div class="panel-title">
+              <h2>各年級各科人數</h2>
+              <span>依學生檔案補習科目統計</span>
+            </div>
+            <div id="classOpsEnrollment"></div>
+          </section>
+
+          <div class="class-ops-layout">
+            <section class="panel">
+              <div class="panel-title">
+                <h2>整班雷達分析</h2>
+                <span>各科平均</span>
+              </div>
+              <div id="classOpsRadar"></div>
+            </section>
+            <section class="panel">
+              <div class="panel-title">
+                <h2>班級水平</h2>
+                <span>和同期間全體年級比較</span>
+              </div>
+              <div id="classOpsLevel"></div>
+            </section>
           </div>
-          <div id="classOpsWeakUnits"></div>
-        </section>
+
+          <section class="panel list-panel">
+            <div class="panel-title">
+              <h2>該班該科分析</h2>
+              <span>平均、及格率、波動與資料量</span>
+            </div>
+            <div id="classOpsSubjectAnalysis"></div>
+          </section>
+
+          <section class="panel list-panel">
+            <div class="panel-title">
+              <h2>該班弱點單元</h2>
+              <span>由週考範圍與低分次數推估</span>
+            </div>
+            <div id="classOpsWeakUnits"></div>
+          </section>
+        </div>
       </section>
 
       <section class="page" id="contact-book">
@@ -518,45 +526,51 @@
             <h1>每日聯絡本與重大公告</h1>
           </div>
         </header>
-        <div class="portal-grid">
-          <button class="portal-tile" type="button" data-tab="events">
-            <strong>重大公告</strong>
+        <div class="portal-grid compact-portal-grid layer-panel" id="contactBookMenu">
+          <button class="portal-tile feature-tile" type="button" data-contact-section="book">
+            <strong>聯絡本</strong>
+            <span>依日期、年級、課表科目建立每日聯絡本</span>
+          </button>
+          <button class="portal-tile feature-tile" type="button" data-tab="events">
+            <strong>重大公告通知</strong>
             <span>設定公告日期區間與家長端顯示</span>
           </button>
         </div>
-        <form class="form-grid panel" id="contactBookForm">
-          <label>日期
-            <input id="contactDate" type="date" required>
-          </label>
-          <label>年級
-            <select id="contactGrade">
-              <option value="全體">全體</option>
-              <option value="國一">國一</option>
-              <option value="國二">國二</option>
-              <option value="國三">國三</option>
-            </select>
-          </label>
-          <label>科目
-            <select id="contactSubject"></select>
-          </label>
-          <label>今天考試
-            <input id="contactTodayTest" placeholder="例：自然 1-2 小考">
-          </label>
-          <label>下次考試
-            <input id="contactNextTest" placeholder="例：08/20 英文單字">
-          </label>
-          <label class="wide-field">作業
-            <textarea id="contactHomework" rows="3" placeholder="輸入作業內容"></textarea>
-          </label>
-          <button class="primary" type="submit">儲存聯絡本</button>
-        </form>
-        <section class="panel list-panel">
-          <div class="panel-title">
-            <h2>歷史聯絡本</h2>
-            <span>可查看與刪除之前紀錄</span>
-          </div>
-          <div id="contactBookList" class="record-list"></div>
-        </section>
+        <div id="contactBookPanel" hidden>
+          <form class="form-grid panel contact-editor-panel" id="contactBookForm">
+            <label>日期
+              <input id="contactDate" type="date" required>
+            </label>
+            <label>年級
+              <select id="contactGrade">
+                <option value="全體">全體</option>
+                <option value="國一">國一</option>
+                <option value="國二">國二</option>
+                <option value="國三">國三</option>
+              </select>
+            </label>
+            <label>科目
+              <select id="contactSubject"></select>
+            </label>
+            <label>今天考試
+              <input id="contactTodayTest" placeholder="例：自然 1-2 小考">
+            </label>
+            <label>下次考試
+              <input id="contactNextTest" placeholder="例：08/20 英文單字">
+            </label>
+            <label class="wide-field">作業
+              <textarea id="contactHomework" rows="3" placeholder="輸入作業內容"></textarea>
+            </label>
+            <button class="primary" type="submit">儲存聯絡本</button>
+          </form>
+          <section class="panel list-panel">
+            <div class="panel-title">
+              <h2>歷史聯絡本</h2>
+              <span>可查看與刪除之前紀錄</span>
+            </div>
+            <div id="contactBookList" class="record-list contact-book-grid"></div>
+          </section>
+        </div>
       </section>
 
       <section class="page" id="about-admin">
@@ -566,7 +580,17 @@
             <h1>家長端品牌介紹設定</h1>
           </div>
         </header>
-        <form class="form-grid panel" id="aboutForm">
+        <div class="portal-grid compact-portal-grid layer-panel" id="aboutModeMenu">
+          <button class="portal-tile feature-tile" type="button" data-about-section="display">
+            <strong>顯示層</strong>
+            <span>預覽家長端看到的專業品牌介紹</span>
+          </button>
+          <button class="portal-tile feature-tile" type="button" data-about-section="settings">
+            <strong>設定層</strong>
+            <span>設定師資、照片、課程介紹與對外連結</span>
+          </button>
+        </div>
+        <form class="form-grid panel about-settings-panel" id="aboutForm" hidden>
           <label class="check-pill"><input id="aboutPublicEnabled" type="checkbox">家長端顯示關於我們</label>
           <label>分校
             <input id="aboutBranch" placeholder="例：平鎮分校">
@@ -595,18 +619,49 @@
           <label class="wide-field">師資陣容與經歷
             <textarea id="aboutTeachers" rows="3" placeholder="可貼老師介紹、形象照或獎狀連結"></textarea>
           </label>
+          <section class="panel wide-field teacher-builder">
+            <div class="panel-title">
+              <h2>師資大字卡</h2>
+              <span>照片、職位、專長、經歷與獎狀</span>
+            </div>
+            <div class="form-grid nested-form-grid">
+              <label>老師姓名
+                <input id="teacherName" placeholder="例：王老師">
+              </label>
+              <label>職位
+                <input id="teacherRole" placeholder="例：數學主任">
+              </label>
+              <label class="wide-field">專長
+                <input id="teacherSpecialty" placeholder="例：國中數學、會考衝刺、落點診斷">
+              </label>
+              <label class="wide-field">經歷
+                <textarea id="teacherExperience" rows="3" placeholder="輸入老師經歷與教學特色"></textarea>
+              </label>
+              <label>老師形象照
+                <input id="teacherPhotoUpload" type="file" accept="image/*">
+              </label>
+              <label>獎狀照片
+                <input id="teacherCertUpload" type="file" accept="image/*" multiple>
+              </label>
+              <button class="primary" id="addTeacherCard" type="button">新增師資卡</button>
+            </div>
+            <div id="teacherCardList" class="teacher-admin-list"></div>
+          </section>
           <label class="wide-field">對學生的規劃
             <textarea id="aboutPlanning" rows="3"></textarea>
           </label>
           <label class="wide-field">環境照片連結
             <textarea id="aboutEnvironmentPhotos" rows="2" placeholder="每行一個圖片連結"></textarea>
           </label>
+          <label class="wide-field">上傳環境照片
+            <input id="aboutEnvironmentUpload" type="file" accept="image/*" multiple>
+          </label>
           <label class="wide-field">師資/獎狀照片連結
             <textarea id="aboutTeacherPhotos" rows="2" placeholder="每行一個圖片連結"></textarea>
           </label>
           <button class="primary" type="submit">儲存關於我們</button>
         </form>
-        <section class="panel list-panel">
+        <section class="panel list-panel" id="aboutDisplayPanel">
           <div class="panel-title">
             <h2>家長端顯示預覽</h2>
             <span>依設定同步呈現</span>
