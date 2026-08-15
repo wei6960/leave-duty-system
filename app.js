@@ -1812,6 +1812,24 @@ function renderReportRangeOptions() {
     setSelectOptions($(`#${prefix}ReportSemester`), semesters.length ? semesters : ["上學期", "下學期"], active.semester);
     setSelectOptions($(`#${prefix}TermAnalysisSemester`), termSemesters.length ? termSemesters : ["上學期", "下學期"], active.semester);
   });
+  renderReportRangeFields();
+}
+
+function renderReportRangeFields() {
+  ["career", "parent"].forEach((prefix) => {
+    const mode = $(`#${prefix}ReportRange`)?.value || "all";
+    const visible = {
+      year: mode === "year" || mode === "semester" || mode === "term-stage",
+      semester: mode === "semester" || mode === "term-stage",
+      stage: mode === "term-stage",
+      start: mode === "date-range",
+      end: mode === "date-range",
+    };
+    Object.entries(visible).forEach(([field, show]) => {
+      const target = document.querySelector(`[data-report-field="${prefix}:${field}"]`);
+      if (target) target.hidden = !show;
+    });
+  });
 }
 
 function termWeightKey(meta) {
@@ -2708,7 +2726,7 @@ function careerSubjectsForStudent(student) {
 function activeReportPeriod() {
   const prefix = parentMode ? "parent" : "career";
   const value = $(`#${prefix}ReportRange`)?.value || "current";
-  if (value === "all" || value === "academic-year" || value === "term-stage") return null;
+  if (value !== "current") return null;
   const settings = normalizeAcademicSettings(state.settings || defaultAcademicSettings());
   return { academicYear: settings.academicYear, semester: settings.semester };
 }
@@ -2720,14 +2738,24 @@ function activeReportConfig() {
   const year = $(`#${prefix}ReportYear`)?.value || settings.academicYear;
   const semester = $(`#${prefix}ReportSemester`)?.value || settings.semester;
   const stage = $(`#${prefix}ReportStage`)?.value || "一段";
-  return { mode, year, semester, stage };
+  const startDate = $(`#${prefix}ReportStartDate`)?.value || "";
+  const endDate = $(`#${prefix}ReportEndDate`)?.value || "";
+  return { mode, year, semester, stage, startDate, endDate };
 }
 
 function reportExamRows(student) {
   const config = activeReportConfig();
-  let rows = studentExamRows(student, config.mode === "current" ? activeReportPeriod() : null);
-  if (config.mode === "academic-year") {
+  let rows = studentExamRows(student, null);
+  if (config.mode === "date-range") {
+    rows = rows
+      .filter((row) => !config.startDate || row.exam.date >= config.startDate)
+      .filter((row) => !config.endDate || row.exam.date <= config.endDate);
+  }
+  if (config.mode === "year") {
     rows = rows.filter((row) => row.exam.academicYear === config.year);
+  }
+  if (config.mode === "semester") {
+    rows = rows.filter((row) => row.exam.academicYear === config.year && row.exam.semester === config.semester);
   }
   if (config.mode === "term-stage") {
     const range = termPeriodRange({ year: config.year, semester: config.semester, grade: "全體", stage: config.stage });
@@ -4710,7 +4738,7 @@ function setupForms() {
     }
   });
 
-  ["studentFilter", "studentSearch", "lateGrade", "historyType", "historySearch", "scheduleGrade", "examGrade", "examSubject", "examPaperCount", "examNoTest", "scoreHistoryYear", "scoreHistorySemester", "scoreHistoryGrade", "careerQueryDate", "careerExamYear", "careerExamSemester", "careerTermYear", "careerTermAnalysisYear", "careerTermAnalysisSemester", "careerTermAnalysisStage", "careerReportRange", "careerReportYear", "careerReportSemester", "careerReportStage", "careerReportDetailRange", "termYear", "termSemester", "termGrade", "termStage", "termPeriodYear", "termPeriodSemester"].forEach((id) => {
+  ["studentFilter", "studentSearch", "lateGrade", "historyType", "historySearch", "scheduleGrade", "examGrade", "examSubject", "examPaperCount", "examNoTest", "scoreHistoryYear", "scoreHistorySemester", "scoreHistoryGrade", "careerQueryDate", "careerExamYear", "careerExamSemester", "careerTermYear", "careerTermAnalysisYear", "careerTermAnalysisSemester", "careerTermAnalysisStage", "careerReportRange", "careerReportYear", "careerReportSemester", "careerReportStage", "careerReportStartDate", "careerReportEndDate", "careerReportDetailRange", "termYear", "termSemester", "termGrade", "termStage", "termPeriodYear", "termPeriodSemester"].forEach((id) => {
     onInputChange(id, () => {
       if (id.startsWith("scoreHistory")) examHistoryPage = 1;
       renderAll();
@@ -4730,7 +4758,7 @@ function setupForms() {
     parentCareerSubject = subject;
     if (parentStudentId) renderParentPortal();
   });
-  ["parentScoreDate", "parentExamYear", "parentExamSemester", "parentTermYear", "parentTermAnalysisYear", "parentTermAnalysisSemester", "parentTermAnalysisStage", "parentReportRange", "parentReportYear", "parentReportSemester", "parentReportStage", "parentReportDetailRange"].forEach((id) => {
+  ["parentScoreDate", "parentExamYear", "parentExamSemester", "parentTermYear", "parentTermAnalysisYear", "parentTermAnalysisSemester", "parentTermAnalysisStage", "parentReportRange", "parentReportYear", "parentReportSemester", "parentReportStage", "parentReportStartDate", "parentReportEndDate", "parentReportDetailRange"].forEach((id) => {
     onInputChange(id, () => {
       if (parentStudentId) renderParentPortal();
     });

@@ -231,27 +231,34 @@
           <div class="toolbar compact-toolbar">
             <label>報告區間
               <select id="parentReportRange">
-                <option value="current">目前學期</option>
-                <option value="term-stage">指定段考區間</option>
-                <option value="academic-year">指定學年</option>
-                <option value="all">歷年全部</option>
+                <option value="all">全部</option>
+                <option value="date-range">日期區間</option>
+                <option value="year">歷年</option>
+                <option value="semester">上下學期</option>
+                <option value="term-stage">段考</option>
               </select>
             </label>
-            <label>學年
+            <label data-report-field="parent:year">學年
               <select id="parentReportYear"></select>
             </label>
-            <label>學期
+            <label data-report-field="parent:semester">學期
               <select id="parentReportSemester">
                 <option value="上學期">上學期</option>
                 <option value="下學期">下學期</option>
               </select>
             </label>
-            <label>段考
+            <label data-report-field="parent:stage">段考
               <select id="parentReportStage">
                 <option value="一段">一段</option>
                 <option value="二段">二段</option>
                 <option value="三段">三段</option>
               </select>
+            </label>
+            <label data-report-field="parent:start">開始日期
+              <input id="parentReportStartDate" type="date">
+            </label>
+            <label data-report-field="parent:end">結束日期
+              <input id="parentReportEndDate" type="date">
             </label>
             <label>成績明細
               <select id="parentReportDetailRange">
@@ -1137,27 +1144,34 @@
             <div class="toolbar compact-toolbar">
               <label>報告區間
                 <select id="careerReportRange">
-                  <option value="current">目前學期</option>
-                  <option value="term-stage">指定段考區間</option>
-                  <option value="academic-year">指定學年</option>
-                  <option value="all">歷年全部</option>
+                  <option value="all">全部</option>
+                  <option value="date-range">日期區間</option>
+                  <option value="year">歷年</option>
+                  <option value="semester">上下學期</option>
+                  <option value="term-stage">段考</option>
                 </select>
               </label>
-              <label>學年
+              <label data-report-field="career:year">學年
                 <select id="careerReportYear"></select>
               </label>
-              <label>學期
+              <label data-report-field="career:semester">學期
                 <select id="careerReportSemester">
                   <option value="上學期">上學期</option>
                   <option value="下學期">下學期</option>
                 </select>
               </label>
-              <label>段考
+              <label data-report-field="career:stage">段考
                 <select id="careerReportStage">
                   <option value="一段">一段</option>
                   <option value="二段">二段</option>
                   <option value="三段">三段</option>
                 </select>
+              </label>
+              <label data-report-field="career:start">開始日期
+                <input id="careerReportStartDate" type="date">
+              </label>
+              <label data-report-field="career:end">結束日期
+                <input id="careerReportEndDate" type="date">
               </label>
               <label>成績明細
                 <select id="careerReportDetailRange">
