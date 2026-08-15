@@ -3538,6 +3538,15 @@ function renderStudentReportHtml(student, subjectOverride = null, options = {}) 
     .class-bar-row b { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #159947, #b9872f); }
     .student-stat-grid, .weak-topic-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 10px; }
     .student-stat-grid span, .weak-topic-card { padding: 8px; border: 1px solid #dfcfaa; border-radius: 7px; background: #fff9ea; }
+    .weak-topic-card strong, .weak-topic-card span, .weak-topic-card small { display: block; margin-bottom: 4px; }
+    .segment-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+    .segment-card { padding: 10px; border: 1px solid #dfcfaa; border-radius: 8px; background: #fffdf7; break-inside: avoid; }
+    .segment-card p { margin: 6px 0; line-height: 1.55; }
+    .segment-card ul { margin: 6px 0 0; padding-left: 16px; }
+    .segment-card li { margin-bottom: 5px; }
+    .segment-card li span { display: block; font-size: 11px; color: #755927; }
+    .subject-bar { height: 7px; border-radius: 99px; background: #efe4c5; overflow: hidden; margin-top: 8px; }
+    .subject-bar i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #159947, #b9872f); }
     .student-weak-panel { margin: 12px 0; padding: 12px; border: 1px solid #dfcfaa; border-radius: 8px; background: #fffdf7; break-inside: avoid; }
     .student-weak-table table { font-size: 11px; }
     .ai-analysis-panel { display: none; }
@@ -3630,42 +3639,77 @@ function printClassReportPdf() {
 
 function printClassOpsWeeklyReportPdf() {
   const meta = classOpsMeta();
-  const queryDate = $("#classOpsWeekDate")?.value || todayISO();
-  const rows = classOpsWeeklyReportRows(meta, queryDate);
-  const title = `${meta.grade} 每週成績單`;
-  const reportTitle = `${branchReportTitle().replace("班級成績單", "").trim()} ${meta.grade} 每週成績單`.trim();
+  const rows = classOpsRows(meta);
+  const stats = classOpsSubjectStats(meta);
+  const summary = summarizeScores(rows);
+  const weakUnits = classOpsWeakUnits(meta);
+  const weakHistory = classOpsWeakHistory(meta);
+  const best = stats.filter((item) => item.count).sort((a, b) => b.average - a.average)[0];
+  const weakest = stats.filter((item) => item.count).sort((a, b) => a.average - b.average)[0];
+  const latestPr = classOpsLatestPrSummary(meta, rows);
+  const title = `${meta.grade} 班級經營分析報告`;
+  const reportTitle = `${branchReportTitle().replace("班級成績單", "").trim()} ${meta.grade} 班級經營分析報告`.trim();
   const subjectLabel = meta.subject === "全部" ? "全部科目" : meta.subject;
   const semesterLabel = meta.semester === "全部" ? "全部學期" : meta.semester;
-  const rowsPerPage = 22;
-  const pages = rows.length ? chunkArray(rows, rowsPerPage) : [[]];
-  const tableHead = `<thead><tr><th>日期</th><th>班級</th><th class="left">姓名</th><th>科目</th><th class="left">重點 / 單元</th><th>各卷</th><th>平均</th></tr></thead>`;
-  const rowHtml = (row) => `<tr>
-    <td>${escapeHtml(dateLabel(row.date))}</td>
-    <td>${escapeHtml(row.grade)}</td>
-    <td class="left">${escapeHtml(row.name)}</td>
-    <td>${escapeHtml(row.subject)}</td>
-    <td class="left">${escapeHtml(row.scope)}</td>
-    <td>${escapeHtml(row.papers)}</td>
-    <td class="${scoreClass(row.average)}">${scoreDisplay(row.average)}</td>
-  </tr>`;
-  const body = pages.map((pageRows, index) => `
-    <section class="pdf-page">
-      <header class="doc-head">
-        <div class="brand"><img src="assets/logo.png" alt=""><div><h1>${escapeHtml(reportTitle)}</h1><div>${escapeHtml(weekRangeLabel(queryDate))}</div></div></div>
-        <div>列印日期：${escapeHtml(new Date().toLocaleDateString("zh-TW"))}</div>
-      </header>
-      <div class="meta">
-        <span class="pill">${escapeHtml(meta.year)} ${escapeHtml(semesterLabel)}</span>
-        <span class="pill">${escapeHtml(subjectLabel)}</span>
-        <span class="pill">第 ${index + 1} / ${pages.length} 頁</span>
+  const statRows = stats.filter((item) => item.count);
+  const weakUnitRows = weakUnits.slice(0, 10);
+  const body = `
+    <header class="doc-head">
+      <div class="brand"><img src="assets/logo.png" alt=""><div><h1>${escapeHtml(reportTitle)}</h1><div>${escapeHtml(meta.year)} ${escapeHtml(semesterLabel)}｜${escapeHtml(subjectLabel)}</div></div></div>
+      <div>列印日期：${escapeHtml(new Date().toLocaleDateString("zh-TW"))}</div>
+    </header>
+    <div class="meta">
+      <span class="pill">${escapeHtml(meta.year)} ${escapeHtml(semesterLabel)}</span>
+      <span class="pill">${escapeHtml(meta.grade)}</span>
+      <span class="pill">${escapeHtml(subjectLabel)}</span>
+      <span class="pill">資料 ${rows.length} 筆</span>
+    </div>
+    <section class="grid">
+      <article class="card"><strong>班級平均</strong><span class="level">${scoreDisplay(summary.average)}</span></article>
+      <article class="card"><strong>及格率</strong><span class="level">${scoreDisplay(summary.passRate)}%</span></article>
+      <article class="card"><strong>最新年級 PR</strong><span class="level">${escapeHtml(latestPr.label)}</span><p>${escapeHtml(latestPr.detail)}</p></article>
+      <article class="card"><strong>優先補強</strong><span class="level">${escapeHtml(weakest?.subject || "-")}</span><p>${best ? `優勢科目：${escapeHtml(best.subject)}` : "尚無足夠科目資料"}</p></article>
+    </section>
+    <section class="report-section">
+      <h2 class="section-title">圖表分析</h2>
+      <div class="student-report-visuals">
+        <article class="analysis-card">
+          <div class="analysis-card-head"><strong>整班雷達</strong><b class="level-badge">各科平均</b></div>
+          ${classOpsRadarSvg(stats)}
+        </article>
+        <article class="analysis-card">
+          <div class="analysis-card-head"><strong>班級平均折線</strong><b class="level-badge">趨勢</b></div>
+          ${classOpsTrendSvg(rows)}
+        </article>
       </div>
-      <table>
-        ${tableHead}
-        <tbody>${pageRows.map(rowHtml).join("") || `<tr><td colspan="7">本週尚無符合條件的成績</td></tr>`}</tbody>
+      <article class="analysis-card">
+        <div class="analysis-card-head"><strong>各科平均長條</strong><b class="level-badge">統計</b></div>
+        ${classOpsBarSvg(stats)}
+      </article>
+    </section>
+    <section class="report-section">
+      <h2 class="section-title">各科狀況</h2>
+      <table class="report-table">
+        <thead><tr><th>科目</th><th>平均</th><th>及格率</th><th>低於 70</th><th>最高</th><th>最低</th><th>資料量</th></tr></thead>
+        <tbody>${statRows.map((item) => `<tr><td>${escapeHtml(item.subject)}</td><td class="${scoreClass(item.average)}">${scoreDisplay(item.average)}</td><td>${scoreDisplay(item.passRate)}%</td><td>${scoreDisplay(item.lowRate)}%</td><td>${scoreDisplay(item.high)}</td><td>${scoreDisplay(item.low)}</td><td>${item.count}</td></tr>`).join("") || `<tr><td colspan="7">目前沒有符合條件的班級成績。</td></tr>`}</tbody>
       </table>
     </section>
-  `).join("");
-  pdfDocument(title, body, "landscape");
+    <section class="report-section">
+      <h2 class="section-title">前中後段生與協助方向</h2>
+      ${classOpsSegmentReport(meta)}
+    </section>
+    <section class="report-section">
+      <h2 class="section-title">弱點科目與弱點單元</h2>
+      <div class="weak-topic-grid">
+        ${weakHistory.map((topic) => `<article class="weak-topic-card"><strong>${escapeHtml(topic.subject)}｜${escapeHtml(topic.topic)}</strong><span>歷史平均 ${scoreDisplay(topic.average)}｜低分 ${topic.lowCount} / ${topic.count}</span><small>${topic.examples.map(escapeHtml).join("、")}</small></article>`).join("") || `<article class="weak-topic-card"><strong>目前沒有明顯弱點單元</strong><span>週考範圍累積後會自動整理。</span></article>`}
+      </div>
+      <table class="report-table">
+        <thead><tr><th>科目</th><th class="left">弱點單元</th><th>平均</th><th>低分次數</th><th>最近測驗</th></tr></thead>
+        <tbody>${weakUnitRows.map((unit) => `<tr><td>${escapeHtml(unit.subject)}</td><td class="left">${escapeHtml(unit.scope)}</td><td class="${scoreClass(unit.average)}">${scoreDisplay(unit.average)}</td><td>${unit.lowCount} / ${unit.count}</td><td>${unit.latestDate ? dateLabel(unit.latestDate) : "-"}</td></tr>`).join("") || `<tr><td colspan="5">目前沒有明顯弱點單元。</td></tr>`}</tbody>
+      </table>
+    </section>
+  `;
+  pdfDocument(title, body, "portrait");
 }
 
 function classReportFileName(exam, ext) {
