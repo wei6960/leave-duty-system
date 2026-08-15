@@ -2620,6 +2620,22 @@ function activeReportPeriod() {
   return { academicYear: settings.academicYear, semester: settings.semester };
 }
 
+function activeReportDetailRange() {
+  return $("#careerReportDetailRange")?.value || $("#parentReportDetailRange")?.value || "period";
+}
+
+function reportDetailRows(student) {
+  const mode = activeReportDetailRange();
+  if (mode === "none") return [];
+  let rows = studentExamRows(student, mode === "all" ? null : activeReportPeriod());
+  if (mode === "30" || mode === "90") {
+    const days = Number(mode);
+    const since = addDays(todayISO(), -days);
+    rows = studentExamRows(student, null).filter((row) => row.exam.date >= since);
+  }
+  return rows;
+}
+
 function selectedCareerSubject(student) {
   const subjects = careerSubjectsForStudent(student);
   if (careerSubject !== "全部" && subjects.includes(careerSubject)) return careerSubject;
@@ -3213,7 +3229,6 @@ function renderStudentReportHtml(student, subjectOverride = null, options = {}) 
       }).join("")}
       ${!analyses.length ? `<div class="empty">尚無可分析的成績紀錄。</div>` : ""}
     </div>
-    <p class="report-copy">系統會依週考、段考、PR、排名、班平均、雷達圖、折線圖、長條圖與弱點單元整理學習狀況；若已設定 Gemini API，AI 會依真實資料補上更完整的文字建議。</p>
     ${options.hideAi ? "" : `<section class="ai-analysis-panel compact-ai-panel" data-ai-mode="${aiMode}" data-ai-student-panel="${student.id}">
       <div class="panel-title">
         <h2>${options.autoAi ? `金牌躍騰平鎮分校 學生：${escapeHtml(student.name)} 專屬報告` : "AI 學習分析"}</h2>
@@ -3237,7 +3252,7 @@ function renderStudentReportHtml(student, subjectOverride = null, options = {}) 
   <style>
     @page { size: A4 ${layout}; margin: 12mm; }
     * { box-sizing: border-box; }
-    body { margin: 0; color: #161616; background: #fff; font-family: "Microsoft JhengHei", "Noto Sans TC", Arial, sans-serif; }
+    body { margin: 0; color: #161616; background: #f3ead6; font-family: "Microsoft JhengHei", "Noto Sans TC", Arial, sans-serif; }
     .sheet { width: 100%; }
     .doc-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-bottom: 14px; border-bottom: 3px solid #b9872f; }
     .brand { display: flex; align-items: center; gap: 12px; }
@@ -3261,7 +3276,7 @@ function renderStudentReportHtml(student, subjectOverride = null, options = {}) 
     .level { display: inline-block; min-width: 46px; padding: 3px 8px; border-radius: 999px; color: #161616; background: #f3c75f; font-weight: 900; text-align: center; }
     .pdf-page { break-after: page; page-break-after: always; }
     .pdf-page:last-child { break-after: auto; page-break-after: auto; }
-    .student-report { color: #1f252d; }
+    .student-report { color: #1f252d; padding: 12px; border-radius: 14px; background: linear-gradient(145deg, rgba(255,255,255,.92), rgba(255,249,234,.96)); }
     .student-hero { display: grid; grid-template-columns: 1fr auto; gap: 18px; padding: 22px; border-radius: 10px; color: #fff7df; background: linear-gradient(135deg, #11151a, #2a3039 62%, #9a7330); }
     .student-hero h1 { font-size: 28px; margin-bottom: 8px; }
     .student-hero .subtitle { color: #f7df9b; font-size: 15px; }
@@ -3307,11 +3322,16 @@ function renderStudentReportHtml(student, subjectOverride = null, options = {}) 
     .student-weak-panel { margin: 12px 0; padding: 12px; border: 1px solid #dfcfaa; border-radius: 8px; background: #fffdf7; break-inside: avoid; }
     .student-weak-table table { font-size: 11px; }
     .ai-analysis-panel { display: none; }
-    .report-cover { min-height: 252mm; display: grid; align-content: center; justify-items: center; gap: 20px; text-align: center; color: #fff7df; background: linear-gradient(135deg, #090d12, #202632 58%, #9a7330); border-radius: 14px; padding: 28mm 18mm; page-break-after: always; break-after: page; position: relative; overflow: hidden; }
-    .report-cover::before { content: ""; position: absolute; inset: 18px; border: 1px solid rgba(247, 223, 155, .38); border-radius: 12px; }
-    .report-cover img { width: 118px; height: 118px; border-radius: 50%; object-fit: cover; box-shadow: 0 0 0 5px rgba(247, 223, 155, .18); }
-    .report-cover h1 { font-size: 34px; color: #f7df9b; }
-    .report-cover h2 { margin: 0; font-size: 24px; color: #fff7df; }
+    .report-cover { min-height: 252mm; display: grid; align-content: center; justify-items: center; gap: 22px; text-align: center; color: #fff7df; background:
+      linear-gradient(135deg, rgba(247, 223, 155, .14) 0 1px, transparent 1px 24px),
+      linear-gradient(28deg, transparent 0 60%, rgba(185, 135, 47, .22) 60% 60.5%, transparent 60.5%),
+      linear-gradient(135deg, #080c11, #202632 56%, #9a7330);
+      border-radius: 14px; padding: 24mm 18mm; page-break-after: always; break-after: page; position: relative; overflow: hidden; }
+    .report-cover::before { content: ""; position: absolute; inset: 18px; border: 1px solid rgba(247, 223, 155, .45); border-radius: 12px; }
+    .report-cover img { width: 158px; height: 158px; border-radius: 50%; object-fit: cover; box-shadow: 0 0 0 7px rgba(247, 223, 155, .2); }
+    .report-cover h1 { font-size: 38px; color: #f7df9b; }
+    .report-cover h2 { margin: 0; font-size: 34px; color: #fff7df; }
+    .stamp-box { width: 150px; height: 150px; border: 2px dashed rgba(247, 223, 155, .72); border-radius: 10px; display: grid; place-items: center; color: #f7df9b; font-weight: 900; margin-top: 18px; }
     .teacher-message-page { min-height: 250mm; padding: 18mm; border: 2px solid #b9872f; border-radius: 12px; page-break-before: always; break-before: page; }
     .message-lines { display: grid; gap: 18px; margin-top: 24px; }
     .message-lines i { display: block; height: 28px; border-bottom: 1px solid #c9b16f; }
@@ -3856,7 +3876,7 @@ function printStudentReportPdf() {
     alert("請先選擇學生。");
     return;
   }
-  const examRows = studentExamRows(student);
+  const examRows = reportDetailRows(student);
   const termRows = state.termScores.filter((item) => item.studentId === student.id);
   const weeklyRows = examRows.slice().reverse().map((row) => {
     const stats = examStatsForStudent(row.exam, student.id);
@@ -3869,6 +3889,7 @@ function printStudentReportPdf() {
       <h1>金牌躍騰平鎮分校</h1>
       <h2>${escapeHtml(student.name)} 綜合成績報告</h2>
       <p>${escapeHtml(student.grade)}｜${escapeHtml(new Date().toLocaleDateString("zh-TW"))}</p>
+      <div class="stamp-box">公司章</div>
     </section>
     <article class="student-report">
       <header class="student-hero">
@@ -3879,10 +3900,10 @@ function printStudentReportPdf() {
         <div class="stamp"><span>產出日期</span><b>${escapeHtml(new Date().toLocaleDateString("zh-TW"))}</b></div>
       </header>
       ${renderStudentReportHtml(student, null, { hideAi: true })}
-      <section class="report-section">
+      ${activeReportDetailRange() === "none" ? "" : `<section class="report-section">
         <h2 class="section-title">週考明細</h2>
         <table class="report-table"><thead><tr><th>日期</th><th>科目</th><th class="left">範圍 / 單元</th><th>各卷</th><th>平均</th><th>當天統計</th></tr></thead><tbody>${weeklyRows || `<tr><td colspan="6">尚無週考紀錄</td></tr>`}</tbody></table>
-      </section>
+      </section>`}
       <section class="report-section">
         <h2 class="section-title">段考明細</h2>
         <table class="report-table"><thead><tr><th>學期</th><th>段別</th><th>科目</th><th>成績</th></tr></thead><tbody>${termRows.map((item) => `<tr><td>${escapeHtml(item.term || `${item.year || ""}${item.semester || ""}`)}</td><td>${escapeHtml(item.stage || "-")}</td><td>${escapeHtml(item.subject)}</td><td class="${scoreClass(Number(item.score))}">${scoreDisplay(Number(item.score))}</td></tr>`).join("") || `<tr><td colspan="4">尚無段考紀錄</td></tr>`}</tbody></table>
@@ -4421,7 +4442,7 @@ function setupForms() {
     }
   });
 
-  ["studentFilter", "studentSearch", "lateGrade", "historyType", "historySearch", "scheduleGrade", "examGrade", "examSubject", "examPaperCount", "examNoTest", "scoreHistoryYear", "scoreHistorySemester", "scoreHistoryGrade", "careerQueryDate", "careerExamYear", "careerExamSemester", "careerTermYear", "careerTermAnalysisYear", "careerTermAnalysisSemester", "careerTermAnalysisStage", "careerReportRange", "termYear", "termSemester", "termGrade", "termStage", "termStartDate", "termEndDate"].forEach((id) => {
+  ["studentFilter", "studentSearch", "lateGrade", "historyType", "historySearch", "scheduleGrade", "examGrade", "examSubject", "examPaperCount", "examNoTest", "scoreHistoryYear", "scoreHistorySemester", "scoreHistoryGrade", "careerQueryDate", "careerExamYear", "careerExamSemester", "careerTermYear", "careerTermAnalysisYear", "careerTermAnalysisSemester", "careerTermAnalysisStage", "careerReportRange", "careerReportDetailRange", "termYear", "termSemester", "termGrade", "termStage", "termStartDate", "termEndDate"].forEach((id) => {
     onInputChange(id, () => {
       if (id.startsWith("scoreHistory")) examHistoryPage = 1;
       renderAll();
@@ -4441,7 +4462,7 @@ function setupForms() {
     parentCareerSubject = subject;
     if (parentStudentId) renderParentPortal();
   });
-  ["parentScoreDate", "parentExamYear", "parentExamSemester", "parentTermYear", "parentTermAnalysisYear", "parentTermAnalysisSemester", "parentTermAnalysisStage", "parentReportRange"].forEach((id) => {
+  ["parentScoreDate", "parentExamYear", "parentExamSemester", "parentTermYear", "parentTermAnalysisYear", "parentTermAnalysisSemester", "parentTermAnalysisStage", "parentReportRange", "parentReportDetailRange"].forEach((id) => {
     onInputChange(id, () => {
       if (parentStudentId) renderParentPortal();
     });
