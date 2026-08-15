@@ -5,6 +5,7 @@ const LOGIN_PASSWORD = "90757744";
 const FIREBASE_SDK_VERSION = "12.17.1";
 const SUPABASE_SDK_VERSION = "2.86.0";
 const SUPABASE_COLLECTION = "leaveDutyBranches";
+const SUPABASE_EXAM_COLLECTION = `${SUPABASE_COLLECTION}:exams`;
 const grades = ["國一", "國二", "國三"];
 const studentStatuses = [...grades, "校友"];
 const weekdays = ["一", "二", "三", "四", "五", "六", "日"];
@@ -488,9 +489,15 @@ async function setupSupabaseSync() {
     remoteSave = saveSupabaseState;
 
     const remote = await loadSupabaseState();
+    const remoteExamRecords = await loadSupabaseExamRecords().catch(() => []);
     if (remote) {
       state = normalizeState(remote.data || emptyState());
+      state.exams = mergeExams(state.exams, remoteExamRecords);
       lastRemoteUpdatedAt = remote.updatedAt || "";
+      localStorage.setItem(storageKey(), JSON.stringify(state));
+      renderSyncedState();
+    } else if (remoteExamRecords.length) {
+      state.exams = mergeExams(state.exams, remoteExamRecords);
       localStorage.setItem(storageKey(), JSON.stringify(state));
       renderSyncedState();
     }
@@ -523,6 +530,64 @@ function mergeById(localItems = [], remoteItems = []) {
   return [...byId.values()];
 }
 
+function recordStamp(item = {}) {
+  return item.updatedAt || item.createdAt || "";
+}
+
+function mergeExams(localItems = [], remoteItems = []) {
+  const byId = new Map();
+  [...remoteItems, ...localItems].forEach((item) => {
+    if (!item?.id) return;
+    const exam = normalizeExam(item);
+    const current = byId.get(exam.id);
+    if (!current || recordStamp(exam) >= recordStamp(current)) byId.set(exam.id, exam);
+  });
+  return [...byId.values()];
+}
+
+function supabaseExamRecordId(examId) {
+  return `${currentBranch}:${examId}`;
+}
+
+function unpackSupabaseRecord(row) {
+  const payload = row?.data || {};
+  return payload.data || payload;
+}
+
+async function loadSupabaseExamRecords() {
+  if (!supabaseClient || !currentBranch) return [];
+  const { data, error } = await supabaseClient
+    .from("app_records")
+    .select("data")
+    .eq("collection", SUPABASE_EXAM_COLLECTION)
+    .eq("group_code", currentBranch);
+  if (error) throw error;
+  return (data || [])
+    .map(unpackSupabaseRecord)
+    .filter((exam) => exam?.id)
+    .map(normalizeExam);
+}
+
+async function saveSupabaseExamRecords(exams = state.exams) {
+  if (!supabaseClient || !currentBranch || !exams.length) return;
+  const rows = exams.filter((exam) => exam?.id).map((exam) => ({
+    collection: SUPABASE_EXAM_COLLECTION,
+    id: supabaseExamRecordId(exam.id),
+    group_code: currentBranch,
+    username: null,
+    data: {
+      branch: currentBranch,
+      data: JSON.parse(JSON.stringify(normalizeExam(exam))),
+      updatedAt: exam.updatedAt || exam.createdAt || new Date().toISOString(),
+    },
+  }));
+  if (!rows.length) return;
+  const { error } = await supabaseClient
+    .from("app_records")
+    .upsert(rows, { onConflict: "collection,id" });
+  if (error) throw error;
+}
+
 function mergeRemoteStateForSave(localState, remotePayload) {
   if (!remotePayload?.data) return localState;
   const remoteState = normalizeState(remotePayload.data || emptyState());
@@ -532,7 +597,7 @@ function mergeRemoteStateForSave(localState, remotePayload) {
     students: mergeById(local.students, remoteState.students),
     leaves: mergeById(local.leaves, remoteState.leaves),
     lateRecords: mergeById(local.lateRecords, remoteState.lateRecords),
-    exams: mergeById(local.exams, remoteState.exams),
+    exams: mergeExams(local.exams, remoteState.exams),
     termScores: mergeById(local.termScores, remoteState.termScores),
     academicPeriods: mergeById(local.academicPeriods, remoteState.academicPeriods),
     events: mergeById(local.events, remoteState.events),
@@ -548,6 +613,10 @@ function mergeRemoteStateForSave(localState, remotePayload) {
 async function saveSupabaseState() {
   if (!supabaseClient || !currentBranch) return;
   const remoteBeforeSave = await loadSupabaseState().catch(() => null);
+  const remoteExamRecords = await loadSupabaseExamRecords().catch(() => []);
+  if (remoteBeforeSave?.data && remoteExamRecords.length) {
+    remoteBeforeSave.data.exams = mergeExams(remoteBeforeSave.data.exams, remoteExamRecords);
+  }
   state = mergeRemoteStateForSave(state, remoteBeforeSave);
   localStorage.setItem(storageKey(), JSON.stringify(state));
   const updatedAt = new Date().toISOString();
@@ -565,6 +634,7 @@ async function saveSupabaseState() {
     data: payload,
   }, { onConflict: "collection,id" });
   if (error) throw error;
+  await saveSupabaseExamRecords().catch(() => {});
   setSyncStatus("同步中");
 }
 
@@ -573,11 +643,20 @@ async function checkSupabaseState() {
   try {
     syncLoading = true;
     const remote = await loadSupabaseState();
+    const remoteExamRecords = await loadSupabaseExamRecords().catch(() => []);
     if (remote && remote.updatedAt && remote.updatedAt !== lastRemoteUpdatedAt) {
       state = normalizeState(remote.data || emptyState());
+      state.exams = mergeExams(state.exams, remoteExamRecords);
       lastRemoteUpdatedAt = remote.updatedAt;
       localStorage.setItem(storageKey(), JSON.stringify(state));
       renderSyncedState();
+    } else if (remoteExamRecords.length) {
+      const mergedExams = mergeExams(state.exams, remoteExamRecords);
+      if (mergedExams.length !== state.exams.length) {
+        state.exams = mergedExams;
+        localStorage.setItem(storageKey(), JSON.stringify(state));
+        renderSyncedState();
+      }
     }
     setSyncStatus("同步中");
   } catch (error) {
@@ -1494,6 +1573,7 @@ function saveExam(event) {
   updateExamFormMode();
   clearScoreDraft();
   saveState();
+  if (supabaseClient && currentBranch) saveSupabaseExamRecords([exam]).catch(() => queueRemoteSave());
   renderAll();
   flashButton(event.submitter, existing ? "已更新" : "已儲存");
 }
