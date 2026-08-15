@@ -2626,6 +2626,125 @@ function scoreLineChart(rows) {
   `;
 }
 
+function studentRadarSvg(analyses) {
+  const items = analyses.filter((item) => Number.isFinite(item.recentAvg)).slice(0, 8);
+  if (items.length < 3) return `<div class="empty small-empty">至少需要 3 科成績才會形成雷達圖。</div>`;
+  const cx = 150;
+  const cy = 150;
+  const radius = 102;
+  const axis = items.map((item, index) => {
+    const angle = -Math.PI / 2 + index * Math.PI * 2 / items.length;
+    return { item, angle, x: cx + Math.cos(angle) * radius, y: cy + Math.sin(angle) * radius };
+  });
+  const polygon = axis.map(({ item, angle }) => {
+    const value = Math.max(0, Math.min(100, item.recentAvg || 0)) / 100 * radius;
+    return `${cx + Math.cos(angle) * value},${cy + Math.sin(angle) * value}`;
+  }).join(" ");
+  return `<svg class="student-radar class-radar" viewBox="0 0 300 300" role="img" aria-label="學生各科雷達圖">
+    ${[25, 50, 75, 100].map((value) => `<circle cx="${cx}" cy="${cy}" r="${radius * value / 100}" class="radar-ring"></circle>`).join("")}
+    ${axis.map(({ x, y }) => `<line x1="${cx}" y1="${cy}" x2="${x}" y2="${y}" class="radar-axis"></line>`).join("")}
+    <polygon points="${polygon}" class="radar-area"></polygon>
+    ${axis.map(({ item, x, y }) => `<text x="${x}" y="${y}" class="radar-label">${escapeHtml(item.subject)}</text>`).join("")}
+  </svg>`;
+}
+
+function studentSubjectBarChart(analyses) {
+  const items = analyses.filter((item) => Number.isFinite(item.recentAvg)).sort((a, b) => b.recentAvg - a.recentAvg);
+  if (!items.length) return `<div class="empty small-empty">尚無科目統計資料。</div>`;
+  return `<div class="class-bar-chart student-bar-chart" role="img" aria-label="學生各科近期平均長條圖">
+    ${items.map((item) => `<div class="class-bar-row">
+      <span>${escapeHtml(item.subject)}</span>
+      <i><b style="width:${Math.max(4, Math.min(100, item.recentAvg || 0))}%"></b></i>
+      <strong>${scoreDisplay(item.recentAvg)}</strong>
+    </div>`).join("")}
+  </div>`;
+}
+
+function studentWeakUnits(student, analyses = subjectPerformanceRows(student)) {
+  const units = [];
+  analyses.forEach((analysis) => {
+    const grouped = new Map();
+    analysis.rows
+      .filter((row) => Number.isFinite(row.score) && row.score < 70)
+      .forEach((row) => {
+        const topic = weakTopicKey(row.exam.scope || "未填重點");
+        const key = `${analysis.subject}|${topic}`;
+        if (!grouped.has(key)) grouped.set(key, {
+          subject: analysis.subject,
+          topic,
+          count: 0,
+          total: 0,
+          latestDate: "",
+          examples: [],
+        });
+        const item = grouped.get(key);
+        item.count += 1;
+        item.total += row.score;
+        item.latestDate = !item.latestDate || row.exam.date > item.latestDate ? row.exam.date : item.latestDate;
+        if (row.exam.scope && item.examples.length < 3) item.examples.push(row.exam.scope);
+      });
+    units.push(...grouped.values());
+  });
+  return units
+    .map((item) => ({ ...item, average: item.total / item.count }))
+    .sort((a, b) => b.count - a.count || a.average - b.average || b.latestDate.localeCompare(a.latestDate));
+}
+
+function studentWeakUnitsHtml(student, analyses) {
+  const weakSubjects = analyses
+    .filter((item) => Number.isFinite(item.recentAvg))
+    .sort((a, b) => a.recentAvg - b.recentAvg)
+    .slice(0, 3);
+  const units = studentWeakUnits(student, analyses).slice(0, 8);
+  return `<section class="student-weak-panel">
+    <div class="panel-title">
+      <h2>弱點科目與單元</h2>
+      <span>依歷史週考低於 70 分統整</span>
+    </div>
+    <div class="weak-topic-grid">
+      ${weakSubjects.map((item) => `<article class="weak-topic-card">
+        <strong>${escapeHtml(item.subject)}</strong>
+        <span>近期平均 ${scoreDisplay(item.recentAvg)}｜最新 ${scoreDisplay(item.latest)}｜${escapeHtml(item.level)}</span>
+        <small>${escapeHtml(item.note)}</small>
+      </article>`).join("") || `<div class="empty">目前沒有可判斷的弱科資料。</div>`}
+    </div>
+    <div class="table-wrap student-weak-table">
+      <table>
+        <thead><tr><th>科目</th><th>弱點單元</th><th>低分次數</th><th>平均</th><th>最近測驗</th></tr></thead>
+        <tbody>${units.map((unit) => `<tr>
+          <td>${escapeHtml(unit.subject)}</td>
+          <td>${escapeHtml(unit.topic)}</td>
+          <td>${unit.count}</td>
+          <td class="${scoreClass(unit.average)}">${scoreDisplay(unit.average)}</td>
+          <td>${unit.latestDate ? dateLabel(unit.latestDate) : "-"}</td>
+        </tr>`).join("") || `<tr><td colspan="5">尚未累積明顯弱點單元。</td></tr>`}</tbody>
+      </table>
+    </div>
+  </section>`;
+}
+
+function studentReportVisualsHtml(student, analyses) {
+  const scores = analyses.flatMap((item) => item.rows.map((row) => row.score).filter(Number.isFinite));
+  const average = averageScore(scores);
+  const lowCount = scores.filter((score) => score < 70).length;
+  const highCount = scores.filter((score) => score >= 85).length;
+  return `<section class="student-report-visuals">
+    <article class="analysis-card chart-card">
+      <div class="analysis-card-head"><strong>各科雷達圖</strong><b class="level-badge">能力面</b></div>
+      ${studentRadarSvg(analyses)}
+    </article>
+    <article class="analysis-card chart-card">
+      <div class="analysis-card-head"><strong>各科平均長條</strong><b class="level-badge">統計</b></div>
+      ${studentSubjectBarChart(analyses)}
+      <div class="student-stat-grid">
+        <span>總平均 <b>${scoreDisplay(average)}</b></span>
+        <span>高分筆數 <b>${highCount}</b></span>
+        <span>低於70 <b>${lowCount}</b></span>
+      </div>
+    </article>
+  </section>`;
+}
+
 function termScoreLineChart(rows) {
   const chartRows = rows.slice(-12);
   if (chartRows.length < 2) return `<div class="empty small-empty">至少需要 2 次段考成績才會形成折線圖。</div>`;
@@ -3018,9 +3137,8 @@ function renderStudentReport() {
 
 function renderStudentReportHtml(student, subjectOverride = null, options = {}) {
   const subject = subjectOverride || selectedCareerSubject(student);
-  const analyses = subjectPerformanceRows(student)
-    .filter((item) => studentTakesSubject(student, item.subject))
-    .filter((item) => subject === "全部" || item.subject === subject);
+  const allAnalyses = subjectPerformanceRows(student).filter((item) => studentTakesSubject(student, item.subject));
+  const analyses = allAnalyses.filter((item) => subject === "全部" || subject === "?券" || item.subject === subject);
   const latestRow = studentExamRows(student).at(-1);
   const latestStats = latestRow ? examStatsForStudent(latestRow.exam, student.id) : null;
   const levelSummary = analyses.length
@@ -3037,9 +3155,13 @@ function renderStudentReportHtml(student, subjectOverride = null, options = {}) 
       <span>最新年級 PR：${prLabel}</span>
       <span>各科定位：${levelSummary}</span>
     </div>
+    ${studentReportVisualsHtml(student, analyses)}
+    ${studentWeakUnitsHtml(student, analyses)}
     <div class="analysis-grid">
-      ${analyses.map((item) => `
-        <article class="analysis-card">
+      ${analyses.map((item) => {
+        const weakUnits = studentWeakUnits(student, [item]).slice(0, 3);
+        return `
+        <article class="analysis-card subject-analysis-card">
           <div class="analysis-card-head">
             <strong>${item.subject}</strong>
             <b class="level-badge">${item.level}</b>
@@ -3047,23 +3169,23 @@ function renderStudentReportHtml(student, subjectOverride = null, options = {}) 
           <span>近期平均 ${scoreDisplay(item.recentAvg)}｜長期平均 ${scoreDisplay(item.longAvg)}｜最新 ${scoreDisplay(item.latest)}</span>
           <small>${trendLabel(item.trend)}｜${stabilityLabel(item.range)}｜累積 ${item.count} 筆</small>
           ${scoreLineChart(item.rows)}
-          <p>${item.note}</p>
-        </article>
-      `).join("")}
+          <p><b>分析：</b>${item.note}</p>
+          <p><b>弱點：</b>${weakUnits.length ? weakUnits.map((unit) => `${unit.topic}（${unit.count}次）`).join("、") : "目前未累積明顯弱點單元。"}</p>
+        </article>`;
+      }).join("")}
       ${!analyses.length ? `<div class="empty">尚無可分析的成績紀錄。</div>` : ""}
     </div>
-    <p class="report-copy">系統會依週考、段考、PR、排名、班平均與弱點單元整理學習狀況；若已設定 Gemini API，AI 會依真實資料補上更完整的文字建議。</p>
-    <section class="ai-analysis-panel compact-ai-panel" data-ai-mode="${aiMode}" data-ai-student-panel="${student.id}">
+    <p class="report-copy">系統會依週考、段考、PR、排名、班平均、雷達圖、折線圖、長條圖與弱點單元整理學習狀況；若已設定 Gemini API，AI 會依真實資料補上更完整的文字建議。</p>
+    ${options.hideAi ? "" : `<section class="ai-analysis-panel compact-ai-panel" data-ai-mode="${aiMode}" data-ai-student-panel="${student.id}">
       <div class="panel-title">
         <h2>AI 學習分析</h2>
         <span>${options.autoAi ? "家長端會自動依最新資料生成" : "依真實成績、PR 與弱點單元生成"}</span>
       </div>
       ${options.autoAi ? "" : `<button class="primary" type="button" data-ai-student="${student.id}">產生 AI 分析</button>`}
       <div class="ai-analysis-result">${aiConfigured() ? `<div class="empty">${options.autoAi ? "正在準備 AI 分析..." : "按下按鈕後產生真實 AI 分析。"}</div>` : `<div class="empty">尚未設定 Gemini API Key。</div>`}</div>
-    </section>
+    </section>`}
   `;
-}
-function pdfDocument(title, body, layout = "portrait") {
+}function pdfDocument(title, body, layout = "portrait") {
   const printWindow = window.open("", "_blank");
   if (!printWindow) {
     alert("請允許瀏覽器跳出視窗，才能產生 PDF 文件。");
@@ -3124,6 +3246,29 @@ function pdfDocument(title, body, layout = "portrait") {
     .recommendation { padding: 12px 14px; border-left: 5px solid #b9872f; background: #fff9ea; line-height: 1.75; }
     .report-table { font-size: 12px; }
     .report-table th { background: #2a3039; }
+    .report-head { display: grid; gap: 6px; padding: 14px; border: 1px solid #dfcfaa; border-radius: 8px; background: #fff9ea; margin: 14px 0; }
+    .report-head strong { font-size: 20px; color: #7a551a; }
+    .student-report-visuals { display: grid; grid-template-columns: .85fr 1.15fr; gap: 10px; margin: 12px 0; break-inside: avoid; }
+    .analysis-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-top: 12px; }
+    .analysis-card { padding: 10px; border: 1px solid #dfcfaa; border-radius: 8px; background: #fffdf7; break-inside: avoid; }
+    .analysis-card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+    .level-badge { display: inline-block; padding: 3px 8px; border-radius: 999px; background: #f3c75f; font-weight: 900; }
+    .score-line-chart, .class-radar { width: 100%; max-height: 190px; }
+    .radar-ring, .radar-axis, .chart-axis, .chart-pass { fill: none; stroke: #d8c291; stroke-width: 1.2; }
+    .radar-area { fill: rgba(49, 208, 112, .18); stroke: #159947; stroke-width: 2.4; }
+    .radar-label, .chart-label, .chart-mark { fill: #755927; font-size: 11px; font-weight: 800; }
+    .chart-line { fill: none; stroke: #159947; stroke-width: 3; }
+    .chart-dot { fill: #b9872f; }
+    .chart-pass { stroke-dasharray: 5 5; }
+    .class-bar-chart { display: grid; gap: 7px; margin-top: 6px; }
+    .class-bar-row { display: grid; grid-template-columns: 58px 1fr 42px; gap: 8px; align-items: center; font-size: 12px; }
+    .class-bar-row i { height: 8px; overflow: hidden; border-radius: 99px; background: #efe4c5; }
+    .class-bar-row b { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #159947, #b9872f); }
+    .student-stat-grid, .weak-topic-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 10px; }
+    .student-stat-grid span, .weak-topic-card { padding: 8px; border: 1px solid #dfcfaa; border-radius: 7px; background: #fff9ea; }
+    .student-weak-panel { margin: 12px 0; padding: 12px; border: 1px solid #dfcfaa; border-radius: 8px; background: #fffdf7; break-inside: avoid; }
+    .student-weak-table table { font-size: 11px; }
+    .ai-analysis-panel { display: none; }
     @media print { button { display: none; } }
   </style>
 </head>
@@ -3659,74 +3804,38 @@ function downloadClassReportImage() {
 }
 
 function printStudentReportPdf() {
-  const student = getStudent($("#careerStudent")?.value);
+  const student = getStudent($("#careerStudent")?.value || parentStudentId);
   if (!student) {
     alert("請先選擇學生。");
     return;
   }
   const examRows = studentExamRows(student);
-  const analyses = subjectPerformanceRows(student);
-  const levelSummary = analyses.length ? analyses.map((item) => `${item.subject} ${item.level}`).join("、") : "資料不足";
   const termRows = state.termScores.filter((item) => item.studentId === student.id);
-  const scores = examRows.map((row) => row.score).filter(Number.isFinite);
-  const recentScores = examRows.slice(-6).map((row) => row.score).filter(Number.isFinite);
-  const recentAverage = averageScore(recentScores);
-  const overallAverage = averageScore(scores);
-  const latestRow = examRows.at(-1);
-  const strongest = analyses.slice().sort((a, b) => b.recentAvg - a.recentAvg)[0];
-  const priority = analyses.slice().sort((a, b) => a.recentAvg - b.recentAvg)[0];
-  const reportTitle = studentReportTitle();
-  const suggestion = priority
-    ? `前中後段定位會依每次週考當天排名判斷。優先追蹤 ${priority.subject}：${priority.note} 建議下一週先鎖定該科最近錯題與低分單元，搭配短測確認是否回穩。`
-    : "目前週考資料不足，建議先建立每週固定成績紀錄，再進行趨勢判讀。";
   const weeklyRows = examRows.slice().reverse().map((row) => {
     const stats = examStatsForStudent(row.exam, student.id);
     return `<tr><td>${escapeHtml(dateLabel(row.exam.date))}</td><td>${escapeHtml(row.exam.subject)}</td><td class="left">${escapeHtml(row.exam.scope || "-")}</td><td>${escapeHtml(row.papers.map(scoreDisplay).join(" / "))}</td><td class="${scoreClass(row.score)}">${scoreDisplay(row.score)}</td><td>${escapeHtml(examStatsInline(stats))}</td></tr>`;
   }).join("");
-  pdfDocument(`${student.name} 學生生涯報告`, `
+  pdfDocument(`${student.name} 生涯分析報告`, `
     <article class="student-report">
       <header class="student-hero">
         <div>
-          <h1>${escapeHtml(reportTitle)}</h1>
-          <div class="subtitle">${escapeHtml(studentLabel(student))}｜補習科目：${escapeHtml(studentCoursesLabel(student))}</div>
+          <h1>${escapeHtml(studentReportTitle())}</h1>
+          <div class="subtitle">${escapeHtml(studentLabel(student))}｜修課 ${escapeHtml(studentCoursesLabel(student))}</div>
         </div>
-        <div class="stamp"><span>列印日期</span><b>${escapeHtml(new Date().toLocaleDateString("zh-TW"))}</b></div>
+        <div class="stamp"><span>產出日期</span><b>${escapeHtml(new Date().toLocaleDateString("zh-TW"))}</b></div>
       </header>
-      <section class="kpi-grid">
-        <div class="kpi"><span>近期週考平均</span><strong>${scoreDisplay(recentAverage)}</strong></div>
-        <div class="kpi"><span>歷程總平均</span><strong>${scoreDisplay(overallAverage)}</strong></div>
-        <div class="kpi"><span>最新成績</span><strong>${latestRow ? `${escapeHtml(latestRow.exam.subject)} ${scoreDisplay(latestRow.score)}` : "-"}</strong></div>
-        <div class="kpi"><span>優勢 / 優先補強</span><strong>${strongest ? escapeHtml(strongest.subject) : "-"} / ${priority ? escapeHtml(priority.subject) : "-"}</strong></div>
+      ${renderStudentReportHtml(student, null, { hideAi: true })}
+      <section class="report-section">
+        <h2 class="section-title">週考明細</h2>
+        <table class="report-table"><thead><tr><th>日期</th><th>科目</th><th class="left">範圍 / 單元</th><th>各卷</th><th>平均</th><th>當天統計</th></tr></thead><tbody>${weeklyRows || `<tr><td colspan="6">尚無週考紀錄</td></tr>`}</tbody></table>
       </section>
       <section class="report-section">
-        <h2 class="section-title">顧問摘要</h2>
-        <div class="recommendation">本報告採各科獨立分析，優先參考近期週考、分數起伏與進退步趨勢。各科推估：${escapeHtml(levelSummary)}。${escapeHtml(suggestion)}</div>
-      </section>
-      <section class="report-section">
-        <h2 class="section-title">各科概況</h2>
-        <div class="subject-grid">${analyses.map((item) => `<section class="subject-card">
-          <header><h3>${escapeHtml(item.subject)}</h3><span class="level">${escapeHtml(item.level)}</span></header>
-          <div class="subject-metrics">
-            <span>近期 ${scoreDisplay(item.recentAvg)}</span>
-            <span>長期 ${scoreDisplay(item.longAvg)}</span>
-            <span>最新 ${scoreDisplay(item.latest)}</span>
-          </div>
-          <p>${escapeHtml(trendLabel(item.trend))}｜${escapeHtml(stabilityLabel(item.range))}｜近 ${item.count} 次</p>
-          <p>${escapeHtml(item.note)}</p>
-        </section>`).join("") || `<section class="subject-card">尚無週考成績</section>`}</div>
-      </section>
-      <section class="report-section">
-        <h2 class="section-title">週考紀錄</h2>
-        <table class="report-table"><thead><tr><th>日期</th><th>科目</th><th class="left">重點 / 單元</th><th>各卷</th><th>平均</th><th>當天統計</th></tr></thead><tbody>${weeklyRows || `<tr><td colspan="6">尚無週考紀錄</td></tr>`}</tbody></table>
-      </section>
-      <section class="report-section">
-        <h2 class="section-title">段考紀錄</h2>
-        <table class="report-table"><thead><tr><th>學期</th><th>段別</th><th>科目</th><th>成績</th></tr></thead><tbody>${termRows.map((item) => `<tr><td>${escapeHtml(item.term)}</td><td>${escapeHtml(item.stage)}</td><td>${escapeHtml(item.subject)}</td><td class="${scoreClass(Number(item.score))}">${scoreDisplay(Number(item.score))}</td></tr>`).join("") || `<tr><td colspan="4">尚無段考紀錄</td></tr>`}</tbody></table>
+        <h2 class="section-title">段考明細</h2>
+        <table class="report-table"><thead><tr><th>學期</th><th>段別</th><th>科目</th><th>成績</th></tr></thead><tbody>${termRows.map((item) => `<tr><td>${escapeHtml(item.term || `${item.year || ""}${item.semester || ""}`)}</td><td>${escapeHtml(item.stage || "-")}</td><td>${escapeHtml(item.subject)}</td><td class="${scoreClass(Number(item.score))}">${scoreDisplay(Number(item.score))}</td></tr>`).join("") || `<tr><td colspan="4">尚無段考紀錄</td></tr>`}</tbody></table>
       </section>
     </article>
   `, "portrait");
 }
-
 function selectedValues(name) {
   return $$(`input[name="${name}"]:checked`).map((input) => input.value);
 }
