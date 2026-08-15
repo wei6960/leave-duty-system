@@ -2931,7 +2931,13 @@ function studentAiVisualStripHtml(student, analyses) {
     </article>
     <article class="analysis-card">
       <div class="analysis-card-head"><strong>AI 關注弱點</strong><b class="level-badge">補強</b></div>
-      <div class="weak-chip-row">${weakUnits.map((unit) => `<span>${escapeHtml(unit.subject)}｜${escapeHtml(unit.topic)} ${scoreDisplay(unit.average)}</span>`).join("") || `<span>目前未累積明顯弱點單元</span>`}</div>
+      <div class="ai-weak-grid">${weakUnits.map((unit) => `
+        <span class="ai-weak-chip">
+          <b>${escapeHtml(unit.subject)}</b>
+          <em>${escapeHtml(unit.topic)}</em>
+          <strong>${scoreDisplay(unit.average)}</strong>
+        </span>
+      `).join("") || `<span class="ai-weak-chip empty-chip"><b>目前未累積明顯弱點單元</b></span>`}</div>
     </article>
   </div>`;
 }
@@ -3655,6 +3661,11 @@ function renderStudentReportHtml(student, subjectOverride = null, options = {}) 
     .ai-detail-page .ai-answer-card { padding: 12px; border: 1px solid #dfcfaa; border-radius: 8px; background: #fffdf7; color: #1f252d; line-height: 1.65; }
     .ai-detail-page .ai-answer-card h2, .ai-detail-page .ai-answer-card h3 { color: #7a551a; margin: 10px 0 6px; }
     .ai-detail-page .class-radar, .ai-detail-page .score-line-chart { max-height: 118px; }
+    .ai-weak-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
+    .ai-weak-chip { display: grid; gap: 2px; padding: 7px; border: 1px solid #dfcfaa; border-radius: 7px; background: #fff9ea; }
+    .ai-weak-chip b { color: #7a551a; font-size: 11px; }
+    .ai-weak-chip em { color: #1f252d; font-size: 12px; font-style: normal; overflow-wrap: anywhere; }
+    .ai-weak-chip strong { color: #111; font-size: 14px; }
     @media print { button { display: none; } }
   </style>
 </head>

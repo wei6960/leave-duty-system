@@ -2388,6 +2388,55 @@ body.parent-nav-open .parent-drawer {
   margin: .85rem 0;
 }
 
+.ai-visual-strip .analysis-card {
+  min-width: 0;
+}
+
+.ai-weak-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
+  gap: .55rem;
+}
+
+.ai-weak-chip {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: .15rem .45rem;
+  align-items: end;
+  min-width: 0;
+  padding: .62rem .7rem;
+  border: 1px solid rgba(241, 211, 124, .2);
+  border-radius: .55rem;
+  background:
+    linear-gradient(135deg, rgba(198, 151, 53, .16), transparent 64%),
+    rgba(255, 255, 255, .035);
+}
+
+.ai-weak-chip b {
+  color: var(--gold-2);
+  font-size: .8rem;
+}
+
+.ai-weak-chip em {
+  grid-column: 1 / -1;
+  min-width: 0;
+  color: #fff4d2;
+  font-size: .88rem;
+  font-style: normal;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.ai-weak-chip strong {
+  justify-self: end;
+  color: #fff;
+  font-size: 1rem;
+}
+
+.ai-weak-chip.empty-chip {
+  grid-template-columns: 1fr;
+}
+
 .about-photo-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
