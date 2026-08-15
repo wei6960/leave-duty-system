@@ -3216,8 +3216,8 @@ function renderStudentReportHtml(student, subjectOverride = null, options = {}) 
     <p class="report-copy">系統會依週考、段考、PR、排名、班平均、雷達圖、折線圖、長條圖與弱點單元整理學習狀況；若已設定 Gemini API，AI 會依真實資料補上更完整的文字建議。</p>
     ${options.hideAi ? "" : `<section class="ai-analysis-panel compact-ai-panel" data-ai-mode="${aiMode}" data-ai-student-panel="${student.id}">
       <div class="panel-title">
-        <h2>AI 學習分析</h2>
-        <span>${options.autoAi ? "家長端會自動依最新資料生成" : "依真實成績、PR 與弱點單元生成"}</span>
+        <h2>${options.autoAi ? `金牌躍騰平鎮分校 學生：${escapeHtml(student.name)} 專屬報告` : "AI 學習分析"}</h2>
+        <span>${options.autoAi ? "依真實成績整理 1 到 3 點重點" : "依真實成績、PR 與弱點單元生成"}</span>
       </div>
       ${options.autoAi ? "" : `<button class="primary" type="button" data-ai-student="${student.id}">產生 AI 分析</button>`}
       <div class="ai-analysis-result">${aiConfigured() ? `<div class="empty">${options.autoAi ? "正在準備 AI 分析..." : "按下按鈕後產生真實 AI 分析。"}</div>` : `<div class="empty">尚未設定 Gemini API Key。</div>`}</div>
@@ -5266,13 +5266,16 @@ async function generateStudentAiAnalysis(studentId, output) {
     return;
   }
   const payload = studentAiPayload(student);
-  const cacheKey = studentAiCacheKey(student, payload);
+  const isParentReport = Boolean(output.closest('[data-ai-mode="auto"]'));
+  const cacheKey = `${studentAiCacheKey(student, payload)}|${isParentReport ? "parent" : "teacher"}`;
   if (studentAiCache.has(cacheKey)) {
     output.innerHTML = studentAiCache.get(cacheKey);
     return;
   }
   output.innerHTML = `<div class="empty">AI 正在依真實成績、PR、排名與弱點單元分析...</div>`;
-  const prompt = `你是補習班班導師，請用繁體中文根據真實資料產生學生生涯分析。禁止套模板、禁止捏造資料。請包含：整體狀況、各科趨勢、PR/前中後段定位、弱點單元、家長可理解的協助方式、老師下週行動、段考/下次考試備戰策略。若有各卷主題，請分辨考卷主題內容再分析。資料如下：\n${JSON.stringify(payload, null, 2)}`;
+  const prompt = isParentReport
+    ? `請用繁體中文產生家長端可閱讀的精簡報告。標題必須是「金牌躍騰平鎮分校 學生：${student.name} 專屬報告」。禁止套模板、禁止捏造資料。內容只列 1 到 3 點重點，每點 1 到 2 句，聚焦：目前學習狀況、明顯優勢或弱點、下一次考試備戰方向。不要寫「家長協助」、不要寫「老師下週行動」、不要寫內部教學安排。若資料不足請明確說資料不足。資料如下：\n${JSON.stringify(payload, null, 2)}`
+    : `你是補習班班導師，請用繁體中文根據真實資料產生學生生涯分析。禁止套模板、禁止捏造資料。請包含：整體狀況、各科趨勢、PR/前中後段定位、弱點單元、段考/下次考試備戰策略。若有各卷主題，請分辨考卷主題內容再分析。資料如下：\n${JSON.stringify(payload, null, 2)}`;
   try {
     const text = await callGeminiAnalysis(prompt);
     const html = `<article class="ai-answer-card">${markdownToHtml(text)}</article>`;
@@ -5281,8 +5284,7 @@ async function generateStudentAiAnalysis(studentId, output) {
   } catch (error) {
     output.innerHTML = `<div class="empty">${escapeHtml(error.message || "AI 分析失敗")}</div>`;
   }
-}
-function setupActions() {
+}function setupActions() {
   document.addEventListener("click", (event) => {
     const deleteStudentId = event.target.dataset.deleteStudent;
     const editStudentId = event.target.dataset.editStudent;
