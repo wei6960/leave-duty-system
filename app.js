@@ -296,7 +296,17 @@ function normalizeAcademicPeriods(records, currentSettings = defaultAcademicSett
 
 function normalizeTermPeriods(raw) {
   return Object.fromEntries(Object.entries(raw || {})
-    .filter(([, value]) => typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)));
+    .map(([key, value]) => {
+      if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)) return [key, { startDate: "", endDate: value }];
+      if (value && typeof value === "object") {
+        return [key, {
+          startDate: /^\d{4}-\d{2}-\d{2}$/.test(value.startDate || "") ? value.startDate : "",
+          endDate: /^\d{4}-\d{2}-\d{2}$/.test(value.endDate || "") ? value.endDate : "",
+        }];
+      }
+      return null;
+    })
+    .filter((item) => item && (item[1].startDate || item[1].endDate)));
 }
 
 function normalizeEvents(records) {
@@ -376,6 +386,7 @@ function normalizeExam(exam) {
     scope: exam.scope || "",
     noExam: Boolean(exam.noExam),
     paperCount: Math.max(1, Number(exam.paperCount) || 1),
+    paperTopics: Array.isArray(exam.paperTopics) ? exam.paperTopics.map((item) => String(item || "")) : [],
     scores: exam.scores || {},
     absences: Array.isArray(exam.absences) ? exam.absences : [],
     createdAt: exam.createdAt || new Date().toISOString(),
@@ -1266,6 +1277,7 @@ function captureScoreDraft() {
   draft.subject = $("#examSubject").value;
   draft.scope = $("#examScope").value;
   draft.paperCount = Math.max(1, Number($("#examPaperCount").value) || 1);
+  draft.paperTopics = ($("#examPaperTopics")?.value || "").split(/\r?\n/).map((item) => item.trim());
   draft.noExam = $("#examNoTest").checked;
   draft.scores = draft.scores || {};
   draft.absences = Array.isArray(draft.absences) ? draft.absences : [];
@@ -1299,6 +1311,7 @@ function restoreScoreDraftMeta() {
   if (scoreDraft.subject) $("#examSubject").value = scoreDraft.subject;
   $("#examScope").value = scoreDraft.scope || "";
   $("#examPaperCount").value = Math.max(1, Number(scoreDraft.paperCount) || 1);
+  if ($("#examPaperTopics")) $("#examPaperTopics").value = (scoreDraft.paperTopics || []).join("\n");
   $("#examNoTest").checked = Boolean(scoreDraft.noExam);
   editingExamId = scoreDraft.editingExamId || null;
   updateExamFormMode();
@@ -1385,7 +1398,10 @@ function applyEditingExamScores() {
 }
 
 function currentScoreRows(exam) {
-  const students = studentsForGradeAndSubject(exam.grade, exam.subject);
+  const students = state.students.filter((student) =>
+    student.grade === exam.grade &&
+    (exam.scores?.[student.id] !== undefined || studentTakesSubject(student, exam.subject))
+  );
   return students
     .filter((student) => !(exam.absences || []).includes(student.id))
     .map((student) => {
@@ -1437,7 +1453,10 @@ function classReportData(exam) {
   const average = rows.length ? rows.reduce((sum, row) => sum + row.score, 0) / rows.length : NaN;
   const paperCount = Math.max(1, Number(exam.paperCount) || 1);
   const rankedById = new Map(rows.map((row) => [row.student.id, row]));
-  const reportRows = studentsForGradeAndSubject(exam.grade, exam.subject)
+  const reportRows = state.students.filter((student) =>
+    student.grade === exam.grade &&
+    (exam.scores?.[student.id] !== undefined || studentTakesSubject(student, exam.subject))
+  )
     .map((student) => ({
       student,
       ranked: rankedById.get(student.id),
@@ -1567,6 +1586,7 @@ function saveExam(event) {
     scope: $("#examScope").value.trim(),
     noExam,
     paperCount,
+    paperTopics: ($("#examPaperTopics")?.value || "").split(/\r?\n/).map((item) => item.trim()),
     scores,
     absences,
     createdAt: existing?.createdAt || new Date().toISOString(),
@@ -1597,6 +1617,7 @@ function resetExamForm() {
   $("#examDate").value = todayISO();
   $("#examScope").value = "";
   $("#examPaperCount").value = 1;
+  if ($("#examPaperTopics")) $("#examPaperTopics").value = "";
   $("#examNoTest").checked = false;
   $("#scoreStudentPicker").value = "";
   $("#scoreStudentFilter").value = "全部";
@@ -1618,6 +1639,7 @@ function fillExamForm(exam) {
   $("#examSubject").value = exam.subject;
   $("#examScope").value = exam.scope || "";
   $("#examPaperCount").value = Math.max(1, Number(exam.paperCount) || 1);
+  if ($("#examPaperTopics")) $("#examPaperTopics").value = (exam.paperTopics || []).join("\n");
   $("#examNoTest").checked = Boolean(exam.noExam);
   $("#scoreStudentPicker").value = "";
   $("#scoreStudentFilter").value = "全部";
@@ -1676,8 +1698,9 @@ function saveTermScore(event) {
   const stage = $("#termStage").value;
   const term = `${year}${semester}`;
   const meta = { year, semester, grade, stage };
+  const startDate = $("#termStartDate")?.value || "";
   const endDate = $("#termEndDate")?.value || "";
-  if (endDate) state.termPeriods[termPeriodKey(meta)] = endDate;
+  if (startDate || endDate) state.termPeriods[termPeriodKey(meta)] = { startDate, endDate };
   const inputs = $$("[data-term-score-student][data-term-score-subject]");
   let saved = 0;
   inputs.forEach((input) => {
@@ -1738,7 +1761,9 @@ function currentTermMeta() {
 function syncTermEndDateInput() {
   const target = $("#termEndDate");
   if (!target) return;
-  target.value = state.termPeriods?.[termPeriodKey(currentTermMeta())] || "";
+  const range = termPeriodRange(currentTermMeta());
+  if ($("#termStartDate")) $("#termStartDate").value = range.startDate || "";
+  target.value = range.endDate || "";
 }
 
 function termRowsForMeta(meta = currentTermMeta()) {
@@ -2572,7 +2597,7 @@ function analyzeSubjectPerformance(subject, rows) {
 }
 
 function subjectPerformanceRows(student) {
-  const examRows = studentExamRows(student);
+  const examRows = studentExamRows(student, activeReportPeriod());
   return courses.map((subject) => {
     const rows = examRows.filter((row) => row.exam.subject === subject);
     if (!rows.length) return null;
@@ -2584,9 +2609,15 @@ function careerSubjectsForStudent(student) {
   if (!student) return [];
   const subjects = new Set(student.courses || []);
   studentExamRows(student)
-    .filter((row) => studentTakesSubject(student, row.exam.subject))
     .forEach((row) => subjects.add(row.exam.subject));
   return reportSubjects.filter((subject) => subjects.has(subject));
+}
+
+function activeReportPeriod() {
+  const value = $("#careerReportRange")?.value || $("#parentReportRange")?.value || "current";
+  if (value === "all") return null;
+  const settings = normalizeAcademicSettings(state.settings || defaultAcademicSettings());
+  return { academicYear: settings.academicYear, semester: settings.semester };
 }
 
 function selectedCareerSubject(student) {
@@ -3023,27 +3054,34 @@ function termPeriodKey(meta) {
   return [meta.year, meta.semester, meta.grade, meta.stage].join("|");
 }
 
+function termPeriodRange(meta) {
+  const value = state.termPeriods?.[termPeriodKey(meta)];
+  if (typeof value === "string") return { startDate: "", endDate: value };
+  return {
+    startDate: value?.startDate || "",
+    endDate: value?.endDate || "",
+  };
+}
+
 function previousTermStage(meta) {
   const index = termStages.indexOf(meta.stage);
   return index > 0 ? termStages[index - 1] : "";
 }
 
 function termAnalysisRows(student, meta) {
-  const endDate = state.termPeriods?.[termPeriodKey(meta)] || "";
+  const range = termPeriodRange(meta);
+  const endDate = range.endDate || "";
   if (!student || !endDate) return { endDate, previousDate: "", rows: [] };
   const previousStage = previousTermStage(meta);
-  const previousDate = previousStage
-    ? state.termPeriods?.[termPeriodKey({ ...meta, stage: previousStage })] || ""
-    : "";
+  const fallbackStart = previousStage ? termPeriodRange({ ...meta, stage: previousStage }).endDate || "" : "";
+  const startDate = range.startDate || fallbackStart;
   const rows = studentExamRows(student)
-    .filter((row) => row.exam.subject !== "社會")
-    .filter((row) => studentTakesSubject(student, row.exam.subject))
+    .filter((row) => row.exam.subject !== "輔導")
     .filter((row) => row.exam.date <= endDate)
-    .filter((row) => !previousDate || row.exam.date > previousDate)
+    .filter((row) => !startDate || row.exam.date >= startDate)
     .sort((a, b) => a.exam.date.localeCompare(b.exam.date));
-  return { endDate, previousDate, rows };
+  return { endDate, previousDate: startDate, rows };
 }
-
 function termAnalysisReportHtml(student, meta, selectedSubject) {
   if (!student) {
     return `<div class="empty">請先選擇學生。</div>`;
@@ -3137,7 +3175,7 @@ function renderStudentReport() {
 
 function renderStudentReportHtml(student, subjectOverride = null, options = {}) {
   const subject = subjectOverride || selectedCareerSubject(student);
-  const allAnalyses = subjectPerformanceRows(student).filter((item) => studentTakesSubject(student, item.subject));
+  const allAnalyses = subjectPerformanceRows(student);
   const analyses = allAnalyses.filter((item) => subject === "全部" || subject === "?券" || item.subject === subject);
   const latestRow = studentExamRows(student).at(-1);
   const latestStats = latestRow ? examStatsForStudent(latestRow.exam, student.id) : null;
@@ -3269,6 +3307,14 @@ function renderStudentReportHtml(student, subjectOverride = null, options = {}) 
     .student-weak-panel { margin: 12px 0; padding: 12px; border: 1px solid #dfcfaa; border-radius: 8px; background: #fffdf7; break-inside: avoid; }
     .student-weak-table table { font-size: 11px; }
     .ai-analysis-panel { display: none; }
+    .report-cover { min-height: 252mm; display: grid; align-content: center; justify-items: center; gap: 20px; text-align: center; color: #fff7df; background: linear-gradient(135deg, #090d12, #202632 58%, #9a7330); border-radius: 14px; padding: 28mm 18mm; page-break-after: always; break-after: page; position: relative; overflow: hidden; }
+    .report-cover::before { content: ""; position: absolute; inset: 18px; border: 1px solid rgba(247, 223, 155, .38); border-radius: 12px; }
+    .report-cover img { width: 118px; height: 118px; border-radius: 50%; object-fit: cover; box-shadow: 0 0 0 5px rgba(247, 223, 155, .18); }
+    .report-cover h1 { font-size: 34px; color: #f7df9b; }
+    .report-cover h2 { margin: 0; font-size: 24px; color: #fff7df; }
+    .teacher-message-page { min-height: 250mm; padding: 18mm; border: 2px solid #b9872f; border-radius: 12px; page-break-before: always; break-before: page; }
+    .message-lines { display: grid; gap: 18px; margin-top: 24px; }
+    .message-lines i { display: block; height: 28px; border-bottom: 1px solid #c9b16f; }
     @media print { button { display: none; } }
   </style>
 </head>
@@ -3330,6 +3376,7 @@ function printClassReportPdf() {
         <span class="pill">班平均 ${scoreDisplay(average)}</span>
         <span class="pill">${paperCount} 份考卷</span>
         <span class="pill">${scope}</span>
+        <span class="pill">各卷：${escapeHtml((exam.paperTopics || []).filter(Boolean).join(" / ") || "未填各卷主題")}</span>
         <span class="pill">第 ${pageIndex + 1} / ${totalPages} 頁</span>
       </div>
       <table>
@@ -3813,9 +3860,16 @@ function printStudentReportPdf() {
   const termRows = state.termScores.filter((item) => item.studentId === student.id);
   const weeklyRows = examRows.slice().reverse().map((row) => {
     const stats = examStatsForStudent(row.exam, student.id);
-    return `<tr><td>${escapeHtml(dateLabel(row.exam.date))}</td><td>${escapeHtml(row.exam.subject)}</td><td class="left">${escapeHtml(row.exam.scope || "-")}</td><td>${escapeHtml(row.papers.map(scoreDisplay).join(" / "))}</td><td class="${scoreClass(row.score)}">${scoreDisplay(row.score)}</td><td>${escapeHtml(examStatsInline(stats))}</td></tr>`;
+    const paperTopics = row.papers.map((_value, index) => row.exam.paperTopics?.[index] || `卷${index + 1}`).join(" / ");
+    return `<tr><td>${escapeHtml(dateLabel(row.exam.date))}</td><td>${escapeHtml(row.exam.subject)}</td><td class="left">${escapeHtml(row.exam.scope || "-")}<br><small>${escapeHtml(paperTopics)}</small></td><td>${escapeHtml(row.papers.map(scoreDisplay).join(" / "))}</td><td class="${scoreClass(row.score)}">${scoreDisplay(row.score)}</td><td>${escapeHtml(examStatsInline(stats))}</td></tr>`;
   }).join("");
   pdfDocument(`${student.name} 生涯分析報告`, `
+    <section class="report-cover">
+      <img src="assets/logo.png" alt="金牌躍騰">
+      <h1>金牌躍騰平鎮分校</h1>
+      <h2>${escapeHtml(student.name)} 綜合成績報告</h2>
+      <p>${escapeHtml(student.grade)}｜${escapeHtml(new Date().toLocaleDateString("zh-TW"))}</p>
+    </section>
     <article class="student-report">
       <header class="student-hero">
         <div>
@@ -3834,6 +3888,11 @@ function printStudentReportPdf() {
         <table class="report-table"><thead><tr><th>學期</th><th>段別</th><th>科目</th><th>成績</th></tr></thead><tbody>${termRows.map((item) => `<tr><td>${escapeHtml(item.term || `${item.year || ""}${item.semester || ""}`)}</td><td>${escapeHtml(item.stage || "-")}</td><td>${escapeHtml(item.subject)}</td><td class="${scoreClass(Number(item.score))}">${scoreDisplay(Number(item.score))}</td></tr>`).join("") || `<tr><td colspan="4">尚無段考紀錄</td></tr>`}</tbody></table>
       </section>
     </article>
+    <section class="teacher-message-page">
+      <h1>老師留言板</h1>
+      <p>給家長與學生的提醒、鼓勵、備戰方向與下階段目標。</p>
+      <div class="message-lines">${Array.from({ length: 12 }, () => "<i></i>").join("")}</div>
+    </section>
   `, "portrait");
 }
 function selectedValues(name) {
@@ -4293,7 +4352,7 @@ function setupForms() {
     });
   });
 
-  ["examDate", "examGrade", "examSubject", "examScope", "examPaperCount", "examNoTest", "scoreStudentPicker"].forEach((id) => {
+  ["examDate", "examGrade", "examSubject", "examScope", "examPaperCount", "examPaperTopics", "examNoTest", "scoreStudentPicker"].forEach((id) => {
     onInputChange(id, captureScoreDraft);
   });
   ["examDate", "examGrade", "examSubject"].forEach((id) => {
@@ -4362,7 +4421,7 @@ function setupForms() {
     }
   });
 
-  ["studentFilter", "studentSearch", "lateGrade", "historyType", "historySearch", "scheduleGrade", "examGrade", "examSubject", "examPaperCount", "examNoTest", "scoreHistoryYear", "scoreHistorySemester", "scoreHistoryGrade", "careerQueryDate", "careerExamYear", "careerExamSemester", "careerTermYear", "careerTermAnalysisYear", "careerTermAnalysisSemester", "careerTermAnalysisStage", "termYear", "termSemester", "termGrade", "termStage"].forEach((id) => {
+  ["studentFilter", "studentSearch", "lateGrade", "historyType", "historySearch", "scheduleGrade", "examGrade", "examSubject", "examPaperCount", "examNoTest", "scoreHistoryYear", "scoreHistorySemester", "scoreHistoryGrade", "careerQueryDate", "careerExamYear", "careerExamSemester", "careerTermYear", "careerTermAnalysisYear", "careerTermAnalysisSemester", "careerTermAnalysisStage", "careerReportRange", "termYear", "termSemester", "termGrade", "termStage", "termStartDate", "termEndDate"].forEach((id) => {
     onInputChange(id, () => {
       if (id.startsWith("scoreHistory")) examHistoryPage = 1;
       renderAll();
@@ -4382,7 +4441,7 @@ function setupForms() {
     parentCareerSubject = subject;
     if (parentStudentId) renderParentPortal();
   });
-  ["parentScoreDate", "parentExamYear", "parentExamSemester", "parentTermYear", "parentTermAnalysisYear", "parentTermAnalysisSemester", "parentTermAnalysisStage"].forEach((id) => {
+  ["parentScoreDate", "parentExamYear", "parentExamSemester", "parentTermYear", "parentTermAnalysisYear", "parentTermAnalysisSemester", "parentTermAnalysisStage", "parentReportRange"].forEach((id) => {
     onInputChange(id, () => {
       if (parentStudentId) renderParentPortal();
     });
@@ -5124,6 +5183,7 @@ function classOpsAiPayload(meta = classOpsMeta()) {
     subject: row.subject,
     score: Number(row.score?.toFixed?.(1) ?? row.score),
     scope: row.scope,
+    paperTopics: row.exam?.paperTopics || [],
     student: row.student?.name || "",
   }));
   return {
@@ -5154,7 +5214,7 @@ async function generateClassOpsAiAnalysis() {
   }
   target.innerHTML = `<div class="empty">AI 分析中，請稍候...</div>`;
   const payload = classOpsAiPayload();
-  const prompt = `你是補習班教學主任，請用繁體中文根據真實資料產生班級分析。禁止套模板、禁止捏造資料。請包含：1.整體趨勢 2.各科狀況 3.PR/前中後段策略 4.弱點單元補救 5.下週教學行動。資料如下：\n${JSON.stringify(payload, null, 2)}`;
+  const prompt = `你是補習班教學主任，請用繁體中文根據真實資料產生班級分析。禁止套模板、禁止捏造資料。請包含：1.整體趨勢 2.各科狀況 3.PR/前中後段策略 4.弱點單元補救 5.下週教學行動 6.段考/下次考試備戰策略。若有各卷主題，請分辨考卷主題內容再分析。資料如下：\n${JSON.stringify(payload, null, 2)}`;
   try {
     const text = await callGeminiAnalysis(prompt);
     target.innerHTML = `<article class="ai-answer-card">${markdownToHtml(text)}</article>`;
@@ -5169,6 +5229,7 @@ function studentAiPayload(student) {
     grade: row.exam.grade,
     subject: row.exam.subject,
     scope: row.exam.scope,
+    paperTopics: row.exam.paperTopics || [],
     score: scoreDisplay(row.score),
     papers: row.papers.map(scoreDisplay),
     stats: examStatsForStudent(row.exam, student.id),
@@ -5211,7 +5272,7 @@ async function generateStudentAiAnalysis(studentId, output) {
     return;
   }
   output.innerHTML = `<div class="empty">AI 正在依真實成績、PR、排名與弱點單元分析...</div>`;
-  const prompt = `你是補習班班導師，請用繁體中文根據真實資料產生學生生涯分析。禁止套模板、禁止捏造資料。請包含：整體狀況、各科趨勢、PR/前中後段定位、弱點單元、家長可理解的協助方式、老師下週行動。資料如下：\n${JSON.stringify(payload, null, 2)}`;
+  const prompt = `你是補習班班導師，請用繁體中文根據真實資料產生學生生涯分析。禁止套模板、禁止捏造資料。請包含：整體狀況、各科趨勢、PR/前中後段定位、弱點單元、家長可理解的協助方式、老師下週行動、段考/下次考試備戰策略。若有各卷主題，請分辨考卷主題內容再分析。資料如下：\n${JSON.stringify(payload, null, 2)}`;
   try {
     const text = await callGeminiAnalysis(prompt);
     const html = `<article class="ai-answer-card">${markdownToHtml(text)}</article>`;

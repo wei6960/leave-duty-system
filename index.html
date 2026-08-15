@@ -228,6 +228,14 @@
           <div class="panel-title">
             <h2>學生週考分析報告</h2>
           </div>
+                    <div class="toolbar compact-toolbar">
+            <label>報告區間
+              <select id="parentReportRange">
+                <option value="current">目前學期</option>
+                <option value="all">歷年全部</option>
+              </select>
+            </label>
+          </div>
           <div id="parentReport"></div>
         </section>
       </div>
@@ -368,6 +376,9 @@
           <button class="portal-tile" type="button" data-tab="term">
             <strong>段考成績</strong>
             <span>段考登記、排名、圖片 PDF Excel</span>
+          </button>          <button class="portal-tile" type="button" data-tab="term">
+            <strong>段考區間設定</strong>
+            <span>設定一段、二段、三段的開始與結束區間，供 AI 備戰分析使用</span>
           </button>
           <button class="portal-tile" type="button" data-tab="schedule">
             <strong>課表設定</strong>
@@ -949,6 +960,8 @@
           </label>
           <label>考卷數量
             <input id="examPaperCount" type="number" min="1" max="6" value="1" required>
+          </label>          <label class="form-span-2">各卷主題內容
+            <textarea id="examPaperTopics" rows="2" placeholder="一行一份，例如：卷1 基礎題、卷2 應用題"></textarea>
           </label>
           <fieldset class="form-span-2">
             <legend>當天狀態</legend>
@@ -1101,6 +1114,14 @@
                 <button class="ghost" id="printStudentReport" type="button">下載 PDF</button>
               </div>
             </div>
+                        <div class="toolbar compact-toolbar">
+              <label>報告區間
+                <select id="careerReportRange">
+                  <option value="current">目前學期</option>
+                  <option value="all">歷年全部</option>
+                </select>
+              </label>
+            </div>
             <div id="studentReport"></div>
           </section>
         </div>
@@ -1143,7 +1164,10 @@
               <option value="三段">三段</option>
             </select>
           </label>
-          <label>段考截止日
+                    <label>段考區間開始
+            <input id="termStartDate" type="date">
+          </label>
+          <label>段考區間結束
             <input id="termEndDate" type="date">
           </label>
           <button class="primary" type="submit">儲存段考成績 / 截止日</button>

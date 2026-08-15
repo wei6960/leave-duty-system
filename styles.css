@@ -2096,6 +2096,15 @@ body.parent-nav-open .parent-drawer {
     #11161d;
 }
 
+#downloadClassReportImage,
+#downloadClassReportExcel,
+#downloadTermReportImage,
+#downloadTermReportExcel,
+#downloadStudentReportImage,
+#downloadParentReportImage {
+  display: none !important;
+}
+
 .contact-editor-panel::after {
   content: "";
   position: absolute;
