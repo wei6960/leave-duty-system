@@ -2087,7 +2087,24 @@ body.parent-nav-open .parent-drawer {
 }
 
 .contact-editor-panel {
-  border-color: rgba(241, 211, 124, .26);
+  position: relative;
+  overflow: hidden;
+  border-color: rgba(241, 211, 124, .32);
+  background:
+    linear-gradient(135deg, rgba(198, 151, 53, .18), transparent 42%),
+    linear-gradient(180deg, rgba(255, 255, 255, .055), rgba(0, 0, 0, .1)),
+    #11161d;
+}
+
+.contact-editor-panel::after {
+  content: "";
+  position: absolute;
+  right: 1.2rem;
+  bottom: -2.8rem;
+  width: 8rem;
+  height: 8rem;
+  border: 1px solid rgba(241, 211, 124, .16);
+  transform: rotate(45deg);
 }
 
 .contact-book-grid {
@@ -2095,13 +2112,30 @@ body.parent-nav-open .parent-drawer {
 }
 
 .contact-card {
+  position: relative;
+  overflow: hidden;
   padding: 1rem;
   min-height: 9rem;
+  border-left-color: var(--gold);
+  background:
+    linear-gradient(135deg, rgba(198, 151, 53, .18), transparent 48%),
+    linear-gradient(180deg, #1c2229, #10151b);
 }
 
 .contact-card strong {
   color: var(--gold-2);
-  font-size: 1.08rem;
+  font-size: 1.18rem;
+}
+
+.contact-card::after {
+  content: "";
+  position: absolute;
+  right: .8rem;
+  bottom: .8rem;
+  width: 2.8rem;
+  height: 2.8rem;
+  border: 1px solid rgba(241, 211, 124, .18);
+  transform: rotate(45deg);
 }
 
 .parent-top-actions {
@@ -2116,6 +2150,56 @@ body.parent-nav-open .parent-drawer {
   width: auto;
   margin-top: 0;
   padding-inline: 1rem;
+}
+
+.pager-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: .75rem;
+  flex-wrap: wrap;
+  padding: .9rem;
+  border: 1px solid rgba(241, 211, 124, .18);
+  border-radius: .45rem;
+  background: rgba(255, 255, 255, .04);
+}
+
+.pager-row span {
+  color: var(--gold-2);
+  font-weight: 800;
+}
+
+.ai-analysis-panel {
+  margin-top: 1rem;
+}
+
+.compact-ai-panel {
+  padding: 1rem;
+  border: 1px solid rgba(241, 211, 124, .18);
+  border-radius: .5rem;
+  background:
+    linear-gradient(135deg, rgba(111, 182, 232, .12), transparent 48%),
+    linear-gradient(180deg, rgba(255, 255, 255, .035), rgba(0, 0, 0, .08)),
+    #11161d;
+}
+
+.ai-analysis-result {
+  margin-top: .85rem;
+}
+
+.ai-answer-card {
+  padding: 1rem;
+  border: 1px solid rgba(241, 211, 124, .2);
+  border-radius: .5rem;
+  background: linear-gradient(180deg, #171d24, #10151b);
+  color: var(--text);
+  line-height: 1.75;
+}
+
+.ai-answer-card h2,
+.ai-answer-card h3 {
+  margin: .75rem 0 .35rem;
+  color: var(--gold-2);
 }
 
 .about-photo-grid {

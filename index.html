@@ -67,7 +67,6 @@
         <button type="button" data-parent-section="parentReportSection">報告區</button>
         <button type="button" data-parent-section="parentEventSection">重大公告</button>
         <button type="button" data-parent-section="parentContactSection">聯絡本</button>
-        <button type="button" data-parent-section="parentAboutSection">關於金牌躍騰</button>
         <button type="button" data-parent-section="parentLeaveSection">請假紀錄</button>
         <button type="button" data-parent-section="parentCodeSection">家長代碼更新</button>
       </nav>
@@ -105,10 +104,6 @@
           <button type="button" data-parent-section="parentContactSection">
             <strong>聯絡本</strong>
             <span>今日與歷史課程、考試、作業</span>
-          </button>
-          <button type="button" data-parent-section="parentAboutSection">
-            <strong>關於金牌躍騰</strong>
-            <span>分校介紹、課程與師資規劃</span>
           </button>
           <button type="button" data-parent-section="parentLeaveSection">
             <strong>請假紀錄</strong>
@@ -148,7 +143,7 @@
           </div>
           <div id="parentContactBookList" class="record-list"></div>
         </section>
-        <section class="panel parent-side-panel parent-page-section" id="parentAboutSection">
+        <section class="panel parent-side-panel parent-page-section" id="parentAboutSection" hidden>
           <div class="panel-title">
             <h2>關於金牌躍騰教育集團</h2>
             <span>平鎮分校</span>
@@ -256,7 +251,7 @@
         <button class="tab-button" data-tab="class-ops">班級經營</button>
         <button class="tab-button" data-tab="contact-book">聯絡本系統</button>
         <button class="tab-button" data-tab="academic">學年設定</button>
-        <button class="tab-button" data-tab="about-admin">關於我們</button>
+        <button class="tab-button" data-tab="ai-settings">AI設定</button>
       </nav>
       <button class="logout-button" id="logoutButton" type="button">登出 / 切換分校</button>
     </aside>
@@ -406,6 +401,26 @@
         </section>
       </section>
 
+      <section class="page" id="ai-settings">
+        <header class="section-head">
+          <div>
+            <p class="eyebrow">AI 設定</p>
+            <h1>Gemini 真實分析設定</h1>
+          </div>
+          <button class="ghost back-button" type="button" data-back-tab="dashboard">返回上一層</button>
+        </header>
+        <form class="form-grid panel" id="aiSettingsForm">
+          <label class="wide-field">Gemini API Key
+            <input id="geminiApiKey" type="password" autocomplete="off" placeholder="貼上 Gemini API Key">
+          </label>
+          <label>模型
+            <input id="geminiModel" placeholder="gemini-1.5-flash">
+          </label>
+          <button class="primary" type="submit">儲存 AI 設定</button>
+          <p class="hint form-span-2">未設定 API Key 時，系統不會用模板假裝分析；設定後才會依成績、排名、PR、弱點單元與圖表資料產生真實 AI 分析。</p>
+        </form>
+      </section>
+
       <section class="page" id="class-ops">
         <header class="section-head">
           <div>
@@ -427,6 +442,10 @@
           <button class="portal-tile feature-tile" type="button" data-class-ops-section="grade">
             <strong>班級經營</strong>
             <span>先選國一、國二、國三，再進入整班雷達與弱點分析</span>
+          </button>
+          <button class="portal-tile feature-tile" type="button" data-tab="ai-settings">
+            <strong>AI分析設定</strong>
+            <span>設定 Gemini API，讓報告使用真實 AI 分析</span>
           </button>
         </div>
 
@@ -475,6 +494,14 @@
           </section>
 
           <div class="class-ops-summary" id="classOpsSummary"></div>
+          <section class="panel ai-analysis-panel">
+            <div class="panel-title">
+              <h2>AI 班級分析</h2>
+              <span>依目前學年、學期、年級與科目產生</span>
+            </div>
+            <button class="primary" id="generateClassOpsAi" type="button">產生 AI 分析</button>
+            <div id="classOpsAiResult" class="ai-analysis-result"></div>
+          </section>
 
           <section class="panel list-panel">
             <div class="panel-title">

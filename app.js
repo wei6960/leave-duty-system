@@ -48,6 +48,7 @@ let classOpsSection = "menu";
 let classOpsSelectedGrade = "國一";
 let contactBookSection = "menu";
 let aboutSection = "display";
+let examHistoryPage = 1;
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -66,6 +67,7 @@ const parentTabs = {
   "grade-promotion": "class-ops",
   "contact-book": "contact-book",
   "about-admin": "about-admin",
+  "ai-settings": "ai-settings",
 };
 
 function academicPeriodForDate(date = todayISO()) {
@@ -105,7 +107,15 @@ function emptyState() {
     events: [],
     contactBooks: [],
     about: defaultAboutSettings(),
+    aiSettings: defaultAiSettings(),
     archives: [],
+  };
+}
+
+function defaultAiSettings() {
+  return {
+    geminiApiKey: "",
+    model: "gemini-1.5-flash",
   };
 }
 
@@ -202,7 +212,16 @@ function normalizeState(raw) {
     events: normalizeEvents(raw.events || []),
     contactBooks: normalizeContactBooks(raw.contactBooks || []),
     about: normalizeAboutSettings(raw.about || {}),
+    aiSettings: normalizeAiSettings(raw.aiSettings || raw.ai || {}),
     archives: raw.archives || [],
+  };
+}
+
+function normalizeAiSettings(settings = {}) {
+  const fallback = defaultAiSettings();
+  return {
+    geminiApiKey: settings.geminiApiKey || settings.apiKey || "",
+    model: settings.model || fallback.model,
   };
 }
 
@@ -497,8 +516,40 @@ async function loadSupabaseState() {
   return data ? data.data : null;
 }
 
+function mergeById(localItems = [], remoteItems = []) {
+  const byId = new Map();
+  remoteItems.forEach((item) => item?.id && byId.set(item.id, item));
+  localItems.forEach((item) => item?.id && byId.set(item.id, item));
+  return [...byId.values()];
+}
+
+function mergeRemoteStateForSave(localState, remotePayload) {
+  if (!remotePayload?.data) return localState;
+  const remoteState = normalizeState(remotePayload.data || emptyState());
+  const local = normalizeState(localState || emptyState());
+  return {
+    ...local,
+    students: mergeById(local.students, remoteState.students),
+    leaves: mergeById(local.leaves, remoteState.leaves),
+    lateRecords: mergeById(local.lateRecords, remoteState.lateRecords),
+    exams: mergeById(local.exams, remoteState.exams),
+    termScores: mergeById(local.termScores, remoteState.termScores),
+    academicPeriods: mergeById(local.academicPeriods, remoteState.academicPeriods),
+    events: mergeById(local.events, remoteState.events),
+    contactBooks: mergeById(local.contactBooks, remoteState.contactBooks),
+    archives: mergeById(local.archives, remoteState.archives),
+    termPeriods: { ...(remoteState.termPeriods || {}), ...(local.termPeriods || {}) },
+    schedule: local.schedule || remoteState.schedule,
+    settings: local.settings || remoteState.settings,
+    about: local.about || remoteState.about,
+    aiSettings: local.aiSettings || remoteState.aiSettings,
+  };
+}
 async function saveSupabaseState() {
   if (!supabaseClient || !currentBranch) return;
+  const remoteBeforeSave = await loadSupabaseState().catch(() => null);
+  state = mergeRemoteStateForSave(state, remoteBeforeSave);
+  localStorage.setItem(storageKey(), JSON.stringify(state));
   const updatedAt = new Date().toISOString();
   lastRemoteUpdatedAt = updatedAt;
   const payload = {
@@ -763,7 +814,8 @@ function todayLeaveStudentIds() {
   const leaveIds = new Set();
 
   state.leaves.forEach((record) => {
-    if (record.dismissedAt || !ids.has(record.studentId)) return;
+    const student = getStudent(record.studentId);
+    if (record.dismissedAt || !ids.has(record.studentId) || !student || !studentHasClassOnDate(student, today)) return;
     if (getLeaveStart(record) <= today && getLeaveEnd(record) >= today) {
       leaveIds.add(record.studentId);
     }
@@ -1488,11 +1540,14 @@ function fillExamForm(exam) {
 function renderExamHistory() {
   const period = weeklyPeriodFilter("scoreHistory");
   const historyGrade = $("#scoreHistoryGrade")?.value || "全部";
-  const items = state.exams
+  const allItems = state.exams
     .filter((exam) => examMatchesWeeklyPeriod(exam, period))
     .filter((exam) => historyGrade === "全部" || exam.grade === historyGrade)
-    .sort((a, b) => b.date.localeCompare(a.date))
-    .slice(0, 40);
+    .sort((a, b) => b.date.localeCompare(a.date));
+  const pageSize = 24;
+  const totalPages = Math.max(1, Math.ceil(allItems.length / pageSize));
+  examHistoryPage = Math.min(Math.max(1, examHistoryPage), totalPages);
+  const items = allItems.slice((examHistoryPage - 1) * pageSize, examHistoryPage * pageSize);
   $("#examHistoryList").innerHTML = items.map((exam) => {
     const rows = currentScoreRows(exam);
     const average = rows.length ? (rows.reduce((sum, row) => sum + row.score, 0) / rows.length).toFixed(1) : "-";
@@ -1512,6 +1567,15 @@ function renderExamHistory() {
       </div>
     `;
   }).join("") || `<div class="empty">尚無成績歷史。</div>`;
+  if (allItems.length > pageSize) {
+    $("#examHistoryList").insertAdjacentHTML("beforeend", `
+      <div class="pager-row">
+        <button class="ghost" type="button" data-exam-history-page="${examHistoryPage - 1}" ${examHistoryPage <= 1 ? "disabled" : ""}>上一頁</button>
+        <span>${examHistoryPage} / ${totalPages}，共 ${allItems.length} 份成績單</span>
+        <button class="ghost" type="button" data-exam-history-page="${examHistoryPage + 1}" ${examHistoryPage >= totalPages ? "disabled" : ""}>下一頁</button>
+      </div>
+    `);
+  }
 }
 
 function saveTermScore(event) {
@@ -2061,6 +2125,7 @@ function renderClassOps() {
     <article class="metric"><span>優先補強</span><strong>${weakest ? weakest.subject : "-"}</strong></article>
   `;
   if ($("#classOpsEnrollment")) $("#classOpsEnrollment").innerHTML = classOpsEnrollmentHtml(meta);
+  if ($("#classOpsAiResult")) $("#classOpsAiResult").innerHTML = "";
   $("#classOpsRadar").innerHTML = classOpsRadarSvg(stats);
   $("#classOpsLevel").innerHTML = stats.filter((item) => item.count).map((item) => `
     <article class="level-row">
@@ -2823,6 +2888,14 @@ function renderStudentReportHtml(student, subjectOverride = null) {
       ${!analyses.length ? `<div class="empty">尚無週考成績紀錄。</div>` : ""}
     </div>
     <p class="report-copy">此週考報告採各科獨立判讀，不混入段考成績；系統優先參考近期週考、分數起伏與進退步趨勢，避免早期成績或不同科目混算造成失準。</p>
+    <section class="ai-analysis-panel compact-ai-panel">
+      <div class="panel-title">
+        <h2>AI 分析報告</h2>
+        <span>使用 Gemini 依真實成績產生</span>
+      </div>
+      <button class="primary" type="button" data-ai-student="${student.id}">產生 AI 分析</button>
+      <div class="ai-analysis-result"></div>
+    </section>
   `;
 }
 
@@ -3745,6 +3818,7 @@ function setupForms() {
     onInputChange(id, renderContactSubjectOptions);
   });
   $("#printClassOpsWeeklyReport")?.addEventListener("click", printClassOpsWeeklyReportPdf);
+  $("#generateClassOpsAi")?.addEventListener("click", generateClassOpsAiAnalysis);
 
   $("#studentForm").addEventListener("submit", (event) => {
     event.preventDefault();
@@ -3936,6 +4010,17 @@ function setupForms() {
     flashButton(event.submitter, "已儲存");
   });
 
+  $("#aiSettingsForm")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    state.aiSettings = normalizeAiSettings({
+      geminiApiKey: $("#geminiApiKey").value.trim(),
+      model: $("#geminiModel").value.trim(),
+    });
+    saveState();
+    renderAiSettings();
+    flashButton(event.submitter, "已儲存");
+  });
+
   $("#academicForm")?.addEventListener("submit", (event) => {
     event.preventDefault();
     state.settings = normalizeAcademicSettings({
@@ -4051,7 +4136,10 @@ function setupForms() {
   });
 
   ["studentFilter", "studentSearch", "lateGrade", "historyType", "historySearch", "scheduleGrade", "examGrade", "examSubject", "examPaperCount", "examNoTest", "scoreHistoryYear", "scoreHistorySemester", "scoreHistoryGrade", "careerQueryDate", "careerExamYear", "careerExamSemester", "careerTermYear", "careerTermAnalysisYear", "careerTermAnalysisSemester", "careerTermAnalysisStage", "termYear", "termSemester", "termGrade", "termStage"].forEach((id) => {
-    onInputChange(id, renderAll);
+    onInputChange(id, () => {
+      if (id.startsWith("scoreHistory")) examHistoryPage = 1;
+      renderAll();
+    });
   });
 
   $("#careerSubjectButtons")?.addEventListener("click", (event) => {
@@ -4400,7 +4488,7 @@ function renderLateBoard() {
   const todayWeekday = weekdayFromDate(today);
   const ids = dashboardStudentIds();
   const fixed = state.students
-    .filter((student) => ids.has(student.id) && student.fixedLate.some((item) => item.day === todayWeekday))
+    .filter((student) => ids.has(student.id) && studentHasClassOnDate(student, today) && student.fixedLate.some((item) => item.day === todayWeekday))
     .map((student) => {
       const fixedLate = student.fixedLate.find((item) => item.day === todayWeekday);
       return {
@@ -4412,8 +4500,9 @@ function renderLateBoard() {
     });
   const temporary = state.lateRecords
     .filter((record) => {
-      if (record.dismissedAt || !ids.has(record.studentId)) return false;
-      if (dashboardMode === "today") return record.date === today;
+      const student = getStudent(record.studentId);
+      if (record.dismissedAt || !ids.has(record.studentId) || !student) return false;
+      if (dashboardMode === "today") return record.date === today && studentHasClassOnDate(student, today);
       return record.date >= today;
     })
     .sort((a, b) => a.date.localeCompare(b.date))
@@ -4558,6 +4647,7 @@ function renderContactSubjectOptions() {
     periods.forEach((period) => {
       const subject = normalizeCourseName(state.schedule?.[itemGrade]?.[day]?.[period]);
       if (courses.includes(subject)) scheduled.add(subject);
+      if (subject === "數A") scheduled.add("數B");
     });
   });
   const subjects = scheduled.size ? [...scheduled] : courses;
@@ -4676,6 +4766,124 @@ function renderAboutSettings() {
   $("#aboutPreview").innerHTML = aboutHtml(about);
 }
 
+function renderAiSettings() {
+  state.aiSettings = normalizeAiSettings(state.aiSettings || {});
+  if ($("#geminiApiKey")) $("#geminiApiKey").value = state.aiSettings.geminiApiKey || "";
+  if ($("#geminiModel")) $("#geminiModel").value = state.aiSettings.model || defaultAiSettings().model;
+}
+
+function aiConfigured() {
+  return Boolean(normalizeAiSettings(state.aiSettings || {}).geminiApiKey);
+}
+
+function markdownToHtml(text) {
+  return escapeHtml(text)
+    .replace(/^### (.*)$/gm, "<h3>$1</h3>")
+    .replace(/^## (.*)$/gm, "<h2>$1</h2>")
+    .replace(/^# (.*)$/gm, "<h2>$1</h2>")
+    .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
+    .replace(/\n- /g, "\n• ")
+    .replace(/\n/g, "<br>");
+}
+
+async function callGeminiAnalysis(prompt) {
+  const settings = normalizeAiSettings(state.aiSettings || {});
+  if (!settings.geminiApiKey) throw new Error("尚未設定 Gemini API Key。");
+  const model = settings.model || defaultAiSettings().model;
+  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(settings.geminiApiKey)}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: { temperature: 0.35, maxOutputTokens: 1800 },
+    }),
+  });
+  if (!response.ok) throw new Error(`Gemini 回應失敗：${response.status}`);
+  const data = await response.json();
+  const text = data.candidates?.[0]?.content?.parts?.map((part) => part.text || "").join("\n").trim();
+  if (!text) throw new Error("Gemini 沒有回傳分析內容。");
+  return text;
+}
+
+function classOpsAiPayload(meta = classOpsMeta()) {
+  const stats = classOpsSubjectStats(meta).filter((item) => item.count);
+  const rows = classOpsRows(meta).slice(-160).map((row) => ({
+    source: row.source,
+    date: row.date,
+    grade: row.grade,
+    subject: row.subject,
+    score: Number(row.score?.toFixed?.(1) ?? row.score),
+    scope: row.scope,
+    student: row.student?.name || "",
+  }));
+  return {
+    meta,
+    subjectStats: stats.map((item) => ({
+      subject: item.subject,
+      count: item.count,
+      average: scoreDisplay(item.average),
+      passRate: scoreDisplay(item.passRate),
+      lowRate: scoreDisplay(item.lowRate),
+      high: scoreDisplay(item.high),
+      low: scoreDisplay(item.low),
+      benchmark: scoreDisplay(item.benchmark),
+      gap: scoreDisplay(item.gap),
+    })),
+    weakUnits: classOpsWeakHistory(meta),
+    segments: classOpsStudentSegments(meta),
+    recentRows: rows,
+  };
+}
+
+async function generateClassOpsAiAnalysis() {
+  const target = $("#classOpsAiResult");
+  if (!target) return;
+  if (!aiConfigured()) {
+    target.innerHTML = `<div class="empty">請先到 AI設定 填入 Gemini API Key；未設定時不會產生模板分析。</div>`;
+    return;
+  }
+  target.innerHTML = `<div class="empty">AI 分析中，請稍候...</div>`;
+  const payload = classOpsAiPayload();
+  const prompt = `你是補習班教學主任，請用繁體中文根據真實資料產生班級分析。禁止套模板、禁止捏造資料。請包含：1.整體趨勢 2.各科狀況 3.PR/前中後段策略 4.弱點單元補救 5.下週教學行動。資料如下：\n${JSON.stringify(payload, null, 2)}`;
+  try {
+    const text = await callGeminiAnalysis(prompt);
+    target.innerHTML = `<article class="ai-answer-card">${markdownToHtml(text)}</article>`;
+  } catch (error) {
+    target.innerHTML = `<div class="empty">${escapeHtml(error.message || "AI 分析失敗")}</div>`;
+  }
+}
+
+async function generateStudentAiAnalysis(studentId, output) {
+  const student = getStudent(studentId);
+  if (!student || !output) return;
+  if (!aiConfigured()) {
+    output.innerHTML = `<div class="empty">請先到 AI設定 填入 Gemini API Key；未設定時不會產生模板分析。</div>`;
+    return;
+  }
+  output.innerHTML = `<div class="empty">AI 分析中，請稍候...</div>`;
+  const rows = studentExamRows(student).slice(-80).map((row) => ({
+    date: row.exam.date,
+    subject: row.exam.subject,
+    scope: row.exam.scope,
+    score: scoreDisplay(row.score),
+    papers: row.papers.map(scoreDisplay),
+    stats: examStatsForStudent(row.exam, student.id),
+  }));
+  const payload = {
+    student: { name: student.name, grade: student.grade, courses: student.courses },
+    subjectAnalyses: subjectPerformanceRows(student),
+    weeklyRows: rows,
+    termRows: state.termScores.filter((item) => item.studentId === student.id),
+  };
+  const prompt = `你是補習班班導師，請用繁體中文根據真實資料產生學生生涯分析。禁止套模板、禁止捏造資料。請包含：整體狀況、各科趨勢、PR/前中後段定位、弱點單元、家長可理解的協助方式、老師下週行動。資料如下：\n${JSON.stringify(payload, null, 2)}`;
+  try {
+    const text = await callGeminiAnalysis(prompt);
+    output.innerHTML = `<article class="ai-answer-card">${markdownToHtml(text)}</article>`;
+  } catch (error) {
+    output.innerHTML = `<div class="empty">${escapeHtml(error.message || "AI 分析失敗")}</div>`;
+  }
+}
+
 function setupActions() {
   document.addEventListener("click", (event) => {
     const deleteStudentId = event.target.dataset.deleteStudent;
@@ -4696,11 +4904,20 @@ function setupActions() {
     const deleteEventId = event.target.dataset.deleteEvent;
     const deleteContactId = event.target.dataset.deleteContact;
     const deleteTeacherId = event.target.dataset.deleteTeacher;
+    const aiStudentId = event.target.dataset.aiStudent;
     const applyAcademicPeriod = event.target.dataset.applyAcademicPeriod;
     const editAcademicPeriod = event.target.dataset.editAcademicPeriod;
     const openClassOpsPeriod = event.target.dataset.openClassOpsPeriod;
     const careerWeek = event.target.dataset.careerWeek;
+    const examHistoryPageTarget = event.target.dataset.examHistoryPage;
 
+    if (examHistoryPageTarget) {
+      examHistoryPage = Math.max(1, Number(examHistoryPageTarget) || 1);
+      renderExamHistory();
+    }
+    if (aiStudentId) {
+      generateStudentAiAnalysis(aiStudentId, event.target.closest(".ai-analysis-panel")?.querySelector(".ai-analysis-result"));
+    }
     if (pickLeaveStudentId) {
       const student = getStudent(pickLeaveStudentId);
       if (student) {
@@ -4720,11 +4937,13 @@ function setupActions() {
       }
     }
     if (careerWeek) {
-      const target = $("#careerQueryDate");
+      const isParentWeek = Boolean(event.target.closest("#parentScoreList"));
+      const target = isParentWeek ? $("#parentScoreDate") : $("#careerQueryDate");
       const amount = Number(careerWeek) * 7;
       if (target) {
         target.value = addDays(target.value || todayISO(), amount);
-        renderStudentReport();
+        if (isParentWeek && parentStudentId) renderParentPortal();
+        else renderStudentReport();
       }
     }
     if (editStudentId) {
@@ -5207,6 +5426,7 @@ function renderAll() {
   renderEventManageList();
   renderContactBooks();
   renderAboutSettings();
+  renderAiSettings();
   renderActiveLeaves();
   renderLateBoard();
   renderManageLists();
