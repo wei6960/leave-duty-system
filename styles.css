@@ -468,8 +468,8 @@ h2 {
 .term-weight-grid,
 .term-period-grid #termPeriodStageRows {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
-  gap: .65rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: .75rem;
 }
 
 .term-weight-card,
@@ -499,6 +499,48 @@ h2 {
 
 .term-period-row label {
   gap: .35rem;
+}
+
+#termSectionSwitch {
+  grid-template-columns: repeat(3, minmax(12rem, 1fr));
+}
+
+#termPeriodForm {
+  display: grid;
+  grid-template-columns: minmax(10rem, 14rem) minmax(10rem, 14rem) minmax(0, 1fr);
+  align-items: end;
+  gap: .9rem;
+  max-width: 62rem;
+  margin-inline: auto;
+}
+
+#termPeriodForm > label {
+  align-self: end;
+}
+
+#termPeriodForm .term-period-grid {
+  grid-column: 1 / -1;
+  padding: .95rem;
+  border-radius: .55rem;
+  background:
+    linear-gradient(135deg, rgba(198, 151, 53, .1), transparent 46%),
+    rgba(0, 0, 0, .16);
+}
+
+#termPeriodForm .panel-title {
+  align-items: end;
+}
+
+#termPeriodForm .primary {
+  grid-column: 3;
+  justify-self: end;
+  min-width: 14rem;
+}
+
+#termPeriodSection > .list-panel {
+  max-width: 62rem;
+  width: 100%;
+  margin-inline: auto;
 }
 
 .term-period-card .meta {
@@ -3156,6 +3198,22 @@ tbody tr:hover {
 
   #termReportBody table {
     min-width: 72rem;
+  }
+
+  #termSectionSwitch,
+  #termPeriodForm,
+  .term-period-grid #termPeriodStageRows {
+    grid-template-columns: 1fr;
+  }
+
+  #termPeriodForm {
+    max-width: 100%;
+  }
+
+  #termPeriodForm .primary {
+    grid-column: 1;
+    justify-self: stretch;
+    min-width: 0;
   }
 
   .class-ops-toolbar,
