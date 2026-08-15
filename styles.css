@@ -2360,6 +2360,13 @@ body.parent-nav-open .parent-drawer {
     #11161d;
 }
 
+.parent-report-notice-title {
+  color: #fff4c8;
+  font-size: clamp(1.35rem, 3vw, 2rem);
+  line-height: 1.35;
+  font-weight: 900;
+}
+
 .ai-analysis-result {
   margin-top: .85rem;
 }

@@ -3551,7 +3551,7 @@ function renderStudentReportHtml(student, subjectOverride = null, options = {}) 
     </div>
     ${options.hideAi ? "" : `<section class="ai-analysis-panel compact-ai-panel" data-ai-mode="${aiMode}" data-ai-student-panel="${student.id}">
       <div class="panel-title">
-        <h2>${options.autoAi ? "若需詳細報告請與老師作申請" : "AI 學習分析"}</h2>
+        <h2 class="${options.autoAi ? "parent-report-notice-title" : ""}">${options.autoAi ? "若需詳細報告請與老師作申請，會幫孩子製作詳細紙本報告" : "AI 學習分析"}</h2>
         <span>${options.autoAi ? `金牌躍騰平鎮分校 學生：${escapeHtml(student.name)} 學習摘要` : "依真實成績、PR 與弱點單元生成"}</span>
       </div>
       ${options.autoAi ? studentAiVisualStripHtml(student, analyses) : ""}
