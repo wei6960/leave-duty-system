@@ -6,6 +6,14 @@ const FIREBASE_SDK_VERSION = "12.17.1";
 const SUPABASE_SDK_VERSION = "2.86.0";
 const SUPABASE_COLLECTION = "leaveDutyBranches";
 const SUPABASE_EXAM_COLLECTION = `${SUPABASE_COLLECTION}:exams`;
+const geminiModelOptions = [
+  { value: "gemini-3.5-flash-lite", label: "Gemini 3.5 Flash-Lite（免費優先）" },
+  { value: "gemini-3.5-flash", label: "Gemini 3.5 Flash" },
+  { value: "gemini-3.1-flash-lite", label: "Gemini 3.1 Flash-Lite" },
+  { value: "gemini-3.1-flash", label: "Gemini 3.1 Flash" },
+  { value: "gemini-2.0-flash", label: "Gemini 2.0 Flash（舊版相容）" },
+  { value: "gemini-1.5-flash", label: "Gemini 1.5 Flash（舊版相容）" },
+];
 const grades = ["國一", "國二", "國三"];
 const studentStatuses = [...grades, "校友"];
 const weekdays = ["一", "二", "三", "四", "五", "六", "日"];
@@ -50,6 +58,7 @@ let classOpsSelectedGrade = "國一";
 let contactBookSection = "menu";
 let aboutSection = "display";
 let examHistoryPage = 1;
+const studentAiCache = new Map();
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -116,7 +125,7 @@ function emptyState() {
 function defaultAiSettings() {
   return {
     geminiApiKey: "",
-    model: "gemini-1.5-flash",
+    model: geminiModelOptions[0].value,
   };
 }
 
@@ -2186,6 +2195,67 @@ function classOpsRadarSvg(stats) {
   </svg>`;
 }
 
+function classOpsTrendSvg(rows) {
+  const grouped = new Map();
+  rows.forEach((row) => {
+    if (!row.date || !Number.isFinite(row.score)) return;
+    if (!grouped.has(row.date)) grouped.set(row.date, []);
+    grouped.get(row.date).push(row.score);
+  });
+  const pointsData = [...grouped.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .slice(-12)
+    .map(([date, values]) => ({ date, average: averageScore(values) }));
+  if (pointsData.length < 2) return `<div class="empty small-empty">至少需要 2 個日期才會形成折線圖。</div>`;
+  const width = 520;
+  const height = 190;
+  const pad = 28;
+  const points = pointsData.map((item, index) => {
+    const x = pad + index * (width - pad * 2) / Math.max(1, pointsData.length - 1);
+    const y = height - pad - Math.max(0, Math.min(100, item.average)) / 100 * (height - pad * 2);
+    return { ...item, x, y };
+  });
+  return `<svg class="score-line-chart class-ops-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="班級平均折線圖">
+    <line x1="${pad}" y1="${pad}" x2="${pad}" y2="${height - pad}" class="chart-axis"></line>
+    <line x1="${pad}" y1="${height - pad}" x2="${width - pad}" y2="${height - pad}" class="chart-axis"></line>
+    <line x1="${pad}" y1="${height - pad - .6 * (height - pad * 2)}" x2="${width - pad}" y2="${height - pad - .6 * (height - pad * 2)}" class="chart-pass"></line>
+    <polyline points="${points.map((point) => `${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(" ")}" class="chart-line"></polyline>
+    ${points.map((point) => `<g><circle cx="${point.x.toFixed(1)}" cy="${point.y.toFixed(1)}" r="4.5" class="chart-dot"></circle><title>${dateLabel(point.date)} 平均 ${scoreDisplay(point.average)}</title></g>`).join("")}
+    ${points.map((point, index) => index % 2 === 0 || index === points.length - 1 ? `<text x="${point.x.toFixed(1)}" y="${height - 8}" text-anchor="middle" class="chart-label">${dateLabel(point.date).slice(0, 5)}</text>` : "").join("")}
+    <text x="${pad + 4}" y="${height - pad - .6 * (height - pad * 2) - 6}" class="chart-mark">60</text>
+  </svg>`;
+}
+
+function classOpsBarSvg(stats) {
+  const items = stats.filter((item) => item.count).sort((a, b) => b.average - a.average).slice(0, 10);
+  if (!items.length) return `<div class="empty small-empty">尚無科目統計資料。</div>`;
+  const max = Math.max(...items.map((item) => item.average || 0), 100);
+  return `<div class="class-bar-chart" role="img" aria-label="各科平均長條圖">
+    ${items.map((item) => {
+      const width = Math.max(4, Math.min(100, (item.average || 0) / max * 100));
+      return `<div class="class-bar-row">
+        <span>${escapeHtml(item.subject)}</span>
+        <i><b style="width:${width}%"></b></i>
+        <strong>${scoreDisplay(item.average)}</strong>
+      </div>`;
+    }).join("")}
+  </div>`;
+}
+
+function classOpsLatestPrSummary(meta, rows) {
+  const sorted = rows.filter((row) => row.source === "週考" && row.exam && row.student)
+    .sort((a, b) => b.date.localeCompare(a.date));
+  const latest = sorted[0];
+  if (!latest) return { label: "-", detail: "尚無最新週考資料" };
+  const sameExamRows = currentScoreRows(latest.exam);
+  const prValues = sameExamRows.map((row) => examStatsForStudent(latest.exam, row.student.id).pr).filter(Number.isFinite);
+  const median = prValues.length ? prValues.sort((a, b) => a - b)[Math.floor(prValues.length / 2)] : NaN;
+  return {
+    label: Number.isFinite(median) ? `PR ${scoreDisplay(median)}` : "-",
+    detail: `${latest.exam.grade}｜${dateLabel(latest.exam.date)}｜${latest.exam.subject}｜${sameExamRows.length} 人`,
+  };
+}
+
 function renderClassOps() {
   if (!$("#classOpsSummary")) return;
   renderLayerVisibility();
@@ -2198,13 +2268,13 @@ function renderClassOps() {
   const summary = summarizeScores(rows);
   const best = stats.filter((item) => item.count).sort((a, b) => b.average - a.average)[0];
   const weakest = stats.filter((item) => item.count).sort((a, b) => a.average - b.average)[0];
+  const latestPr = classOpsLatestPrSummary(meta, rows);
   $("#classOpsSummary").innerHTML = `
     <article class="metric"><span>班級平均</span><strong>${scoreDisplay(summary.average)}</strong></article>
     <article class="metric"><span>及格率</span><strong>${scoreDisplay(summary.passRate)}%</strong></article>
-    <article class="metric"><span>優勢科目</span><strong>${best ? best.subject : "-"}</strong></article>
-    <article class="metric"><span>優先補強</span><strong>${weakest ? weakest.subject : "-"}</strong></article>
-  `;
-  if ($("#classOpsEnrollment")) $("#classOpsEnrollment").innerHTML = classOpsEnrollmentHtml(meta);
+    <article class="metric"><span>最新年級 PR</span><strong>${latestPr.label}</strong><small>${escapeHtml(latestPr.detail)}</small></article>
+    <article class="metric"><span>優先補強</span><strong>${weakest ? weakest.subject : "-"}</strong><small>${best ? `優勢 ${best.subject}` : ""}</small></article>
+  `;  if ($("#classOpsEnrollment")) $("#classOpsEnrollment").innerHTML = classOpsEnrollmentHtml(meta);
   if ($("#classOpsAiResult")) $("#classOpsAiResult").innerHTML = "";
   $("#classOpsRadar").innerHTML = classOpsRadarSvg(stats);
   $("#classOpsLevel").innerHTML = stats.filter((item) => item.count).map((item) => `
@@ -2214,6 +2284,16 @@ function renderClassOps() {
     </article>
   `).join("") || `<div class="empty">這個學年學期尚無可比較成績。</div>`;
   $("#classOpsSubjectAnalysis").innerHTML = `
+    <div class="class-ops-chart-grid">
+      <article class="analysis-card chart-card">
+        <div class="analysis-card-head"><strong>班級平均折線</strong><b class="level-badge">趨勢</b></div>
+        ${classOpsTrendSvg(rows)}
+      </article>
+      <article class="analysis-card chart-card">
+        <div class="analysis-card-head"><strong>各科平均長條</strong><b class="level-badge">統計</b></div>
+        ${classOpsBarSvg(stats)}
+      </article>
+    </div>
     <div class="analysis-grid">
       ${stats.filter((item) => item.count).map((item) => `
         <article class="analysis-card">
@@ -2935,7 +3015,7 @@ function renderStudentReport() {
   }
 }
 
-function renderStudentReportHtml(student, subjectOverride = null) {
+function renderStudentReportHtml(student, subjectOverride = null, options = {}) {
   const subject = subjectOverride || selectedCareerSubject(student);
   const analyses = subjectPerformanceRows(student)
     .filter((item) => studentTakesSubject(student, item.subject))
@@ -2945,12 +3025,16 @@ function renderStudentReportHtml(student, subjectOverride = null) {
   const levelSummary = analyses.length
     ? analyses.map((item) => `${item.subject} ${item.level}`).join("、")
     : "資料不足";
+  const prLabel = latestStats
+    ? `${latestRow.exam.grade} PR ${scoreDisplay(latestStats.pr)}｜排名 ${latestStats.rank}/${latestStats.count}｜班平均 ${scoreDisplay(latestStats.average)}`
+    : "資料不足";
+  const aiMode = options.autoAi ? "auto" : "manual";
   return `
     <div class="report-head">
       <strong>${studentLabel(student)}</strong>
-      <span>補習科目：${studentCoursesLabel(student)}</span>
-      <span>最近定位：${latestStats ? `${latestRow.exam.subject} ${latestStats.segment}｜排名 ${latestStats.rank}｜PR ${scoreDisplay(latestStats.pr)}｜班級 ${latestStats.count} 人｜班平均 ${scoreDisplay(latestStats.average)}` : "資料不足"}</span>
-      <span>週考推估：${levelSummary}</span>
+      <span>修課科目：${studentCoursesLabel(student)}</span>
+      <span>最新年級 PR：${prLabel}</span>
+      <span>各科定位：${levelSummary}</span>
     </div>
     <div class="analysis-grid">
       ${analyses.map((item) => `
@@ -2959,26 +3043,25 @@ function renderStudentReportHtml(student, subjectOverride = null) {
             <strong>${item.subject}</strong>
             <b class="level-badge">${item.level}</b>
           </div>
-          <span>近期加權 ${scoreDisplay(item.recentAvg)}｜長期平均 ${scoreDisplay(item.longAvg)}｜最新 ${scoreDisplay(item.latest)}</span>
-          <small>${trendLabel(item.trend)}｜${stabilityLabel(item.range)}｜歷程 ${item.count} 次</small>
+          <span>近期平均 ${scoreDisplay(item.recentAvg)}｜長期平均 ${scoreDisplay(item.longAvg)}｜最新 ${scoreDisplay(item.latest)}</span>
+          <small>${trendLabel(item.trend)}｜${stabilityLabel(item.range)}｜累積 ${item.count} 筆</small>
           ${scoreLineChart(item.rows)}
           <p>${item.note}</p>
         </article>
       `).join("")}
-      ${!analyses.length ? `<div class="empty">尚無週考成績紀錄。</div>` : ""}
+      ${!analyses.length ? `<div class="empty">尚無可分析的成績紀錄。</div>` : ""}
     </div>
-    <p class="report-copy">此週考報告採各科獨立判讀，不混入段考成績；系統優先參考近期週考、分數起伏與進退步趨勢，避免早期成績或不同科目混算造成失準。</p>
-    <section class="ai-analysis-panel compact-ai-panel">
+    <p class="report-copy">系統會依週考、段考、PR、排名、班平均與弱點單元整理學習狀況；若已設定 Gemini API，AI 會依真實資料補上更完整的文字建議。</p>
+    <section class="ai-analysis-panel compact-ai-panel" data-ai-mode="${aiMode}" data-ai-student-panel="${student.id}">
       <div class="panel-title">
-        <h2>AI 分析報告</h2>
-        <span>使用 Gemini 依真實成績產生</span>
+        <h2>AI 學習分析</h2>
+        <span>${options.autoAi ? "家長端會自動依最新資料生成" : "依真實成績、PR 與弱點單元生成"}</span>
       </div>
-      <button class="primary" type="button" data-ai-student="${student.id}">產生 AI 分析</button>
-      <div class="ai-analysis-result"></div>
+      ${options.autoAi ? "" : `<button class="primary" type="button" data-ai-student="${student.id}">產生 AI 分析</button>`}
+      <div class="ai-analysis-result">${aiConfigured() ? `<div class="empty">${options.autoAi ? "正在準備 AI 分析..." : "按下按鈕後產生真實 AI 分析。"}</div>` : `<div class="empty">尚未設定 Gemini API Key。</div>`}</div>
     </section>
   `;
 }
-
 function pdfDocument(title, body, layout = "portrait") {
   const printWindow = window.open("", "_blank");
   if (!printWindow) {
@@ -4256,6 +4339,7 @@ function setParentSection(sectionId, options = {}) {
   $$(".parent-drawer-nav [data-parent-section]").forEach((button) => {
     button.classList.toggle("is-active", button.dataset.parentSection === parentActiveSection);
   });
+  if (parentActiveSection === "parentReportSection" && parentStudentId) autoGenerateVisibleStudentAi(parentStudentId);
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
@@ -4849,7 +4933,14 @@ function renderAboutSettings() {
 function renderAiSettings() {
   state.aiSettings = normalizeAiSettings(state.aiSettings || {});
   if ($("#geminiApiKey")) $("#geminiApiKey").value = state.aiSettings.geminiApiKey || "";
-  if ($("#geminiModel")) $("#geminiModel").value = state.aiSettings.model || defaultAiSettings().model;
+  if ($("#geminiModel")) {
+    const model = state.aiSettings.model || defaultAiSettings().model;
+    const options = geminiModelOptions.some((item) => item.value === model)
+      ? geminiModelOptions
+      : [...geminiModelOptions, { value: model, label: `${model}（目前使用）` }];
+    $("#geminiModel").innerHTML = options.map((item) => `<option value="${item.value}">${item.label}</option>`).join("");
+    $("#geminiModel").value = model;
+  }
 }
 
 function aiConfigured() {
@@ -4933,37 +5024,64 @@ async function generateClassOpsAiAnalysis() {
   }
 }
 
-async function generateStudentAiAnalysis(studentId, output) {
-  const student = getStudent(studentId);
-  if (!student || !output) return;
-  if (!aiConfigured()) {
-    output.innerHTML = `<div class="empty">請先到 AI設定 填入 Gemini API Key；未設定時不會產生模板分析。</div>`;
-    return;
-  }
-  output.innerHTML = `<div class="empty">AI 分析中，請稍候...</div>`;
+function studentAiPayload(student) {
   const rows = studentExamRows(student).slice(-80).map((row) => ({
     date: row.exam.date,
+    grade: row.exam.grade,
     subject: row.exam.subject,
     scope: row.exam.scope,
     score: scoreDisplay(row.score),
     papers: row.papers.map(scoreDisplay),
     stats: examStatsForStudent(row.exam, student.id),
   }));
-  const payload = {
+  return {
     student: { name: student.name, grade: student.grade, courses: student.courses },
     subjectAnalyses: subjectPerformanceRows(student),
     weeklyRows: rows,
     termRows: state.termScores.filter((item) => item.studentId === student.id),
   };
+}
+
+function studentAiCacheKey(student, payload) {
+  const settings = normalizeAiSettings(state.aiSettings || {});
+  return `${student.id}|${settings.model}|${JSON.stringify(payload)}`;
+}
+
+function autoGenerateVisibleStudentAi(studentId) {
+  if (!aiConfigured()) return;
+  const panel = document.querySelector(`[data-ai-mode="auto"][data-ai-student-panel="${studentId}"]`);
+  const output = panel?.querySelector(".ai-analysis-result");
+  if (!output || output.dataset.aiLoading === "1") return;
+  output.dataset.aiLoading = "1";
+  generateStudentAiAnalysis(studentId, output).finally(() => {
+    output.dataset.aiLoading = "0";
+  });
+}
+
+async function generateStudentAiAnalysis(studentId, output) {
+  const student = getStudent(studentId);
+  if (!student || !output) return;
+  if (!aiConfigured()) {
+    output.innerHTML = `<div class="empty">尚未設定 Gemini API Key，設定後才會產生真實 AI 分析。</div>`;
+    return;
+  }
+  const payload = studentAiPayload(student);
+  const cacheKey = studentAiCacheKey(student, payload);
+  if (studentAiCache.has(cacheKey)) {
+    output.innerHTML = studentAiCache.get(cacheKey);
+    return;
+  }
+  output.innerHTML = `<div class="empty">AI 正在依真實成績、PR、排名與弱點單元分析...</div>`;
   const prompt = `你是補習班班導師，請用繁體中文根據真實資料產生學生生涯分析。禁止套模板、禁止捏造資料。請包含：整體狀況、各科趨勢、PR/前中後段定位、弱點單元、家長可理解的協助方式、老師下週行動。資料如下：\n${JSON.stringify(payload, null, 2)}`;
   try {
     const text = await callGeminiAnalysis(prompt);
-    output.innerHTML = `<article class="ai-answer-card">${markdownToHtml(text)}</article>`;
+    const html = `<article class="ai-answer-card">${markdownToHtml(text)}</article>`;
+    studentAiCache.set(cacheKey, html);
+    output.innerHTML = html;
   } catch (error) {
     output.innerHTML = `<div class="empty">${escapeHtml(error.message || "AI 分析失敗")}</div>`;
   }
 }
-
 function setupActions() {
   document.addEventListener("click", (event) => {
     const deleteStudentId = event.target.dataset.deleteStudent;
@@ -5414,8 +5532,9 @@ function renderParentPortal() {
   $("#parentScoreList").innerHTML = careerScoreLookupHtml(student, $("#parentScoreDate")?.value || todayISO(), selectedParentCareerSubject(student), { hideDateHistory: true, period });
   renderParentTermTrend(student);
   renderParentTermAnalysisReport(student);
-  $("#parentReport").innerHTML = renderStudentReportHtml(student, selectedParentCareerSubject(student));
+  $("#parentReport").innerHTML = renderStudentReportHtml(student, selectedParentCareerSubject(student), { autoAi: true });
   setParentSection(parentActiveSection);
+  if (parentActiveSection === "parentReportSection") autoGenerateVisibleStudentAi(student.id);
 }
 
 function setupLogin() {
