@@ -1767,6 +1767,11 @@ th {
   stroke-dasharray: 4 5;
 }
 
+.chart-grid-line {
+  stroke: rgba(255, 255, 255, .58);
+  stroke-width: 1;
+}
+
 .chart-line {
   fill: none;
   stroke: var(--gold-2);
@@ -1785,6 +1790,12 @@ th {
 .chart-mark {
   fill: var(--muted);
   font-size: 11px;
+}
+
+.chart-y-label {
+  fill: rgba(255, 255, 255, .9);
+  font-size: 11px;
+  font-weight: 800;
 }
 
 .mini-bars {
@@ -1952,6 +1963,49 @@ body.parent-nav-open .parent-drawer {
 .parent-report-stack.is-active {
   display: grid;
   gap: .9rem;
+}
+
+.parent-report-view:not([hidden]) {
+  display: grid;
+  gap: .9rem;
+}
+
+.parent-report-choice-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: .85rem;
+}
+
+.parent-report-choice-grid button {
+  min-height: 9rem;
+  padding: 1.1rem;
+  border: 1px solid rgba(241, 211, 124, .2);
+  border-radius: .5rem;
+  background:
+    linear-gradient(135deg, rgba(198, 151, 53, .22), transparent 55%),
+    linear-gradient(180deg, rgba(255, 255, 255, .04), rgba(0, 0, 0, .1)),
+    rgba(14, 18, 24, .94);
+  color: var(--text);
+  text-align: left;
+  box-shadow: 0 .9rem 2rem rgba(0, 0, 0, .22), inset 0 1px 0 rgba(255, 255, 255, .04);
+}
+
+.parent-report-choice-grid button:hover {
+  border-color: rgba(241, 211, 124, .52);
+  transform: translateY(-1px);
+}
+
+.parent-report-choice-grid strong {
+  display: block;
+  color: var(--gold-2);
+  font-size: 1.18rem;
+}
+
+.parent-report-choice-grid span {
+  display: block;
+  margin-top: .5rem;
+  color: var(--muted);
+  line-height: 1.55;
 }
 
 .parent-drawer-nav button.is-active {

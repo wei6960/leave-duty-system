@@ -53,6 +53,7 @@ let lastRemoteUpdatedAt = "";
 let parentStudentId = null;
 let parentActiveSection = "parentHomeSection";
 let parentBackStack = [];
+let parentReportView = "menu";
 let teacherBackStack = [];
 let classOpsSection = "menu";
 let classOpsSelectedGrade = "國一";
@@ -2331,6 +2332,16 @@ function classOpsRadarSvg(stats) {
   </svg>`;
 }
 
+function chartGridLines(width, height, pad) {
+  return [20, 40, 60, 80, 100].map((value) => {
+    const y = height - pad - (value / 100) * (height - pad * 2);
+    return `<g class="chart-grid-row">
+      <line x1="${pad}" y1="${y.toFixed(1)}" x2="${width - pad}" y2="${y.toFixed(1)}" class="chart-grid-line"></line>
+      <text x="${pad - 8}" y="${(y + 4).toFixed(1)}" text-anchor="end" class="chart-y-label">${value}</text>
+    </g>`;
+  }).join("");
+}
+
 function classOpsTrendSvg(rows) {
   const grouped = new Map();
   rows.forEach((row) => {
@@ -2345,20 +2356,19 @@ function classOpsTrendSvg(rows) {
   if (pointsData.length < 2) return `<div class="empty small-empty">至少需要 2 個日期才會形成折線圖。</div>`;
   const width = 520;
   const height = 190;
-  const pad = 28;
+  const pad = 42;
   const points = pointsData.map((item, index) => {
     const x = pad + index * (width - pad * 2) / Math.max(1, pointsData.length - 1);
     const y = height - pad - Math.max(0, Math.min(100, item.average)) / 100 * (height - pad * 2);
     return { ...item, x, y };
   });
   return `<svg class="score-line-chart class-ops-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="班級平均折線圖">
+    ${chartGridLines(width, height, pad)}
     <line x1="${pad}" y1="${pad}" x2="${pad}" y2="${height - pad}" class="chart-axis"></line>
     <line x1="${pad}" y1="${height - pad}" x2="${width - pad}" y2="${height - pad}" class="chart-axis"></line>
-    <line x1="${pad}" y1="${height - pad - .6 * (height - pad * 2)}" x2="${width - pad}" y2="${height - pad - .6 * (height - pad * 2)}" class="chart-pass"></line>
     <polyline points="${points.map((point) => `${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(" ")}" class="chart-line"></polyline>
     ${points.map((point) => `<g><circle cx="${point.x.toFixed(1)}" cy="${point.y.toFixed(1)}" r="4.5" class="chart-dot"></circle><title>${dateLabel(point.date)} 平均 ${scoreDisplay(point.average)}</title></g>`).join("")}
     ${points.map((point, index) => index % 2 === 0 || index === points.length - 1 ? `<text x="${point.x.toFixed(1)}" y="${height - 8}" text-anchor="middle" class="chart-label">${dateLabel(point.date).slice(0, 5)}</text>` : "").join("")}
-    <text x="${pad + 4}" y="${height - pad - .6 * (height - pad * 2) - 6}" class="chart-mark">60</text>
   </svg>`;
 }
 
@@ -2801,7 +2811,7 @@ function scoreLineChart(rows) {
   if (chartRows.length < 2) return `<div class="empty small-empty">至少需要 2 次成績才會形成折線圖。</div>`;
   const width = 640;
   const height = 220;
-  const pad = 28;
+  const pad = 42;
   const points = chartRows.map((row, index) => {
     const x = pad + (index * (width - pad * 2)) / Math.max(1, chartRows.length - 1);
     const y = height - pad - (Math.max(0, Math.min(100, row.score)) / 100) * (height - pad * 2);
@@ -2810,13 +2820,12 @@ function scoreLineChart(rows) {
   const polyline = points.map((point) => `${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(" ");
   return `
     <svg class="score-line-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="成績起伏折線圖">
+      ${chartGridLines(width, height, pad)}
       <line x1="${pad}" y1="${pad}" x2="${pad}" y2="${height - pad}" class="chart-axis"></line>
       <line x1="${pad}" y1="${height - pad}" x2="${width - pad}" y2="${height - pad}" class="chart-axis"></line>
-      <line x1="${pad}" y1="${height - pad - .6 * (height - pad * 2)}" x2="${width - pad}" y2="${height - pad - .6 * (height - pad * 2)}" class="chart-pass"></line>
       <polyline points="${polyline}" class="chart-line"></polyline>
       ${points.map((point) => `<g><circle cx="${point.x.toFixed(1)}" cy="${point.y.toFixed(1)}" r="4.5" class="chart-dot"></circle><title>${dateLabel(point.row.exam.date)} ${point.row.exam.subject} ${scoreDisplay(point.row.score)}</title></g>`).join("")}
       ${points.map((point, index) => index % 2 === 0 || index === points.length - 1 ? `<text x="${point.x.toFixed(1)}" y="${height - 8}" text-anchor="middle" class="chart-label">${dateLabel(point.row.exam.date).replace("（週", "\n").replace("）", "")}</text>` : "").join("")}
-      <text x="${pad + 4}" y="${height - pad - .6 * (height - pad * 2) - 6}" class="chart-mark">60</text>
     </svg>
   `;
 }
@@ -2969,7 +2978,7 @@ function termScoreLineChart(rows) {
   if (chartRows.length < 2) return `<div class="empty small-empty">至少需要 2 次段考成績才會形成折線圖。</div>`;
   const width = 640;
   const height = 220;
-  const pad = 28;
+  const pad = 42;
   const points = chartRows.map((row, index) => {
     const x = pad + (index * (width - pad * 2)) / Math.max(1, chartRows.length - 1);
     const y = height - pad - (Math.max(0, Math.min(100, Number(row.score))) / 100) * (height - pad * 2);
@@ -2978,13 +2987,12 @@ function termScoreLineChart(rows) {
   const polyline = points.map((point) => `${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(" ");
   return `
     <svg class="score-line-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="段考成績起伏折線圖">
+      ${chartGridLines(width, height, pad)}
       <line x1="${pad}" y1="${pad}" x2="${pad}" y2="${height - pad}" class="chart-axis"></line>
       <line x1="${pad}" y1="${height - pad}" x2="${width - pad}" y2="${height - pad}" class="chart-axis"></line>
-      <line x1="${pad}" y1="${height - pad - .6 * (height - pad * 2)}" x2="${width - pad}" y2="${height - pad - .6 * (height - pad * 2)}" class="chart-pass"></line>
       <polyline points="${polyline}" class="chart-line"></polyline>
       ${points.map((point) => `<g><circle cx="${point.x.toFixed(1)}" cy="${point.y.toFixed(1)}" r="4.5" class="chart-dot"></circle><title>${point.row.term} ${point.row.stage} ${point.row.subject} ${scoreDisplay(Number(point.row.score))}</title></g>`).join("")}
       ${points.map((point) => `<text x="${point.x.toFixed(1)}" y="${height - 8}" text-anchor="middle" class="chart-label">${point.row.stage}</text>`).join("")}
-      <text x="${pad + 4}" y="${height - pad - .6 * (height - pad * 2) - 6}" class="chart-mark">60</text>
     </svg>
   `;
 }
@@ -3621,8 +3629,10 @@ function renderStudentReportHtml(student, subjectOverride = null, options = {}) 
     .level-badge { display: inline-block; padding: 3px 8px; border-radius: 999px; background: #f3c75f; font-weight: 900; }
     .score-line-chart, .class-radar { width: 100%; max-height: 150px; }
     .radar-ring, .radar-axis, .chart-axis, .chart-pass { fill: none; stroke: #d8c291; stroke-width: 1.2; }
+    .chart-grid-line { fill: none; stroke: rgba(255,255,255,.72); stroke-width: 1; }
     .radar-area { fill: rgba(49, 208, 112, .18); stroke: #159947; stroke-width: 2.4; }
     .radar-label, .chart-label, .chart-mark { fill: #755927; font-size: 11px; font-weight: 800; }
+    .chart-y-label { fill: #ffffff; font-size: 11px; font-weight: 800; }
     .chart-line { fill: none; stroke: #159947; stroke-width: 3; }
     .chart-dot { fill: #b9872f; }
     .chart-pass { stroke-dasharray: 5 5; }
@@ -4879,6 +4889,25 @@ function closeParentDrawer() {
   document.body.classList.remove("parent-nav-open");
 }
 
+function renderParentReportView() {
+  const views = {
+    menu: $("#parentReportMenu"),
+    weekly: $("#parentWeeklyReportPanel"),
+    term: $("#parentTermReportPanel"),
+  };
+  Object.entries(views).forEach(([key, element]) => {
+    if (element) element.hidden = key !== parentReportView;
+  });
+  if (parentActiveSection === "parentReportSection" && parentReportView === "weekly" && parentStudentId) {
+    autoGenerateVisibleStudentAi(parentStudentId);
+  }
+}
+
+function openParentReportSection(view = "menu") {
+  parentReportView = view;
+  setParentSection("parentReportSection");
+}
+
 function setParentSection(sectionId, options = {}) {
   if (!sectionId || !$(`#${sectionId}`)) return;
   if (!options.skipHistory && parentActiveSection && parentActiveSection !== sectionId) parentBackStack.push(parentActiveSection);
@@ -4889,7 +4918,7 @@ function setParentSection(sectionId, options = {}) {
   $$(".parent-drawer-nav [data-parent-section]").forEach((button) => {
     button.classList.toggle("is-active", button.dataset.parentSection === parentActiveSection);
   });
-  if (parentActiveSection === "parentReportSection" && parentStudentId) autoGenerateVisibleStudentAi(parentStudentId);
+  if (parentActiveSection === "parentReportSection") renderParentReportView();
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
@@ -4905,12 +4934,23 @@ function setupParentDrawer() {
   $("#parentScrim")?.addEventListener("click", closeParentDrawer);
   $$(".parent-drawer-nav [data-parent-section]").forEach((button) => {
     button.addEventListener("click", () => {
-      setParentSection(button.dataset.parentSection);
+      if (button.dataset.parentSection === "parentReportSection") openParentReportSection();
+      else setParentSection(button.dataset.parentSection);
       closeParentDrawer();
     });
   });
   $$(".parent-home-grid [data-parent-section]").forEach((button) => {
-    button.addEventListener("click", () => setParentSection(button.dataset.parentSection));
+    button.addEventListener("click", () => {
+      if (button.dataset.parentSection === "parentReportSection") openParentReportSection();
+      else setParentSection(button.dataset.parentSection);
+    });
+  });
+  $$("#parentReportSection [data-parent-report-view]").forEach((button) => {
+    button.addEventListener("click", () => {
+      parentReportView = button.dataset.parentReportView || "menu";
+      renderParentReportView();
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    });
   });
   $("#parentBackButton")?.addEventListener("click", goParentBack);
 }
@@ -6240,7 +6280,7 @@ function renderParentPortal() {
   renderParentTermAnalysisReport(student);
   $("#parentReport").innerHTML = renderStudentReportHtml(student, selectedParentCareerSubject(student), { autoAi: true });
   setParentSection(parentActiveSection);
-  if (parentActiveSection === "parentReportSection") autoGenerateVisibleStudentAi(student.id);
+  renderParentReportView();
 }
 
 function setupLogin() {
@@ -6287,6 +6327,7 @@ function setupLogin() {
     parentStudentId = student.id;
     parentActiveSection = "parentHomeSection";
     parentBackStack = [];
+    parentReportView = "menu";
     $("#parentLoginError").hidden = true;
     showParentShell();
     renderParentPortal();
@@ -6297,6 +6338,7 @@ function setupLogin() {
 
   $("#parentLogout").addEventListener("click", () => {
     parentStudentId = null;
+    parentReportView = "menu";
     cleanupCloudSync();
     showParentLogin();
   });
