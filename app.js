@@ -3479,7 +3479,7 @@ function renderStudentReportHtml(student, subjectOverride = null, options = {}) 
     ${options.hideAi ? "" : `<section class="ai-analysis-panel compact-ai-panel" data-ai-mode="${aiMode}" data-ai-student-panel="${student.id}">
       <div class="panel-title">
         <h2>${options.autoAi ? `金牌躍騰平鎮分校 學生：${escapeHtml(student.name)} 專屬報告` : "AI 學習分析"}</h2>
-        <span>${options.autoAi ? "依真實成績整理 1 到 3 點重點" : "依真實成績、PR 與弱點單元生成"}</span>
+        <span>${options.autoAi ? "依真實成績整理完整定位、各科趨勢與備戰策略" : "依真實成績、PR 與弱點單元生成"}</span>
       </div>
       ${options.autoAi ? "" : `<button class="primary" type="button" data-ai-student="${student.id}">產生 AI 分析</button>`}
       <div class="ai-analysis-result">${aiConfigured() ? `<div class="empty">${options.autoAi ? "正在準備 AI 分析..." : "按下按鈕後產生真實 AI 分析。"}</div>` : `<div class="empty">尚未設定 Gemini API Key。</div>`}</div>
@@ -5591,7 +5591,34 @@ async function generateStudentAiAnalysis(studentId, output) {
   }
   output.innerHTML = `<div class="empty">AI 正在依真實成績、PR、排名與弱點單元分析...</div>`;
   const prompt = isParentReport
-    ? `請用繁體中文產生家長端可閱讀的精簡報告。標題必須是「金牌躍騰平鎮分校 學生：${student.name} 專屬報告」。禁止套模板、禁止捏造資料。內容只列 1 到 3 點重點，每點 1 到 2 句，聚焦：目前學習狀況、明顯優勢或弱點、下一次考試備戰方向。不要寫「家長協助」、不要寫「老師下週行動」、不要寫內部教學安排。若資料不足請明確說資料不足。資料如下：\n${JSON.stringify(payload, null, 2)}`
+    ? `你是金牌躍騰平鎮分校的班導師，請用繁體中文產生家長端可閱讀的完整學生學習分析報告。標題必須是「金牌躍騰平鎮分校 學生：${student.name} 專屬報告」。
+
+嚴格規則：
+1. 禁止套模板、禁止捏造資料；只能根據資料中的成績、PR、排名、班平均、各卷主題、考試範圍、弱點單元與段考資料分析。
+2. 若資料不足，請明確說明哪一科或哪一段資料不足，不要硬編。
+3. 內容要像正式給家長看的專業報告，語氣溫和但具體。
+4. 不要寫「家長協助」段落，不要寫「老師下週行動」或內部教學安排。
+5. 必須保留具體數據，例如分數、PR、排名、班平均、前中後段定位、考卷主題或單元名稱。
+
+請依下列格式輸出：
+
+一、整體狀況與定位分析
+- 說明學生目前年級、修課科目、整體表現。
+- 彙整 PR / 排名 / 前中後段定位。
+- 分出前段亮點、中段穩定表現、後段或需關注項目。
+
+二、各科趨勢與單元解析
+- 逐科分析，不要只列摘要。
+- 每科包含：趨勢與水準、近期/長期平均、最新分數、PR 或排名定位、各卷主題/考試範圍、弱點單元。
+- 若某科有明顯進步或退步，要指出是哪一次考試造成。
+
+三、下次考試備戰策略
+- 依弱科、弱單元和最近趨勢提出具體備戰方向。
+- 每一點要能對應到真實資料，例如某科某單元、某次測驗、某個 PR 或分數表現。
+- 最後用 1 小段總結學生的學習特質與下一階段目標。
+
+資料如下：
+${JSON.stringify(payload, null, 2)}`
     : `你是補習班班導師，請用繁體中文根據真實資料產生學生生涯分析。禁止套模板、禁止捏造資料。請包含：整體狀況、各科趨勢、PR/前中後段定位、弱點單元、段考/下次考試備戰策略。若有各卷主題，請分辨考卷主題內容再分析。資料如下：\n${JSON.stringify(payload, null, 2)}`;
   try {
     const text = await callGeminiAnalysis(prompt);
