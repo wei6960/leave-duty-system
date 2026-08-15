@@ -2325,6 +2325,69 @@ body.parent-nav-open .parent-drawer {
   color: var(--gold-2);
 }
 
+.term-analysis-card-grid,
+.ai-visual-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
+  gap: .85rem;
+}
+
+.term-analysis-card {
+  display: grid;
+  gap: .75rem;
+}
+
+.term-card-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: .45rem;
+}
+
+.term-card-kpis span {
+  padding: .5rem;
+  border: 1px solid rgba(241, 211, 124, .16);
+  border-radius: .4rem;
+  background: rgba(255, 255, 255, .04);
+  color: var(--muted);
+  font-size: .82rem;
+}
+
+.term-card-kpis b {
+  display: block;
+  color: #fff4d2;
+  font-size: 1rem;
+}
+
+.term-card-copy {
+  display: grid;
+  gap: .45rem;
+  color: var(--text);
+  line-height: 1.65;
+}
+
+.term-card-copy p {
+  margin: 0;
+}
+
+.weak-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .45rem;
+}
+
+.weak-chip-row span {
+  padding: .42rem .55rem;
+  border: 1px solid rgba(241, 211, 124, .18);
+  border-radius: 999px;
+  background: rgba(198, 151, 53, .12);
+  color: #ffe7a2;
+  font-size: .82rem;
+}
+
+.ai-visual-strip {
+  margin: .85rem 0;
+}
+
 .about-photo-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));

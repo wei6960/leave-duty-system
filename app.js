@@ -2918,6 +2918,24 @@ function studentWeakUnitsHtml(student, analyses) {
   </section>`;
 }
 
+function studentAiVisualStripHtml(student, analyses) {
+  const weakUnits = studentWeakUnits(student, analyses).slice(0, 4);
+  return `<div class="ai-visual-strip">
+    <article class="analysis-card">
+      <div class="analysis-card-head"><strong>各科雷達</strong><b class="level-badge">定位</b></div>
+      ${studentRadarSvg(analyses)}
+    </article>
+    <article class="analysis-card">
+      <div class="analysis-card-head"><strong>近期平均</strong><b class="level-badge">圖表</b></div>
+      ${studentSubjectBarChart(analyses)}
+    </article>
+    <article class="analysis-card">
+      <div class="analysis-card-head"><strong>AI 關注弱點</strong><b class="level-badge">補強</b></div>
+      <div class="weak-chip-row">${weakUnits.map((unit) => `<span>${escapeHtml(unit.subject)}｜${escapeHtml(unit.topic)} ${scoreDisplay(unit.average)}</span>`).join("") || `<span>目前未累積明顯弱點單元</span>`}</div>
+    </article>
+  </div>`;
+}
+
 function studentReportVisualsHtml(student, analyses) {
   const scores = analyses.flatMap((item) => item.rows.map((row) => row.score).filter(Number.isFinite));
   const average = averageScore(scores);
@@ -3345,6 +3363,46 @@ function termAnalysisRows(student, meta) {
     .sort((a, b) => a.exam.date.localeCompare(b.exam.date));
   return { endDate, previousDate: startDate, rows };
 }
+
+function termScoreForSubject(student, meta, subject) {
+  return state.termScores.find((item) =>
+    item.studentId === student.id &&
+    item.year === meta.year &&
+    item.semester === meta.semester &&
+    item.stage === meta.stage &&
+    normalizeCourseName(item.subject) === normalizeCourseName(subject)
+  );
+}
+
+function termAnalysisSubjectCards(student, meta, selectedSubject, rows) {
+  const subjectSet = new Set([
+    ...rows.map((row) => normalizeCourseName(row.exam.subject)),
+    ...state.termScores
+      .filter((item) => item.studentId === student.id && item.year === meta.year && item.semester === meta.semester && item.stage === meta.stage)
+      .map((item) => normalizeCourseName(item.subject)),
+  ]);
+  return reportSubjects
+    .filter((subject) => subjectSet.has(normalizeCourseName(subject)))
+    .filter((subject) => selectedSubject === "全部" || normalizeCourseName(subject) === normalizeCourseName(selectedSubject))
+    .map((subject) => {
+      const subjectRows = rows.filter((row) => normalizeCourseName(row.exam.subject) === normalizeCourseName(subject));
+      const analysis = subjectRows.length ? analyzeSubjectPerformance(subject, subjectRows) : null;
+      const termScore = termScoreForSubject(student, meta, subject);
+      const latestRow = subjectRows.at(-1);
+      const latestStats = latestRow ? examStatsForStudent(latestRow.exam, student.id) : null;
+      const weakRows = subjectRows.filter((row) => Number(row.score) < 70);
+      const weakUnits = weakRows.map((row) => row.exam.scope || dateLabel(row.exam.date)).slice(-5);
+      const termScoreValue = Number(termScore?.score);
+      const level = Number.isFinite(termScoreValue) ? levelFromScore(termScoreValue) : (analysis?.level || "資料不足");
+      const focus = weakUnits.length
+        ? `段考備戰先補 ${weakUnits.join("、")}，再用同類題回測穩定度。`
+        : subjectRows.length
+          ? "段前週考未累積明顯低分單元，建議維持複習節奏並加強錯題整理。"
+          : "目前此科段前週考資料不足，建議先補齊近期測驗紀錄後再判斷。";
+      return { subject, subjectRows, analysis, termScore, termScoreValue, latestRow, latestStats, weakUnits, level, focus };
+    });
+}
+
 function termAnalysisReportHtml(student, meta, selectedSubject) {
   if (!student) {
     return `<div class="empty">請先選擇學生。</div>`;
@@ -3353,39 +3411,40 @@ function termAnalysisReportHtml(student, meta, selectedSubject) {
   if (!endDate) {
     return `<div class="empty">請先設定 ${meta.year}${meta.semester} ${meta.stage} 的段考區間。</div>`;
   }
-  const filteredRows = rows.filter((row) => selectedSubject === "全部" || row.exam.subject === selectedSubject);
-  const bySubject = courses
-    .map((subject) => ({
-      subject,
-      rows: filteredRows.filter((row) => row.exam.subject === subject),
-    }))
-    .filter((item) => item.rows.length);
+  const filteredRows = rows.filter((row) => selectedSubject === "全部" || normalizeCourseName(row.exam.subject) === normalizeCourseName(selectedSubject));
+  const subjectCards = termAnalysisSubjectCards(student, meta, selectedSubject, rows);
   const periodText = previousDate ? `${dateLabel(previousDate)} 之後至 ${dateLabel(endDate)}` : `${dateLabel(endDate)} 前`;
   return `
     <div class="report-head">
       <strong>${studentLabel(student)}｜${meta.year}${meta.semester} ${meta.stage}</strong>
       <span>${periodText}</span>
-      <span>以週考紀錄分析，不含段考分數</span>
+      <span>以段前週考配合段考成績、PR 與弱點單元分析</span>
     </div>
-    <div class="analysis-grid">
-      ${bySubject.map((item) => {
-        const analysis = analyzeSubjectPerformance(item.subject, item.rows);
-        const weakUnits = item.rows
-          .filter((row) => row.score < 70)
-          .map((row) => row.exam.scope || dateLabel(row.exam.date))
-          .slice(-5);
-        return `<article class="analysis-card">
+    <div class="term-analysis-card-grid">
+      ${subjectCards.map((item) => `
+        <article class="analysis-card term-analysis-card">
           <div class="analysis-card-head">
             <strong>${item.subject}</strong>
-            <b class="level-badge">${analysis.level}</b>
+            <b class="level-badge">${item.level}</b>
           </div>
-          <span>段前週考 ${item.rows.length} 次｜近期 ${scoreDisplay(analysis.recentAvg)}｜最新 ${scoreDisplay(analysis.latest)}</span>
-          <small>${trendLabel(analysis.trend)}｜${stabilityLabel(analysis.range)}</small>
-          ${scoreLineChart(item.rows)}
-          <p>${weakUnits.length ? `段考前需補強單元：${weakUnits.join("、")}` : "此段期間週考未見低於 70 分的明顯弱點。"}</p>
-        </article>`;
-      }).join("")}
-      ${!bySubject.length ? `<div class="empty">此段期間沒有符合補習科目的週考紀錄。</div>` : ""}
+          <div class="term-card-kpis">
+            <span>段前週考 <b>${item.subjectRows.length}</b></span>
+            <span>段考 <b class="${scoreClass(item.termScoreValue)}">${Number.isFinite(item.termScoreValue) ? scoreDisplay(item.termScoreValue) : "-"}</b></span>
+            <span>最新 PR <b>${item.latestStats ? scoreDisplay(item.latestStats.pr) : "-"}</b></span>
+            <span>班平均 <b>${item.latestStats ? scoreDisplay(item.latestStats.average) : "-"}</b></span>
+          </div>
+          ${item.subjectRows.length ? scoreLineChart(item.subjectRows) : `<div class="empty small-empty">此科尚無段前週考趨勢圖。</div>`}
+          <div class="term-card-copy">
+            <p><b>趨勢：</b>${item.analysis ? `${trendLabel(item.analysis.trend)}，近期平均 ${scoreDisplay(item.analysis.recentAvg)}，最新 ${scoreDisplay(item.analysis.latest)}。` : "段前週考資料不足。"}</p>
+            <p><b>定位：</b>${item.latestStats ? `最近一次排名 ${item.latestStats.rank}，PR ${scoreDisplay(item.latestStats.pr)}，屬於${item.latestStats.segment}。` : "尚無可判斷 PR 的近期週考。"}</p>
+            <p><b>備戰：</b>${escapeHtml(item.focus)}</p>
+          </div>
+          <div class="weak-chip-row">
+            ${item.weakUnits.map((unit) => `<span>${escapeHtml(unit)}</span>`).join("") || `<span>暫無明顯低分單元</span>`}
+          </div>
+        </article>
+      `).join("")}
+      ${!subjectCards.length ? `<div class="empty">此段期間沒有符合補習科目的週考或段考紀錄。</div>` : ""}
     </div>
     <div class="table-wrap career-history-table">
       <table>
@@ -3481,6 +3540,7 @@ function renderStudentReportHtml(student, subjectOverride = null, options = {}) 
         <h2>${options.autoAi ? `金牌躍騰平鎮分校 學生：${escapeHtml(student.name)} 專屬報告` : "AI 學習分析"}</h2>
         <span>${options.autoAi ? "依真實成績整理完整定位、各科趨勢與備戰策略" : "依真實成績、PR 與弱點單元生成"}</span>
       </div>
+      ${options.autoAi ? studentAiVisualStripHtml(student, analyses) : ""}
       ${options.autoAi ? "" : `<button class="primary" type="button" data-ai-student="${student.id}">產生 AI 分析</button>`}
       <div class="ai-analysis-result">${aiConfigured() ? `<div class="empty">${options.autoAi ? "正在準備 AI 分析..." : "按下按鈕後產生真實 AI 分析。"}</div>` : `<div class="empty">尚未設定 Gemini API Key。</div>`}</div>
     </section>`}
