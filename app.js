@@ -1796,6 +1796,24 @@ function renderTermAcademicOptions() {
   setSelectOptions($("#termPeriodSemester"), periodSemesters.length ? periodSemesters : ["上學期", "下學期"], active.semester);
 }
 
+function renderReportRangeOptions() {
+  const periods = academicPeriodOptions();
+  const active = activeAcademicPeriod();
+  const years = [...new Set([
+    ...periods.map((period) => period.academicYear),
+    ...state.exams.map((exam) => exam.academicYear),
+    ...state.termScores.map((score) => score.year),
+  ].filter(Boolean))].sort((a, b) => String(b).localeCompare(String(a), "zh-Hant"));
+  ["career", "parent"].forEach((prefix) => {
+    const year = setSelectOptions($(`#${prefix}ReportYear`), years, active.academicYear);
+    const termYear = setSelectOptions($(`#${prefix}TermAnalysisYear`), years, active.academicYear);
+    const semesters = periods.filter((period) => period.academicYear === year).map((period) => period.semester);
+    const termSemesters = periods.filter((period) => period.academicYear === termYear).map((period) => period.semester);
+    setSelectOptions($(`#${prefix}ReportSemester`), semesters.length ? semesters : ["上學期", "下學期"], active.semester);
+    setSelectOptions($(`#${prefix}TermAnalysisSemester`), termSemesters.length ? termSemesters : ["上學期", "下學期"], active.semester);
+  });
+}
+
 function termWeightKey(meta) {
   return [meta.year, meta.semester, meta.grade, meta.stage].join("|");
 }
@@ -2671,7 +2689,7 @@ function analyzeSubjectPerformance(subject, rows) {
 }
 
 function subjectPerformanceRows(student) {
-  const examRows = studentExamRows(student, activeReportPeriod());
+  const examRows = reportExamRows(student);
   return courses.map((subject) => {
     const rows = examRows.filter((row) => row.exam.subject === subject);
     if (!rows.length) return null;
@@ -2688,20 +2706,48 @@ function careerSubjectsForStudent(student) {
 }
 
 function activeReportPeriod() {
-  const value = $("#careerReportRange")?.value || $("#parentReportRange")?.value || "current";
-  if (value === "all") return null;
+  const prefix = parentMode ? "parent" : "career";
+  const value = $(`#${prefix}ReportRange`)?.value || "current";
+  if (value === "all" || value === "academic-year" || value === "term-stage") return null;
   const settings = normalizeAcademicSettings(state.settings || defaultAcademicSettings());
   return { academicYear: settings.academicYear, semester: settings.semester };
 }
 
+function activeReportConfig() {
+  const prefix = parentMode ? "parent" : "career";
+  const settings = activeAcademicPeriod();
+  const mode = $(`#${prefix}ReportRange`)?.value || "current";
+  const year = $(`#${prefix}ReportYear`)?.value || settings.academicYear;
+  const semester = $(`#${prefix}ReportSemester`)?.value || settings.semester;
+  const stage = $(`#${prefix}ReportStage`)?.value || "一段";
+  return { mode, year, semester, stage };
+}
+
+function reportExamRows(student) {
+  const config = activeReportConfig();
+  let rows = studentExamRows(student, config.mode === "current" ? activeReportPeriod() : null);
+  if (config.mode === "academic-year") {
+    rows = rows.filter((row) => row.exam.academicYear === config.year);
+  }
+  if (config.mode === "term-stage") {
+    const range = termPeriodRange({ year: config.year, semester: config.semester, grade: "全體", stage: config.stage });
+    rows = rows
+      .filter((row) => row.exam.academicYear === config.year && row.exam.semester === config.semester)
+      .filter((row) => !range.startDate || row.exam.date >= range.startDate)
+      .filter((row) => !range.endDate || row.exam.date <= range.endDate);
+  }
+  return rows;
+}
+
 function activeReportDetailRange() {
-  return $("#careerReportDetailRange")?.value || $("#parentReportDetailRange")?.value || "period";
+  const prefix = parentMode ? "parent" : "career";
+  return $(`#${prefix}ReportDetailRange`)?.value || "period";
 }
 
 function reportDetailRows(student) {
   const mode = activeReportDetailRange();
   if (mode === "none") return [];
-  let rows = studentExamRows(student, mode === "all" ? null : activeReportPeriod());
+  let rows = mode === "period" ? reportExamRows(student) : studentExamRows(student, mode === "all" ? null : activeReportPeriod());
   if (mode === "30" || mode === "90") {
     const days = Number(mode);
     const since = addDays(todayISO(), -days);
@@ -3185,6 +3231,55 @@ function renderTermPeriodSettings() {
   }).join("");
 }
 
+function termPeriodGroups() {
+  const groups = new Map();
+  Object.entries(state.termPeriods || {}).forEach(([key, value]) => {
+    const [year, semester, grade, stage] = key.split("|");
+    if (!year || !semester || !stage) return;
+    const groupKey = [year, semester, grade || "全體"].join("|");
+    if (!groups.has(groupKey)) groups.set(groupKey, { key: groupKey, year, semester, grade: grade || "全體", ranges: {} });
+    groups.get(groupKey).ranges[stage] = typeof value === "string" ? { startDate: "", endDate: value } : value;
+  });
+  return [...groups.values()].sort((a, b) =>
+    `${b.year}${b.semester}${b.grade}`.localeCompare(`${a.year}${a.semester}${a.grade}`, "zh-Hant")
+  );
+}
+
+function renderTermPeriodList() {
+  const target = $("#termPeriodList");
+  if (!target) return;
+  const groups = termPeriodGroups();
+  target.innerHTML = groups.map((group) => `
+    <article class="record-card term-period-card">
+      <strong>${escapeHtml(group.year)}${escapeHtml(group.semester)}${group.grade === "全體" ? "" : ` ${escapeHtml(group.grade)}`}</strong>
+      <div class="meta">
+        ${termStages.map((stage) => {
+          const range = group.ranges[stage] || {};
+          return `<span class="badge">${stage}：${range.startDate || "-"} 到 ${range.endDate || "-"}</span>`;
+        }).join("")}
+      </div>
+      <div class="action-row">
+        <button class="ghost" type="button" data-edit-term-period="${group.key}">載入編輯</button>
+        <button class="ghost danger" type="button" data-delete-term-period="${group.key}">刪除區間</button>
+      </div>
+    </article>
+  `).join("") || `<div class="empty">尚未設定段考區間。</div>`;
+}
+
+function applyTermPeriodGroup(key) {
+  const [year, semester] = String(key || "").split("|");
+  if ($("#termPeriodYear")) $("#termPeriodYear").value = year || activeAcademicPeriod().academicYear;
+  renderTermAcademicOptions();
+  if ($("#termPeriodYear")) $("#termPeriodYear").value = year || $("#termPeriodYear").value;
+  if ($("#termPeriodSemester")) $("#termPeriodSemester").value = semester || $("#termPeriodSemester").value;
+  termSection = "periods";
+}
+
+function deleteTermPeriodGroup(key) {
+  const [year, semester, grade = "全體"] = String(key || "").split("|");
+  termStages.forEach((stage) => delete state.termPeriods[termPeriodKey({ year, semester, grade, stage })]);
+}
+
 function saveTermPeriodSettings(event) {
   event.preventDefault();
   const meta = currentTermPeriodMeta();
@@ -3382,14 +3477,14 @@ function renderStudentReportHtml(student, subjectOverride = null, options = {}) 
     .brand { display: flex; align-items: center; gap: 12px; }
     .brand img { width: 54px; height: 54px; object-fit: cover; border-radius: 50%; }
     h1 { margin: 0; font-size: 24px; letter-spacing: 0; }
-    h2 { margin: 22px 0 10px; font-size: 17px; color: #7a551a; }
+    h2 { margin: 14px 0 8px; font-size: 17px; color: #7a551a; }
     .meta { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0; }
     .pill { border: 1px solid #d8c291; border-radius: 999px; padding: 6px 10px; font-size: 13px; background: #fff9ea; }
-    table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 13px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 12px; }
     thead { display: table-header-group; }
     tr { break-inside: avoid; page-break-inside: avoid; }
     th { background: #181818; color: #f7df9b; }
-    th, td { border: 1px solid #cfcfcf; padding: 8px 7px; text-align: center; }
+    th, td { border: 1px solid #cfcfcf; padding: 6px 6px; text-align: center; }
     td.left, th.left { text-align: left; }
     .fail-score { color: #e60012; font-weight: 900; }
     .absent-score { color: #9a3412; font-weight: 800; }
@@ -3400,21 +3495,21 @@ function renderStudentReportHtml(student, subjectOverride = null, options = {}) 
     .level { display: inline-block; min-width: 46px; padding: 3px 8px; border-radius: 999px; color: #161616; background: #f3c75f; font-weight: 900; text-align: center; }
     .pdf-page { break-after: page; page-break-after: always; }
     .pdf-page:last-child { break-after: auto; page-break-after: auto; }
-    .student-report { color: #1f252d; padding: 12px; border-radius: 14px; background: linear-gradient(145deg, rgba(255,255,255,.92), rgba(255,249,234,.96)); }
-    .student-hero { display: grid; grid-template-columns: 1fr auto; gap: 18px; padding: 22px; border-radius: 10px; color: #fff7df; background: linear-gradient(135deg, #11151a, #2a3039 62%, #9a7330); }
+    .student-report { color: #1f252d; padding: 10px; border-radius: 12px; background: linear-gradient(145deg, rgba(255,255,255,.92), rgba(255,249,234,.96)); }
+    .student-hero { display: grid; grid-template-columns: 1fr auto; gap: 14px; padding: 16px; border-radius: 10px; color: #fff7df; background: linear-gradient(135deg, #11151a, #2a3039 62%, #9a7330); }
     .student-hero h1 { font-size: 28px; margin-bottom: 8px; }
     .student-hero .subtitle { color: #f7df9b; font-size: 15px; }
     .student-hero .stamp { display: grid; place-content: center; min-width: 118px; padding: 12px; border: 1px solid rgba(255,255,255,.26); border-radius: 8px; text-align: center; }
     .student-hero .stamp b { display: block; font-size: 22px; }
-    .kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 14px 0; }
-    .kpi { padding: 12px; border: 1px solid #e1d0a3; border-radius: 8px; background: #fffaf0; }
+    .kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 10px 0; }
+    .kpi { padding: 9px; border: 1px solid #e1d0a3; border-radius: 8px; background: #fffaf0; }
     .kpi span { display: block; color: #755927; font-size: 12px; margin-bottom: 4px; }
     .kpi strong { font-size: 21px; }
-    .report-section { margin-top: 18px; break-inside: avoid; }
+    .report-section { margin-top: 12px; break-inside: auto; }
     .section-title { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; color: #7a551a; font-size: 17px; }
     .section-title::before { content: ""; width: 7px; height: 20px; border-radius: 999px; background: #b9872f; }
     .subject-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
-    .subject-card { padding: 12px; border: 1px solid #dfcfaa; border-radius: 8px; background: #fffdf7; break-inside: avoid; }
+    .subject-card { padding: 10px; border: 1px solid #dfcfaa; border-radius: 8px; background: #fffdf7; break-inside: avoid; }
     .subject-card header { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
     .subject-card h3 { margin: 0; font-size: 16px; }
     .subject-card p { margin: 8px 0 0; line-height: 1.6; }
@@ -3425,12 +3520,12 @@ function renderStudentReportHtml(student, subjectOverride = null, options = {}) 
     .report-table th { background: #2a3039; }
     .report-head { display: grid; gap: 6px; padding: 14px; border: 1px solid #dfcfaa; border-radius: 8px; background: #fff9ea; margin: 14px 0; }
     .report-head strong { font-size: 20px; color: #7a551a; }
-    .student-report-visuals { display: grid; grid-template-columns: .85fr 1.15fr; gap: 10px; margin: 12px 0; break-inside: avoid; }
-    .analysis-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-top: 12px; }
-    .analysis-card { padding: 10px; border: 1px solid #dfcfaa; border-radius: 8px; background: #fffdf7; break-inside: avoid; }
+    .student-report-visuals { display: grid; grid-template-columns: .85fr 1.15fr; gap: 8px; margin: 10px 0; break-inside: avoid; }
+    .analysis-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-top: 10px; }
+    .analysis-card { padding: 9px; border: 1px solid #dfcfaa; border-radius: 8px; background: #fffdf7; break-inside: avoid; }
     .analysis-card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
     .level-badge { display: inline-block; padding: 3px 8px; border-radius: 999px; background: #f3c75f; font-weight: 900; }
-    .score-line-chart, .class-radar { width: 100%; max-height: 190px; }
+    .score-line-chart, .class-radar { width: 100%; max-height: 150px; }
     .radar-ring, .radar-axis, .chart-axis, .chart-pass { fill: none; stroke: #d8c291; stroke-width: 1.2; }
     .radar-area { fill: rgba(49, 208, 112, .18); stroke: #159947; stroke-width: 2.4; }
     .radar-label, .chart-label, .chart-mark { fill: #755927; font-size: 11px; font-weight: 800; }
@@ -3446,7 +3541,7 @@ function renderStudentReportHtml(student, subjectOverride = null, options = {}) 
     .student-weak-panel { margin: 12px 0; padding: 12px; border: 1px solid #dfcfaa; border-radius: 8px; background: #fffdf7; break-inside: avoid; }
     .student-weak-table table { font-size: 11px; }
     .ai-analysis-panel { display: none; }
-    .report-cover { min-height: 252mm; display: grid; align-content: center; justify-items: center; gap: 22px; text-align: center; color: #fff7df; background:
+    .report-cover { min-height: 252mm; display: grid; align-content: center; justify-items: center; gap: 18px; text-align: center; color: #fff7df; background:
       linear-gradient(135deg, rgba(247, 223, 155, .14) 0 1px, transparent 1px 24px),
       linear-gradient(28deg, transparent 0 60%, rgba(185, 135, 47, .22) 60% 60.5%, transparent 60.5%),
       linear-gradient(135deg, #080c11, #202632 56%, #9a7330);
@@ -3455,8 +3550,7 @@ function renderStudentReportHtml(student, subjectOverride = null, options = {}) 
     .report-cover img { width: 158px; height: 158px; border-radius: 50%; object-fit: cover; box-shadow: 0 0 0 7px rgba(247, 223, 155, .2); }
     .report-cover h1 { font-size: 38px; color: #f7df9b; }
     .report-cover h2 { margin: 0; font-size: 34px; color: #fff7df; }
-    .stamp-box { width: 150px; height: 150px; border: 2px dashed rgba(247, 223, 155, .72); border-radius: 10px; display: grid; place-items: center; color: #f7df9b; font-weight: 900; margin-top: 18px; }
-    .teacher-message-page { min-height: 250mm; padding: 18mm; border: 2px solid #b9872f; border-radius: 12px; page-break-before: always; break-before: page; }
+    .teacher-message-page { min-height: 246mm; padding: 16mm; border: 2px solid #b9872f; border-radius: 12px; page-break-before: always; break-before: page; }
     .message-lines { display: grid; gap: 18px; margin-top: 24px; }
     .message-lines i { display: block; height: 28px; border-bottom: 1px solid #c9b16f; }
     @media print { button { display: none; } }
@@ -4013,7 +4107,6 @@ function printStudentReportPdf() {
       <h1>金牌躍騰平鎮分校</h1>
       <h2>${escapeHtml(student.name)} 綜合成績報告</h2>
       <p>${escapeHtml(student.grade)}｜${escapeHtml(new Date().toLocaleDateString("zh-TW"))}</p>
-      <div class="stamp-box">公司章</div>
     </section>
     <article class="student-report">
       <header class="student-hero">
@@ -4573,7 +4666,7 @@ function setupForms() {
     }
   });
 
-  ["studentFilter", "studentSearch", "lateGrade", "historyType", "historySearch", "scheduleGrade", "examGrade", "examSubject", "examPaperCount", "examNoTest", "scoreHistoryYear", "scoreHistorySemester", "scoreHistoryGrade", "careerQueryDate", "careerExamYear", "careerExamSemester", "careerTermYear", "careerTermAnalysisYear", "careerTermAnalysisSemester", "careerTermAnalysisStage", "careerReportRange", "careerReportDetailRange", "termYear", "termSemester", "termGrade", "termStage", "termPeriodYear", "termPeriodSemester"].forEach((id) => {
+  ["studentFilter", "studentSearch", "lateGrade", "historyType", "historySearch", "scheduleGrade", "examGrade", "examSubject", "examPaperCount", "examNoTest", "scoreHistoryYear", "scoreHistorySemester", "scoreHistoryGrade", "careerQueryDate", "careerExamYear", "careerExamSemester", "careerTermYear", "careerTermAnalysisYear", "careerTermAnalysisSemester", "careerTermAnalysisStage", "careerReportRange", "careerReportYear", "careerReportSemester", "careerReportStage", "careerReportDetailRange", "termYear", "termSemester", "termGrade", "termStage", "termPeriodYear", "termPeriodSemester"].forEach((id) => {
     onInputChange(id, () => {
       if (id.startsWith("scoreHistory")) examHistoryPage = 1;
       renderAll();
@@ -4593,7 +4686,7 @@ function setupForms() {
     parentCareerSubject = subject;
     if (parentStudentId) renderParentPortal();
   });
-  ["parentScoreDate", "parentExamYear", "parentExamSemester", "parentTermYear", "parentTermAnalysisYear", "parentTermAnalysisSemester", "parentTermAnalysisStage", "parentReportRange", "parentReportDetailRange"].forEach((id) => {
+  ["parentScoreDate", "parentExamYear", "parentExamSemester", "parentTermYear", "parentTermAnalysisYear", "parentTermAnalysisSemester", "parentTermAnalysisStage", "parentReportRange", "parentReportYear", "parentReportSemester", "parentReportStage", "parentReportDetailRange"].forEach((id) => {
     onInputChange(id, () => {
       if (parentStudentId) renderParentPortal();
     });
@@ -5452,6 +5545,8 @@ async function generateStudentAiAnalysis(studentId, output) {
     const viewTermReportKey = event.target.dataset.viewTermReport;
     const editTermReportKey = event.target.dataset.editTermReport;
     const deleteTermReportKey = event.target.dataset.deleteTermReport;
+    const editTermPeriodKey = event.target.dataset.editTermPeriod;
+    const deleteTermPeriodKey = event.target.dataset.deleteTermPeriod;
     const editEventId = event.target.dataset.editEvent;
     const deleteEventId = event.target.dataset.deleteEvent;
     const editContactId = event.target.dataset.editContact;
@@ -5615,6 +5710,17 @@ async function generateStudentAiAnalysis(studentId, output) {
         setContactBookSection("book");
         fillContactForm(record);
       }
+    }
+    if (editTermPeriodKey) {
+      applyTermPeriodGroup(editTermPeriodKey);
+      navigateToTab("term");
+      renderAll();
+      $("#termPeriodForm")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+    if (deleteTermPeriodKey && confirm("確定刪除這組段考區間？成績不會被刪除，只會移除分析用日期範圍。")) {
+      deleteTermPeriodGroup(deleteTermPeriodKey);
+      saveState();
+      renderAll();
     }
     if (deleteTeacherId && confirm("確定刪除這張師資卡？")) {
       state.about = normalizeAboutSettings(state.about || {});
@@ -5902,6 +6008,7 @@ function renderParentPortal() {
     .map(renderLeaveCard)
     .join("") || `<div class="empty">尚無請假紀錄。</div>`;
   if (parentCareerSubject !== "全部" && !careerSubjectsForStudent(student).includes(parentCareerSubject)) parentCareerSubject = "全部";
+  renderReportRangeOptions();
   renderParentCareerSubjectButtons(student);
   const period = weeklyPeriodFilter("parentExam", student);
   $("#parentScoreList").innerHTML = careerScoreLookupHtml(student, $("#parentScoreDate")?.value || todayISO(), selectedParentCareerSubject(student), { hideDateHistory: true, period });
@@ -5980,6 +6087,7 @@ function renderAll() {
   renderAcademicSettings();
   renderAcademicPeriodList();
   renderExamSubjectOptions();
+  renderReportRangeOptions();
   renderScoreStudentFilter();
   renderExpectedAttendance();
   renderStudentOptions();
@@ -5997,6 +6105,7 @@ function renderAll() {
   renderTermReport();
   renderTermHistoryList();
   renderTermPeriodSettings();
+  renderTermPeriodList();
   renderClassOps();
   renderPromotionPreview();
   renderEventManageList();

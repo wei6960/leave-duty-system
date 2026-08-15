@@ -468,8 +468,8 @@ h2 {
 .term-weight-grid,
 .term-period-grid #termPeriodStageRows {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
-  gap: .75rem;
+  grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
+  gap: .65rem;
 }
 
 .term-weight-card,
@@ -477,7 +477,7 @@ h2 {
   border: 1px solid rgba(245, 212, 122, .25);
   border-radius: var(--radius-sm);
   background: rgba(255, 255, 255, .035);
-  padding: .8rem;
+  padding: .7rem;
 }
 
 .term-weight-card {
@@ -499,6 +499,30 @@ h2 {
 
 .term-period-row label {
   gap: .35rem;
+}
+
+.term-period-card .meta {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+}
+
+.compact-record-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
+  gap: .75rem;
+}
+
+#termEntrySection,
+#termHistorySection,
+#termPeriodSection {
+  display: none;
+  gap: .85rem;
+}
+
+#termEntrySection.active,
+#termHistorySection.active,
+#termPeriodSection.active {
+  display: grid;
 }
 
 .grade-button,
@@ -1551,6 +1575,18 @@ textarea {
 .toolbar {
   flex-wrap: wrap;
   align-items: end;
+}
+
+#career .compact-toolbar,
+.parent-report-stack .compact-toolbar {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
+  align-items: end;
+}
+
+#career .compact-toolbar label,
+.parent-report-stack .compact-toolbar label {
+  min-width: 0;
 }
 
 .table-wrap,
