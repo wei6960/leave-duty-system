@@ -142,9 +142,18 @@
             <span>今日與歷史課程紀錄</span>
           </div>
           <div class="toolbar compact-toolbar">
+            <button class="ghost" id="parentContactPrevWeek" type="button">上一週</button>
+            <label>週別日期
+              <input id="parentContactWeekDate" type="date">
+            </label>
+            <button class="ghost" id="parentContactNextWeek" type="button">下一週</button>
             <label>科目
               <select id="parentContactSubjectFilter"></select>
             </label>
+          </div>
+          <div class="parent-history-head">
+            <strong id="parentContactWeekLabel"></strong>
+            <span>依週調閱聯絡本</span>
           </div>
           <div id="parentContactBookList" class="record-list"></div>
         </section>
@@ -320,6 +329,7 @@
         <button class="tab-button" data-tab="management">班務管理</button>
         <button class="tab-button" data-tab="class-ops">班級經營</button>
         <button class="tab-button" data-tab="contact-book">聯絡本系統</button>
+        <button class="tab-button" data-tab="paper-analysis">考卷分析</button>
         <button class="tab-button" data-tab="academic">學年設定</button>
         <button class="tab-button" data-tab="ai-settings">AI設定</button>
       </nav>
@@ -489,6 +499,49 @@
           <button class="primary" type="submit">儲存 AI 設定</button>
           <p class="hint form-span-2">未設定 API Key 時，系統不會用模板假裝分析；設定後才會依成績、排名、PR、弱點單元與圖表資料產生真實 AI 分析。</p>
         </form>
+      </section>
+
+      <section class="page" id="paper-analysis">
+        <header class="section-head">
+          <div>
+            <p class="eyebrow">考卷分析</p>
+            <h1>拍照掃描考卷並產生 PDF</h1>
+          </div>
+          <button class="ghost back-button" type="button" data-back-tab="dashboard">返回上一層</button>
+        </header>
+        <form class="form-grid panel" id="paperAnalysisForm">
+          <label>日期
+            <input id="paperAnalysisDate" type="date" required>
+          </label>
+          <label>名稱
+            <input id="paperAnalysisTitle" placeholder="例：國二數學二段複習卷" required>
+          </label>
+          <label>科目
+            <select id="paperAnalysisSubject"></select>
+          </label>
+          <label>年級
+            <select id="paperAnalysisGrade">
+              <option value="國一">國一</option>
+              <option value="國二">國二</option>
+              <option value="國三">國三</option>
+            </select>
+          </label>
+          <label class="wide-field">開啟相機拍照或上傳考卷
+            <input id="paperAnalysisImage" type="file" accept="image/*" capture="environment" required>
+          </label>
+          <label class="wide-field">補充說明
+            <textarea id="paperAnalysisNote" rows="3" placeholder="可填考卷範圍、想請 AI 特別看的地方"></textarea>
+          </label>
+          <button class="primary" type="submit">掃描並產生 PDF</button>
+          <div class="paper-preview wide-field" id="paperAnalysisPreview"></div>
+        </form>
+        <section class="panel list-panel">
+          <div class="panel-title">
+            <h2>考卷分析歷史區</h2>
+            <span>依日期保留，可重新產出 PDF</span>
+          </div>
+          <div id="paperAnalysisList" class="record-list"></div>
+        </section>
       </section>
 
       <section class="page" id="class-ops">

@@ -54,12 +54,14 @@ let parentStudentId = null;
 let parentActiveSection = "parentHomeSection";
 let parentBackStack = [];
 let parentReportView = "menu";
+let parentContactWeekDate = todayISO();
 let teacherBackStack = [];
 let classOpsSection = "menu";
 let classOpsSelectedGrade = "國一";
 let contactBookSection = "menu";
 let aboutSection = "display";
 let examHistoryPage = 1;
+let paperAnalysisImageData = "";
 const studentAiCache = new Map();
 
 const $ = (selector) => document.querySelector(selector);
@@ -119,6 +121,7 @@ function emptyState() {
     academicPeriods: [],
     events: [],
     contactBooks: [],
+    paperAnalyses: [],
     about: defaultAboutSettings(),
     aiSettings: defaultAiSettings(),
     archives: [],
@@ -225,6 +228,7 @@ function normalizeState(raw) {
     academicPeriods: normalizeAcademicPeriods(raw.academicPeriods || [], normalizeAcademicSettings(raw.settings)),
     events: normalizeEvents(raw.events || []),
     contactBooks: normalizeContactBooks(raw.contactBooks || []),
+    paperAnalyses: normalizePaperAnalyses(raw.paperAnalyses || []),
     about: normalizeAboutSettings(raw.about || {}),
     aiSettings: normalizeAiSettings(raw.aiSettings || raw.ai || {}),
     archives: raw.archives || [],
@@ -248,6 +252,20 @@ function normalizeContactBooks(records) {
     todayTest: record.todayTest || "",
     nextTest: record.nextTest || "",
     homework: record.homework || "",
+    createdAt: record.createdAt || new Date().toISOString(),
+    updatedAt: record.updatedAt || record.createdAt || new Date().toISOString(),
+  }));
+}
+
+function normalizePaperAnalyses(records) {
+  return (records || []).map((record) => ({
+    id: record.id || crypto.randomUUID(),
+    date: record.date || record.createdAt?.slice(0, 10) || todayISO(),
+    title: record.title || "未命名考卷",
+    grade: grades.includes(record.grade) ? record.grade : "國一",
+    subject: normalizeCourseName(record.subject || "國文"),
+    note: record.note || "",
+    analysis: record.analysis || "",
     createdAt: record.createdAt || new Date().toISOString(),
     updatedAt: record.updatedAt || record.createdAt || new Date().toISOString(),
   }));
@@ -636,6 +654,7 @@ function mergeRemoteStateForSave(localState, remotePayload) {
     academicPeriods: mergeById(local.academicPeriods, remoteState.academicPeriods),
     events: mergeById(local.events, remoteState.events),
     contactBooks: mergeById(local.contactBooks, remoteState.contactBooks),
+    paperAnalyses: mergeById(local.paperAnalyses, remoteState.paperAnalyses),
     archives: mergeById(local.archives, remoteState.archives),
     termPeriods: { ...(remoteState.termPeriods || {}), ...(local.termPeriods || {}) },
     termWeights: { ...(remoteState.termWeights || {}), ...(local.termWeights || {}) },
@@ -2942,9 +2961,7 @@ function studentAiVisualStripHtml(student, analyses) {
       <div class="analysis-card-head"><strong>AI 關注弱點</strong><b class="level-badge">補強</b></div>
       <div class="ai-weak-grid">${weakUnits.map((unit) => `
         <span class="ai-weak-chip">
-          <b>${escapeHtml(unit.subject)}</b>
           <em>${escapeHtml(unit.topic)}</em>
-          <strong>${scoreDisplay(unit.average)}</strong>
         </span>
       `).join("") || `<span class="ai-weak-chip empty-chip"><b>目前未累積明顯弱點單元</b></span>`}</div>
     </article>
@@ -4719,6 +4736,16 @@ function setupForms() {
     clearContactForm();
     renderContactBooks();
   });
+  $("#paperAnalysisForm")?.addEventListener("submit", submitPaperAnalysis);
+  $("#paperAnalysisImage")?.addEventListener("change", async (event) => {
+    const file = event.target.files?.[0];
+    paperAnalysisImageData = file ? await fileToDataUrl(file) : "";
+    if ($("#paperAnalysisPreview")) {
+      $("#paperAnalysisPreview").innerHTML = paperAnalysisImageData
+        ? `<img src="${paperAnalysisImageData}" alt="考卷預覽"><span>已讀取圖片，按下掃描後產生 PDF。</span>`
+        : "";
+    }
+  });
 
   ["contactFilterGrade", "contactFilterSubject"].forEach((id) => {
     onInputChange(id, renderContactBooks);
@@ -4875,12 +4902,23 @@ function setupForms() {
     parentCareerSubject = subject;
     if (parentStudentId) renderParentPortal();
   });
-  ["parentScoreDate", "parentExamYear", "parentExamSemester", "parentTermYear", "parentTermAnalysisYear", "parentTermAnalysisSemester", "parentTermAnalysisStage", "parentReportRange", "parentReportYear", "parentReportSemester", "parentReportStage", "parentReportStartDate", "parentReportEndDate", "parentReportDetailRange"].forEach((id) => {
+  ["parentScoreDate", "parentExamYear", "parentExamSemester", "parentTermYear", "parentTermAnalysisYear", "parentTermAnalysisSemester", "parentTermAnalysisStage", "parentReportRange", "parentReportYear", "parentReportSemester", "parentReportStage", "parentReportStartDate", "parentReportEndDate", "parentReportDetailRange", "parentContactWeekDate"].forEach((id) => {
     onInputChange(id, () => {
+      if (id === "parentContactWeekDate") parentContactWeekDate = $("#parentContactWeekDate")?.value || todayISO();
       if (parentStudentId) renderParentPortal();
     });
   });
   onInputChange("parentContactSubjectFilter", () => {
+    if (parentStudentId) renderParentPortal();
+  });
+  $("#parentContactPrevWeek")?.addEventListener("click", () => {
+    parentContactWeekDate = addDays(parentContactWeekDate || todayISO(), -7);
+    if ($("#parentContactWeekDate")) $("#parentContactWeekDate").value = parentContactWeekDate;
+    if (parentStudentId) renderParentPortal();
+  });
+  $("#parentContactNextWeek")?.addEventListener("click", () => {
+    parentContactWeekDate = addDays(parentContactWeekDate || todayISO(), 7);
+    if ($("#parentContactWeekDate")) $("#parentContactWeekDate").value = parentContactWeekDate;
     if (parentStudentId) renderParentPortal();
   });
 }
@@ -5509,6 +5547,127 @@ function renderContactBooks() {
     .map((record) => renderContactBookCard(record, true))
     .join("") || `<div class="empty">目前沒有符合條件的聯絡本。</div>`;
 }
+
+function fileToDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(new Error("圖片讀取失敗。"));
+    reader.readAsDataURL(file);
+  });
+}
+
+function paperAnalysisPrompt(meta) {
+  return `請用繁體中文分析這張考卷圖片，輸出給補習班老師製作 PDF 使用。
+考卷名稱：${meta.title}
+年級：${meta.grade}
+科目：${meta.subject}
+日期：${meta.date}
+補充說明：${meta.note || "無"}
+
+請依照以下格式，務必根據圖片真實內容，不要編造看不到的題目：
+# 考卷重點整理
+- 條列此考卷涵蓋的主要單元與概念
+
+# 核心考點
+- 條列會考/段考常考觀念、解題關鍵、題型特徵
+
+# 易錯提醒
+- 條列學生容易失分的地方
+
+# 老師備課建議
+- 條列講解順序、需要補強的先備知識、可安排的練習方向`;
+}
+
+function printPaperAnalysisPdf(record) {
+  pdfDocument(`${record.title} 考卷分析`, `
+    <section class="report-head">
+      <strong>金牌躍騰平鎮分校｜考卷分析</strong>
+      <span>${escapeHtml(dateLabel(record.date))}</span>
+      <span>${escapeHtml(record.grade)}｜${escapeHtml(record.subject)}</span>
+      <span>${escapeHtml(record.title)}</span>
+    </section>
+    <section class="summary ai-answer-card">${markdownToHtml(record.analysis)}</section>
+  `);
+}
+
+async function submitPaperAnalysis(event) {
+  event.preventDefault();
+  if (!aiConfigured()) {
+    alert("請先到 AI 設定填入 Gemini API Key，才能掃描考卷。");
+    return;
+  }
+  if (!paperAnalysisImageData) {
+    alert("請先拍照或上傳考卷圖片。");
+    return;
+  }
+  const submitter = event.submitter;
+  if (submitter) {
+    submitter.disabled = true;
+    submitter.textContent = "掃描中...";
+  }
+  try {
+    const meta = {
+      id: crypto.randomUUID(),
+      date: $("#paperAnalysisDate")?.value || todayISO(),
+      title: cleanCellText($("#paperAnalysisTitle")?.value) || "未命名考卷",
+      grade: $("#paperAnalysisGrade")?.value || "國一",
+      subject: normalizeCourseName($("#paperAnalysisSubject")?.value || "國文"),
+      note: cleanCellText($("#paperAnalysisNote")?.value),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    const analysis = await callGeminiImageAnalysis(paperAnalysisPrompt(meta), paperAnalysisImageData);
+    const record = normalizePaperAnalyses([{ ...meta, analysis }])[0];
+    state.paperAnalyses.unshift(record);
+    saveState();
+    renderPaperAnalyses();
+    printPaperAnalysisPdf(record);
+    $("#paperAnalysisForm")?.reset();
+    $("#paperAnalysisDate").value = todayISO();
+    renderPaperAnalysisSubjectOptions();
+    paperAnalysisImageData = "";
+    if ($("#paperAnalysisPreview")) $("#paperAnalysisPreview").innerHTML = "";
+  } catch (error) {
+    alert(error.message || "考卷分析失敗，請稍後再試。");
+  } finally {
+    if (submitter) {
+      submitter.disabled = false;
+      submitter.textContent = "掃描並產生 PDF";
+    }
+  }
+}
+
+function renderPaperAnalysisSubjectOptions() {
+  const target = $("#paperAnalysisSubject");
+  if (!target) return;
+  const previous = target.value || "國文";
+  target.innerHTML = reportSubjects.map((subject) => `<option value="${subject}">${subject}</option>`).join("");
+  target.value = reportSubjects.includes(previous) ? previous : "國文";
+}
+
+function renderPaperAnalyses() {
+  renderPaperAnalysisSubjectOptions();
+  const target = $("#paperAnalysisList");
+  if (!target) return;
+  const records = normalizePaperAnalyses(state.paperAnalyses || [])
+    .sort((a, b) => b.date.localeCompare(a.date) || (b.updatedAt || "").localeCompare(a.updatedAt || ""));
+  target.innerHTML = records.map((record) => `
+    <article class="record-card paper-analysis-card">
+      <strong>${escapeHtml(record.title)}</strong>
+      <div class="meta">
+        <span class="badge">${escapeHtml(dateLabel(record.date))}</span>
+        <span class="badge">${escapeHtml(record.grade)}</span>
+        <span class="badge gold">${escapeHtml(record.subject)}</span>
+      </div>
+      <p>${escapeHtml(record.analysis.replace(/[#*\-]/g, "").split(/\n/).find(Boolean) || "已完成考卷分析。")}</p>
+      <div class="action-row">
+        <button class="ghost" type="button" data-print-paper-analysis="${record.id}">產生 PDF</button>
+        <button class="ghost danger" type="button" data-delete-paper-analysis="${record.id}">刪除</button>
+      </div>
+    </article>
+  `).join("") || `<div class="empty">尚無考卷分析紀錄。</div>`;
+}
 function aboutImageGrid(text) {
   const urls = String(text || "").split(/\r?\n/).map((item) => item.trim()).filter(Boolean).slice(0, 8);
   if (!urls.length) return "";
@@ -5635,6 +5794,32 @@ async function callGeminiAnalysis(prompt) {
   const data = await response.json();
   const text = data.candidates?.[0]?.content?.parts?.map((part) => part.text || "").join("\n").trim();
   if (!text) throw new Error("Gemini 沒有回傳分析內容。");
+  return text;
+}
+
+async function callGeminiImageAnalysis(prompt, imageDataUrl) {
+  const settings = normalizeAiSettings(state.aiSettings || {});
+  if (!settings.geminiApiKey) throw new Error("尚未設定 Gemini API Key。");
+  const model = settings.model || defaultAiSettings().model;
+  const match = String(imageDataUrl || "").match(/^data:([^;]+);base64,(.+)$/);
+  if (!match) throw new Error("圖片格式讀取失敗，請重新拍照或上傳。");
+  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(settings.geminiApiKey)}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      contents: [{
+        parts: [
+          { text: prompt },
+          { inlineData: { mimeType: match[1], data: match[2] } },
+        ],
+      }],
+      generationConfig: { temperature: 0.25, maxOutputTokens: 2200 },
+    }),
+  });
+  if (!response.ok) throw new Error(`Gemini 回應失敗：${response.status}`);
+  const data = await response.json();
+  const text = data.candidates?.[0]?.content?.parts?.map((part) => part.text || "").join("\n").trim();
+  if (!text) throw new Error("Gemini 沒有回傳考卷分析內容。");
   return text;
 }
 
@@ -5816,6 +6001,8 @@ async function generateStudentAiAnalysis(studentId, output) {
     const editContactId = event.target.dataset.editContact;
     const deleteContactId = event.target.dataset.deleteContact;
     const deleteTeacherId = event.target.dataset.deleteTeacher;
+    const printPaperAnalysisId = event.target.dataset.printPaperAnalysis;
+    const deletePaperAnalysisId = event.target.dataset.deletePaperAnalysis;
     const aiStudentId = event.target.dataset.aiStudent;
     const applyAcademicPeriod = event.target.dataset.applyAcademicPeriod;
     const editAcademicPeriod = event.target.dataset.editAcademicPeriod;
@@ -5829,6 +6016,10 @@ async function generateStudentAiAnalysis(studentId, output) {
     }
     if (aiStudentId) {
       generateStudentAiAnalysis(aiStudentId, event.target.closest(".ai-analysis-panel")?.querySelector(".ai-analysis-result"));
+    }
+    if (printPaperAnalysisId) {
+      const record = state.paperAnalyses.find((item) => item.id === printPaperAnalysisId);
+      if (record) printPaperAnalysisPdf(record);
     }
     if (pickLeaveStudentId) {
       const student = getStudent(pickLeaveStudentId);
@@ -5990,8 +6181,11 @@ async function generateStudentAiAnalysis(studentId, output) {
       state.about = normalizeAboutSettings(state.about || {});
       state.about.teacherCards = state.about.teacherCards.filter((teacher) => teacher.id !== deleteTeacherId);
     }
+    if (deletePaperAnalysisId && confirm("確定刪除這筆考卷分析？")) {
+      state.paperAnalyses = state.paperAnalyses.filter((item) => item.id !== deletePaperAnalysisId);
+    }
 
-    if (deleteStudentId || dismissLeaveId || deleteLeaveId || removeLateId || deleteLateId || deleteExamId || deleteEventId || deleteContactId || deleteTeacherId) {
+    if (deleteStudentId || dismissLeaveId || deleteLeaveId || removeLateId || deleteLateId || deleteExamId || deleteEventId || deleteContactId || deleteTeacherId || deletePaperAnalysisId) {
       saveState();
       renderAll();
     }
@@ -6259,12 +6453,18 @@ function renderParentPortal() {
   renderContactFilters(student);
   if ($("#parentContactBookList")) {
     const contactSubject = $("#parentContactSubjectFilter")?.value || "全部";
+    const queryDate = parentContactWeekDate || $("#parentContactWeekDate")?.value || todayISO();
+    const week = weekDates(queryDate);
+    parentContactWeekDate = queryDate;
+    if ($("#parentContactWeekDate")) $("#parentContactWeekDate").value = queryDate;
+    if ($("#parentContactWeekLabel")) $("#parentContactWeekLabel").textContent = weekRangeLabel(queryDate);
     $("#parentContactBookList").innerHTML = sortedContactBooks(state.contactBooks.filter((record) =>
       parentContactRecordVisible(record, student) &&
+      week.includes(record.date) &&
       (contactSubject === "全部" || record.subject === contactSubject)
     ))
       .map((record) => renderContactBookCard(record))
-      .join("") || `<div class="empty">目前沒有符合科目的聯絡本。</div>`;
+      .join("") || `<div class="empty">本週沒有符合科目的聯絡本。</div>`;
   }  if ($("#parentAboutContent")) $("#parentAboutContent").innerHTML = aboutHtml(normalizeAboutSettings(state.about || {}));
   $("#parentLeaveList").innerHTML = state.leaves
     .filter((record) => record.studentId === student.id)
@@ -6328,6 +6528,7 @@ function setupLogin() {
     parentActiveSection = "parentHomeSection";
     parentBackStack = [];
     parentReportView = "menu";
+    parentContactWeekDate = todayISO();
     $("#parentLoginError").hidden = true;
     showParentShell();
     renderParentPortal();
@@ -6339,6 +6540,7 @@ function setupLogin() {
   $("#parentLogout").addEventListener("click", () => {
     parentStudentId = null;
     parentReportView = "menu";
+    parentContactWeekDate = todayISO();
     cleanupCloudSync();
     showParentLogin();
   });
@@ -6376,6 +6578,7 @@ function renderAll() {
   renderPromotionPreview();
   renderEventManageList();
   renderContactBooks();
+  renderPaperAnalyses();
   renderAboutSettings();
   renderAiSettings();
   renderActiveLeaves();
@@ -6393,6 +6596,9 @@ function boot() {
   $("#careerQueryDate").value = todayISO();
   $("#classOpsWeekDate").value = todayISO();
   $("#parentScoreDate").value = todayISO();
+  if ($("#parentContactWeekDate")) $("#parentContactWeekDate").value = todayISO();
+  parentContactWeekDate = todayISO();
+  if ($("#paperAnalysisDate")) $("#paperAnalysisDate").value = todayISO();
   $("#termYear").value = String(new Date().getFullYear() - 1911);
   $("#careerTermAnalysisYear").value = String(new Date().getFullYear() - 1911);
   $("#parentTermAnalysisYear").value = String(new Date().getFullYear() - 1911);
@@ -6402,6 +6608,7 @@ function boot() {
   $("#lateDate").value = todayISO();
   $("#contactDate").value = todayISO();
   renderContactSubjectOptions();
+  renderPaperAnalysisSubjectOptions();
   $("#eventStartDate").value = todayISO();
   $("#eventEndDate").value = todayISO();
   setupTabs();
