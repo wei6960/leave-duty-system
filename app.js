@@ -3537,8 +3537,8 @@ function renderStudentReportHtml(student, subjectOverride = null, options = {}) 
     </div>
     ${options.hideAi ? "" : `<section class="ai-analysis-panel compact-ai-panel" data-ai-mode="${aiMode}" data-ai-student-panel="${student.id}">
       <div class="panel-title">
-        <h2>${options.autoAi ? `金牌躍騰平鎮分校 學生：${escapeHtml(student.name)} 專屬報告` : "AI 學習分析"}</h2>
-        <span>${options.autoAi ? "依真實成績整理完整定位、各科趨勢與備戰策略" : "依真實成績、PR 與弱點單元生成"}</span>
+        <h2>${options.autoAi ? "若需詳細報告請與老師作申請" : "AI 學習分析"}</h2>
+        <span>${options.autoAi ? `金牌躍騰平鎮分校 學生：${escapeHtml(student.name)} 學習摘要` : "依真實成績、PR 與弱點單元生成"}</span>
       </div>
       ${options.autoAi ? studentAiVisualStripHtml(student, analyses) : ""}
       ${options.autoAi ? "" : `<button class="primary" type="button" data-ai-student="${student.id}">產生 AI 分析</button>`}
@@ -3650,6 +3650,11 @@ function renderStudentReportHtml(student, subjectOverride = null, options = {}) 
     .teacher-message-page { min-height: 246mm; padding: 16mm; border: 2px solid #b9872f; border-radius: 12px; page-break-before: always; break-before: page; }
     .message-lines { display: grid; gap: 18px; margin-top: 24px; }
     .message-lines i { display: block; height: 28px; border-bottom: 1px solid #c9b16f; }
+    .ai-detail-page { padding: 10px; color: #1f252d; background: linear-gradient(145deg, rgba(255,255,255,.94), rgba(255,249,234,.96)); }
+    .ai-detail-page .ai-visual-strip { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 10px 0; }
+    .ai-detail-page .ai-answer-card { padding: 12px; border: 1px solid #dfcfaa; border-radius: 8px; background: #fffdf7; color: #1f252d; line-height: 1.65; }
+    .ai-detail-page .ai-answer-card h2, .ai-detail-page .ai-answer-card h3 { color: #7a551a; margin: 10px 0 6px; }
+    .ai-detail-page .class-radar, .ai-detail-page .score-line-chart { max-height: 118px; }
     @media print { button { display: none; } }
   </style>
 </head>
@@ -4220,11 +4225,32 @@ function downloadClassReportImage() {
   });
 }
 
-function printStudentReportPdf() {
+async function printStudentReportPdf() {
   const student = getStudent($("#careerStudent")?.value || parentStudentId);
   if (!student) {
     alert("請先選擇學生。");
     return;
+  }
+  const payload = studentAiPayload(student);
+  const analyses = subjectPerformanceRows(student);
+  let aiReportHtml = `<div class="empty">尚未設定 Gemini API Key，無法產生 AI 詳細報告。</div>`;
+  if (aiConfigured()) {
+    const button = $("#printStudentReport");
+    if (button) {
+      button.disabled = true;
+      button.textContent = "AI 報告生成中...";
+    }
+    try {
+      const text = await callGeminiAnalysis(detailedStudentAiPrompt(student, payload));
+      aiReportHtml = `<article class="ai-answer-card">${markdownToHtml(text)}</article>`;
+    } catch (error) {
+      aiReportHtml = `<div class="empty">${escapeHtml(error.message || "AI 詳細報告生成失敗")}</div>`;
+    } finally {
+      if (button) {
+        button.disabled = false;
+        button.textContent = "下載 PDF";
+      }
+    }
   }
   const examRows = reportDetailRows(student);
   const termRows = state.termScores.filter((item) => item.studentId === student.id);
@@ -4239,6 +4265,16 @@ function printStudentReportPdf() {
       <h1>金牌躍騰平鎮分校</h1>
       <h2>${escapeHtml(student.name)} 綜合成績報告</h2>
       <p>${escapeHtml(student.grade)}｜${escapeHtml(new Date().toLocaleDateString("zh-TW"))}</p>
+    </section>
+    <section class="pdf-page ai-detail-page">
+      <header class="student-hero">
+        <div>
+          <h1>金牌躍騰平鎮分校 學生：${escapeHtml(student.name)} 專屬報告</h1>
+          <div class="subtitle">AI 詳細分析｜${escapeHtml(studentLabel(student))}｜${escapeHtml(new Date().toLocaleDateString("zh-TW"))}</div>
+        </div>
+      </header>
+      ${studentAiVisualStripHtml(student, analyses)}
+      ${aiReportHtml}
     </section>
     <article class="student-report">
       <header class="student-hero">
@@ -5619,6 +5655,51 @@ function studentAiPayload(student) {
   };
 }
 
+function detailedStudentAiPrompt(student, payload) {
+  return `你是金牌躍騰平鎮分校的班導師，請用繁體中文產生完整學生學習分析報告。標題必須是「金牌躍騰平鎮分校 學生：${student.name} 專屬報告」。
+
+嚴格規則：
+1. 禁止套模板、禁止捏造資料；只能根據資料中的成績、PR、排名、班平均、各卷主題、考試範圍、弱點單元與段考資料分析。
+2. 若資料不足，請明確說明哪一科或哪一段資料不足，不要硬編。
+3. 內容要像正式給家長看的專業報告，語氣溫和但具體。
+4. 不要寫「家長協助」段落，不要寫「老師下週行動」或內部教學安排。
+5. 必須保留具體數據，例如分數、PR、排名、班平均、前中後段定位、考卷主題或單元名稱。
+
+請依下列格式輸出：
+
+一、整體狀況與定位分析
+- 說明學生目前年級、修課科目、整體表現。
+- 彙整 PR / 排名 / 前中後段定位。
+- 分出前段亮點、中段穩定表現、後段或需關注項目。
+
+二、各科趨勢與單元解析
+- 逐科分析，不要只列摘要。
+- 每科包含：趨勢與水準、近期/長期平均、最新分數、PR 或排名定位、各卷主題/考試範圍、弱點單元。
+- 若某科有明顯進步或退步，要指出是哪一次考試造成。
+
+三、下次考試備戰策略
+- 依弱科、弱單元和最近趨勢提出具體備戰方向。
+- 每一點要能對應到真實資料，例如某科某單元、某次測驗、某個 PR 或分數表現。
+- 最後用 1 小段總結學生的學習特質與下一階段目標。
+
+資料如下：
+${JSON.stringify(payload, null, 2)}`;
+}
+
+function parentStudentAiPrompt(student, payload) {
+  return `請用繁體中文產生家長端可閱讀的簡明學習摘要。標題必須是「若需詳細報告請與老師作申請」。
+
+規則：
+1. 禁止套模板、禁止捏造資料，只能根據真實資料。
+2. 請控制在 4 到 6 個重點，讓家長快速理解。
+3. 要包含：目前定位、主要優勢、最需要留意的科目/單元、下一次考試備戰方向。
+4. 可以引用分數、PR、排名、班平均或單元名稱，但不要逐筆攤開全部歷史。
+5. 不要寫「家長協助」、不要寫「老師下週行動」或內部教學安排。
+
+資料如下：
+${JSON.stringify(payload, null, 2)}`;
+}
+
 function studentAiCacheKey(student, payload) {
   const settings = normalizeAiSettings(state.aiSettings || {});
   return `${student.id}|${settings.model}|${JSON.stringify(payload)}`;
@@ -5651,34 +5732,7 @@ async function generateStudentAiAnalysis(studentId, output) {
   }
   output.innerHTML = `<div class="empty">AI 正在依真實成績、PR、排名與弱點單元分析...</div>`;
   const prompt = isParentReport
-    ? `你是金牌躍騰平鎮分校的班導師，請用繁體中文產生家長端可閱讀的完整學生學習分析報告。標題必須是「金牌躍騰平鎮分校 學生：${student.name} 專屬報告」。
-
-嚴格規則：
-1. 禁止套模板、禁止捏造資料；只能根據資料中的成績、PR、排名、班平均、各卷主題、考試範圍、弱點單元與段考資料分析。
-2. 若資料不足，請明確說明哪一科或哪一段資料不足，不要硬編。
-3. 內容要像正式給家長看的專業報告，語氣溫和但具體。
-4. 不要寫「家長協助」段落，不要寫「老師下週行動」或內部教學安排。
-5. 必須保留具體數據，例如分數、PR、排名、班平均、前中後段定位、考卷主題或單元名稱。
-
-請依下列格式輸出：
-
-一、整體狀況與定位分析
-- 說明學生目前年級、修課科目、整體表現。
-- 彙整 PR / 排名 / 前中後段定位。
-- 分出前段亮點、中段穩定表現、後段或需關注項目。
-
-二、各科趨勢與單元解析
-- 逐科分析，不要只列摘要。
-- 每科包含：趨勢與水準、近期/長期平均、最新分數、PR 或排名定位、各卷主題/考試範圍、弱點單元。
-- 若某科有明顯進步或退步，要指出是哪一次考試造成。
-
-三、下次考試備戰策略
-- 依弱科、弱單元和最近趨勢提出具體備戰方向。
-- 每一點要能對應到真實資料，例如某科某單元、某次測驗、某個 PR 或分數表現。
-- 最後用 1 小段總結學生的學習特質與下一階段目標。
-
-資料如下：
-${JSON.stringify(payload, null, 2)}`
+    ? parentStudentAiPrompt(student, payload)
     : `你是補習班班導師，請用繁體中文根據真實資料產生學生生涯分析。禁止套模板、禁止捏造資料。請包含：整體狀況、各科趨勢、PR/前中後段定位、弱點單元、段考/下次考試備戰策略。若有各卷主題，請分辨考卷主題內容再分析。資料如下：\n${JSON.stringify(payload, null, 2)}`;
   try {
     const text = await callGeminiAnalysis(prompt);
