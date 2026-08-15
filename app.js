@@ -114,6 +114,7 @@ function emptyState() {
     exams: [],
     termScores: [],
     termPeriods: {},
+    termWeights: {},
     academicPeriods: [],
     events: [],
     contactBooks: [],
@@ -219,6 +220,7 @@ function normalizeState(raw) {
       date: item.date || item.createdAt?.slice(0, 10) || todayISO(),
     })),
     termPeriods: normalizeTermPeriods(raw.termPeriods || {}),
+    termWeights: normalizeTermWeights(raw.termWeights || {}),
     academicPeriods: normalizeAcademicPeriods(raw.academicPeriods || [], normalizeAcademicSettings(raw.settings)),
     events: normalizeEvents(raw.events || []),
     contactBooks: normalizeContactBooks(raw.contactBooks || []),
@@ -307,6 +309,16 @@ function normalizeTermPeriods(raw) {
       return null;
     })
     .filter((item) => item && (item[1].startDate || item[1].endDate)));
+}
+
+function normalizeTermWeights(raw) {
+  return Object.fromEntries(Object.entries(raw || {}).map(([key, value]) => [
+    key,
+    Object.fromEntries(termSubjects.map((subject) => {
+      const weight = Number(value?.[subject]);
+      return [subject, Number.isFinite(weight) && weight > 0 ? weight : 1];
+    })),
+  ]));
 }
 
 function normalizeEvents(records) {
@@ -625,6 +637,7 @@ function mergeRemoteStateForSave(localState, remotePayload) {
     contactBooks: mergeById(local.contactBooks, remoteState.contactBooks),
     archives: mergeById(local.archives, remoteState.archives),
     termPeriods: { ...(remoteState.termPeriods || {}), ...(local.termPeriods || {}) },
+    termWeights: { ...(remoteState.termWeights || {}), ...(local.termWeights || {}) },
     schedule: local.schedule || remoteState.schedule,
     settings: local.settings || remoteState.settings,
     about: local.about || remoteState.about,
@@ -1041,6 +1054,20 @@ function activeAcademicPeriod() {
 
 function academicPeriodLabel(period = activeAcademicPeriod()) {
   return `${period.academicYear}${period.semester}`;
+}
+
+function academicPeriodOptions() {
+  return normalizeAcademicPeriods(state.academicPeriods || [], activeAcademicPeriod());
+}
+
+function setSelectOptions(target, values, fallback = "") {
+  if (!target) return "";
+  const previous = target.value;
+  const options = [...new Set(values.filter(Boolean))];
+  target.innerHTML = options.map((value) => `<option value="${value}">${value}</option>`).join("");
+  const next = options.includes(previous) ? previous : (options.includes(fallback) ? fallback : options[0] || "");
+  target.value = next;
+  return next;
 }
 
 function renderAcademicSettings() {
@@ -1489,6 +1516,7 @@ function renderScoreSections() {
 function renderTermSections() {
   $("#termEntrySection")?.classList.toggle("active", termSection === "entry");
   $("#termHistorySection")?.classList.toggle("active", termSection === "history");
+  $("#termPeriodSection")?.classList.toggle("active", termSection === "periods");
   $$("[data-term-section]").forEach((button) => {
     button.classList.toggle("active", button.dataset.termSection === termSection);
   });
@@ -1692,16 +1720,14 @@ function renderExamHistory() {
 
 function saveTermScore(event) {
   event.preventDefault();
-  const year = $("#termYear").value.trim() || "未填學年";
+  const year = $("#termYear").value.trim() || activeAcademicPeriod().academicYear;
   const semester = $("#termSemester").value;
   const grade = $("#termGrade").value;
   const stage = $("#termStage").value;
   const term = `${year}${semester}`;
   const meta = { year, semester, grade, stage };
-  const startDate = $("#termStartDate")?.value || "";
-  const endDate = $("#termEndDate")?.value || "";
-  if (startDate || endDate) state.termPeriods[termPeriodKey(meta)] = { startDate, endDate };
-  const inputs = $$("[data-term-score-student][data-term-score-subject]");
+  state.termWeights[termWeightKey(meta)] = readTermWeights();
+  const inputs = $$('[data-term-score-student][data-term-score-subject]');
   let saved = 0;
   inputs.forEach((input) => {
     if (input.value === "") return;
@@ -1713,6 +1739,7 @@ function saveTermScore(event) {
       item.studentId === studentId &&
       item.year === year &&
       item.semester === semester &&
+      item.grade === grade &&
       item.stage === stage &&
       item.subject === subject
     );
@@ -1733,13 +1760,12 @@ function saveTermScore(event) {
     else state.termScores.push({ id: crypto.randomUUID(), ...payload });
     saved += 1;
   });
-  if (!saved && !endDate) return alert("請至少輸入一位學生的段考成績，或設定段考截止日");
-  if (saved) termSection = "history";
+  if (!saved) return alert("請至少輸入一筆段考成績。");
+  termSection = "history";
   saveState();
   renderAll();
-  flashButton(event.submitter, saved ? "已儲存" : "已儲存日期");
+  flashButton(event.submitter, "已儲存");
 }
-
 function studentExamRows(student, period = null) {
   return state.exams
     .filter((exam) => !exam.noExam && exam.scores && exam.scores[student.id] !== undefined)
@@ -1758,12 +1784,60 @@ function currentTermMeta() {
   };
 }
 
-function syncTermEndDateInput() {
-  const target = $("#termEndDate");
+function renderTermAcademicOptions() {
+  const periods = academicPeriodOptions();
+  const active = activeAcademicPeriod();
+  const years = periods.map((period) => period.academicYear);
+  const year = setSelectOptions($("#termYear"), years, active.academicYear);
+  const periodYear = setSelectOptions($("#termPeriodYear"), years, year || active.academicYear);
+  const termSemesters = periods.filter((period) => period.academicYear === year).map((period) => period.semester);
+  const periodSemesters = periods.filter((period) => period.academicYear === periodYear).map((period) => period.semester);
+  setSelectOptions($("#termSemester"), termSemesters.length ? termSemesters : ["上學期", "下學期"], active.semester);
+  setSelectOptions($("#termPeriodSemester"), periodSemesters.length ? periodSemesters : ["上學期", "下學期"], active.semester);
+}
+
+function termWeightKey(meta) {
+  return [meta.year, meta.semester, meta.grade, meta.stage].join("|");
+}
+
+function termWeightsForMeta(meta = currentTermMeta()) {
+  const weights = state.termWeights?.[termWeightKey(meta)] || {};
+  return Object.fromEntries(termSubjects.map((subject) => {
+    const value = Number(weights[subject]);
+    return [subject, Number.isFinite(value) && value > 0 ? value : 1];
+  }));
+}
+
+function readTermWeights() {
+  return Object.fromEntries(termSubjects.map((subject) => {
+    const value = Number($(`[data-term-weight="${subject}"]`)?.value);
+    return [subject, Number.isFinite(value) && value > 0 ? value : 1];
+  }));
+}
+
+function renderTermWeightControls() {
+  const target = $("#termWeightControls");
   if (!target) return;
-  const range = termPeriodRange(currentTermMeta());
-  if ($("#termStartDate")) $("#termStartDate").value = range.startDate || "";
-  target.value = range.endDate || "";
+  const weights = termWeightsForMeta();
+  target.innerHTML = termSubjects.map((subject) => `
+    <label class="term-weight-card">
+      <span>${subject}</span>
+      <input type="number" min="0.1" step="0.1" data-term-weight="${subject}" value="${weights[subject]}">
+    </label>
+  `).join("");
+}
+
+function weightedTermAverage(scores, weights) {
+  let total = 0;
+  let weightTotal = 0;
+  Object.entries(scores).forEach(([subject, score]) => {
+    const value = Number(score);
+    if (!Number.isFinite(value)) return;
+    const weight = Number(weights[subject]) || 1;
+    total += value * weight;
+    weightTotal += weight;
+  });
+  return weightTotal ? total / weightTotal : NaN;
 }
 
 function termRowsForMeta(meta = currentTermMeta()) {
@@ -1808,17 +1882,17 @@ function renderTermScoreEntryList() {
 
 function termReportRows(meta = currentTermMeta()) {
   const rows = termRowsForMeta(meta);
+  const weights = termWeightsForMeta(meta);
   const byStudent = new Map();
   rows.forEach((row) => {
-    if (!byStudent.has(row.studentId)) byStudent.set(row.studentId, { student: row.student, scores: {}, values: [] });
+    if (!byStudent.has(row.studentId)) byStudent.set(row.studentId, { student: row.student, scores: {} });
     const item = byStudent.get(row.studentId);
     item.scores[row.subject] = Number(row.score);
-    item.values.push(Number(row.score));
   });
   return [...byStudent.values()]
     .map((item) => {
-      const average = item.values.length ? item.values.reduce((sum, score) => sum + score, 0) / item.values.length : NaN;
-      return { ...item, average };
+      const average = weightedTermAverage(item.scores, weights);
+      return { ...item, average, weightedAverage: average };
     })
     .filter((item) => Number.isFinite(item.average))
     .sort((a, b) => b.average - a.average)
@@ -1841,7 +1915,7 @@ function renderTermReport() {
       <span>${rows.length} 位學生</span>
     </div>
     <table>
-      <thead><tr><th>排名</th><th>班級</th><th>姓名</th>${termSubjects.map((subject) => `<th>${subject}</th>`).join("")}<th>平均</th></tr></thead>
+      <thead><tr><th>排名</th><th>班級</th><th>姓名</th>${termSubjects.map((subject) => `<th>${subject}</th>`).join("")}<th>加權成績</th></tr></thead>
       <tbody>${rows.map((row) => `<tr><td>${row.rank}</td><td>${row.student.grade}</td><td>${row.student.name}</td>${termSubjects.map((subject) => `<td class="${scoreClass(row.scores[subject])}">${scoreDisplay(row.scores[subject])}</td>`).join("")}<td class="${scoreClass(row.average)}">${scoreDisplay(row.average)}</td></tr>`).join("") || `<tr><td colspan="${4 + termSubjects.length}">尚無段考成績</td></tr>`}</tbody>
     </table>
   `;
@@ -2410,7 +2484,7 @@ function printTermReportPdf() {
       <span class="pill">${rows.length} 筆成績</span>
     </div>
     <table>
-      <thead><tr><th>排名</th><th>班級</th><th class="left">姓名</th>${termSubjects.map((subject) => `<th>${escapeHtml(subject)}</th>`).join("")}<th>平均</th></tr></thead>
+      <thead><tr><th>排名</th><th>班級</th><th class="left">姓名</th>${termSubjects.map((subject) => `<th>${escapeHtml(subject)}</th>`).join("")}<th>加權成績</th></tr></thead>
       <tbody>${rows.map((row) => `<tr><td>${row.rank}</td><td>${escapeHtml(row.grade)}</td><td class="left">${escapeHtml(row.name)}</td>${termSubjects.map((subject) => `<td class="${Number(row.scores[subject]) < 60 ? "fail-score" : ""}">${escapeHtml(row.scores[subject])}</td>`).join("")}<td class="${row.failing ? "fail-score" : ""}">${escapeHtml(row.average)}</td></tr>`).join("")}</tbody>
     </table>
   `, "landscape");
@@ -2423,7 +2497,7 @@ function downloadTermReportExcel() {
     <table border="1">
       <tr><th colspan="${4 + termSubjects.length}">金牌躍騰教育集團 段考成績單</th></tr>
       <tr><td colspan="${4 + termSubjects.length}">${escapeHtml(meta.year)}${escapeHtml(meta.semester)} ${escapeHtml(meta.grade)} ${escapeHtml(meta.stage)}　班平均 ${scoreDisplay(average)}</td></tr>
-      <tr><th>排名</th><th>班級</th><th>姓名</th>${termSubjects.map((subject) => `<th>${escapeHtml(subject)}</th>`).join("")}<th>平均</th></tr>
+      <tr><th>排名</th><th>班級</th><th>姓名</th>${termSubjects.map((subject) => `<th>${escapeHtml(subject)}</th>`).join("")}<th>加權成績</th></tr>
       ${rows.map((row) => `<tr><td>${row.rank}</td><td>${escapeHtml(row.grade)}</td><td>${escapeHtml(row.name)}</td>${termSubjects.map((subject) => `<td style="${Number(row.scores[subject]) < 60 ? "color:#e60012;font-weight:bold;" : ""}">${escapeHtml(row.scores[subject])}</td>`).join("")}<td style="${row.failing ? "color:#e60012;font-weight:bold;" : ""}">${escapeHtml(row.average)}</td></tr>`).join("")}
     </table>
   </body></html>`;
@@ -2480,7 +2554,7 @@ function downloadTermReportImage() {
     { label: "班級", width: 110 },
     { label: "姓名", width: 180 },
     ...termSubjects.map((subject) => ({ label: subject, width: 110 })),
-    { label: "平均", width: 120 },
+    { label: "加權成績", width: 120 },
   ];
   ctx.fillStyle = "#171b21";
   drawRoundRect(ctx, tableX, tableY - 48, 1272, 48, 8);
@@ -3070,13 +3144,63 @@ function termPeriodKey(meta) {
   return [meta.year, meta.semester, meta.grade, meta.stage].join("|");
 }
 
+function termPeriodGeneralKey(meta) {
+  return termPeriodKey({ ...meta, grade: "全體" });
+}
+
 function termPeriodRange(meta) {
-  const value = state.termPeriods?.[termPeriodKey(meta)];
+  const value = state.termPeriods?.[termPeriodKey(meta)] || state.termPeriods?.[termPeriodGeneralKey(meta)];
   if (typeof value === "string") return { startDate: "", endDate: value };
   return {
     startDate: value?.startDate || "",
     endDate: value?.endDate || "",
   };
+}
+
+function currentTermPeriodMeta() {
+  return {
+    year: $("#termPeriodYear")?.value || activeAcademicPeriod().academicYear,
+    semester: $("#termPeriodSemester")?.value || activeAcademicPeriod().semester,
+    grade: "全體",
+  };
+}
+
+function renderTermPeriodSettings() {
+  const target = $("#termPeriodStageRows");
+  if (!target) return;
+  const meta = currentTermPeriodMeta();
+  target.innerHTML = termStages.map((stage) => {
+    const range = termPeriodRange({ ...meta, stage });
+    return `
+      <article class="term-period-row">
+        <strong>${stage}</strong>
+        <label>開始
+          <input type="date" data-term-period-start="${stage}" value="${range.startDate || ""}">
+        </label>
+        <label>結束
+          <input type="date" data-term-period-end="${stage}" value="${range.endDate || ""}">
+        </label>
+      </article>
+    `;
+  }).join("");
+}
+
+function saveTermPeriodSettings(event) {
+  event.preventDefault();
+  const meta = currentTermPeriodMeta();
+  termStages.forEach((stage) => {
+    const startDate = $(`[data-term-period-start="${stage}"]`)?.value || "";
+    const endDate = $(`[data-term-period-end="${stage}"]`)?.value || "";
+    const key = termPeriodGeneralKey({ ...meta, stage });
+    if (startDate || endDate) {
+      state.termPeriods[key] = { startDate, endDate };
+    } else {
+      delete state.termPeriods[key];
+    }
+  });
+  saveState();
+  renderAll();
+  flashButton(event.submitter, "已儲存");
 }
 
 function previousTermStage(meta) {
@@ -3104,7 +3228,7 @@ function termAnalysisReportHtml(student, meta, selectedSubject) {
   }
   const { endDate, previousDate, rows } = termAnalysisRows(student, meta);
   if (!endDate) {
-    return `<div class="empty">請先設定 ${meta.year}${meta.semester} ${meta.grade} ${meta.stage} 的段考截止日期。</div>`;
+    return `<div class="empty">請先設定 ${meta.year}${meta.semester} ${meta.stage} 的段考區間。</div>`;
   }
   const filteredRows = rows.filter((row) => selectedSubject === "全部" || row.exam.subject === selectedSubject);
   const bySubject = courses
@@ -4345,6 +4469,7 @@ function setupForms() {
   $("#examForm").addEventListener("submit", saveExam);
   $("#resetExamForm").addEventListener("click", resetExamForm);
   $("#termScoreForm").addEventListener("submit", saveTermScore);
+  $("#termPeriodForm")?.addEventListener("submit", saveTermPeriodSettings);
   $("#saveSchedule").addEventListener("click", (event) => {
     saveSchedule();
     flashButton(event.currentTarget, "已儲存");
@@ -4371,6 +4496,12 @@ function setupForms() {
       scoreSection = button.dataset.scoreSection;
       renderAll();
     });
+  });
+  $("#termWeightControls")?.addEventListener("input", () => {
+    const meta = currentTermMeta();
+    state.termWeights[termWeightKey(meta)] = readTermWeights();
+    saveState();
+    renderTermReport();
   });
 
   ["examDate", "examGrade", "examSubject", "examScope", "examPaperCount", "examPaperTopics", "examNoTest", "scoreStudentPicker"].forEach((id) => {
@@ -4442,7 +4573,7 @@ function setupForms() {
     }
   });
 
-  ["studentFilter", "studentSearch", "lateGrade", "historyType", "historySearch", "scheduleGrade", "examGrade", "examSubject", "examPaperCount", "examNoTest", "scoreHistoryYear", "scoreHistorySemester", "scoreHistoryGrade", "careerQueryDate", "careerExamYear", "careerExamSemester", "careerTermYear", "careerTermAnalysisYear", "careerTermAnalysisSemester", "careerTermAnalysisStage", "careerReportRange", "careerReportDetailRange", "termYear", "termSemester", "termGrade", "termStage", "termStartDate", "termEndDate"].forEach((id) => {
+  ["studentFilter", "studentSearch", "lateGrade", "historyType", "historySearch", "scheduleGrade", "examGrade", "examSubject", "examPaperCount", "examNoTest", "scoreHistoryYear", "scoreHistorySemester", "scoreHistoryGrade", "careerQueryDate", "careerExamYear", "careerExamSemester", "careerTermYear", "careerTermAnalysisYear", "careerTermAnalysisSemester", "careerTermAnalysisStage", "careerReportRange", "careerReportDetailRange", "termYear", "termSemester", "termGrade", "termStage", "termPeriodYear", "termPeriodSemester"].forEach((id) => {
     onInputChange(id, () => {
       if (id.startsWith("scoreHistory")) examHistoryPage = 1;
       renderAll();
@@ -5860,10 +5991,12 @@ function renderAll() {
   renderExamHistory();
   renderStudentReport();
   renderTermSections();
-  syncTermEndDateInput();
+  renderTermAcademicOptions();
+  renderTermWeightControls();
   renderTermScoreEntryList();
   renderTermReport();
   renderTermHistoryList();
+  renderTermPeriodSettings();
   renderClassOps();
   renderPromotionPreview();
   renderEventManageList();

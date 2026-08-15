@@ -438,7 +438,7 @@ h2 {
 
 .mode-switch {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
   gap: .7rem;
   margin-bottom: .9rem;
 }
@@ -463,6 +463,42 @@ h2 {
 .term-entry-table th,
 .term-entry-table td {
   white-space: nowrap;
+}
+
+.term-weight-grid,
+.term-period-grid #termPeriodStageRows {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: .75rem;
+}
+
+.term-weight-card,
+.term-period-row {
+  border: 1px solid rgba(245, 212, 122, .25);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, .035);
+  padding: .8rem;
+}
+
+.term-weight-card {
+  display: grid;
+  grid-template-columns: 1fr 5rem;
+  align-items: center;
+  gap: .65rem;
+}
+
+.term-weight-card span,
+.term-period-row strong {
+  color: var(--gold-2);
+}
+
+.term-period-row {
+  display: grid;
+  gap: .65rem;
+}
+
+.term-period-row label {
+  gap: .35rem;
 }
 
 .grade-button,

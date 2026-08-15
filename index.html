@@ -202,7 +202,7 @@
         <section class="panel career-query-panel">
           <div class="panel-title">
             <h2>段考分析報告</h2>
-            <span>截止日在老師端段考成績登記設定</span>
+            <span>區間由老師端段考區間設定</span>
           </div>
           <div class="toolbar compact-toolbar">
             <label>學年
@@ -1091,7 +1091,7 @@
         <section class="panel career-query-panel">
           <div class="panel-title">
             <h2>段考分析報告</h2>
-            <span>截止日在段考成績登記設定</span>
+            <span>區間由段考區間設定管理</span>
           </div>
           <div class="toolbar compact-toolbar">
             <label>學年
@@ -1154,47 +1154,46 @@
         <div class="mode-switch score-section-switch" id="termSectionSwitch" aria-label="段考成績分區">
           <button class="mode-button active" data-term-section="entry" type="button">登記段考成績</button>
           <button class="mode-button" data-term-section="history" type="button">歷史段考成績單放置</button>
+          <button class="mode-button" data-term-section="periods" type="button">段考區間設定</button>
         </div>
         <div class="score-section active" id="termEntrySection">
-        <form class="form-grid panel" id="termScoreForm">
-          <label>學年
-            <input id="termYear" placeholder="例：114">
-          </label>
-          <label>學期
-            <select id="termSemester">
-              <option value="上學期">上學期</option>
-              <option value="下學期">下學期</option>
-            </select>
-          </label>
-          <label>班級
-            <select id="termGrade">
-              <option value="國一">國一</option>
-              <option value="國二">國二</option>
-              <option value="國三">國三</option>
-            </select>
-          </label>
-          <label>段考
-            <select id="termStage">
-              <option value="一段">一段</option>
-              <option value="二段">二段</option>
-              <option value="三段">三段</option>
-            </select>
-          </label>
-                    <label>段考區間開始
-            <input id="termStartDate" type="date">
-          </label>
-          <label>段考區間結束
-            <input id="termEndDate" type="date">
-          </label>
-          <button class="primary" type="submit">儲存段考成績 / 截止日</button>
-        </form>
-        <section class="panel list-panel">
-          <div class="panel-title">
-            <h2>段考輸入</h2>
-            <span>學生直列輸入</span>
-          </div>
-          <div id="termScoreEntryList" class="score-entry-list"></div>
-        </section>
+          <form class="form-grid panel" id="termScoreForm">
+            <label>學年
+              <select id="termYear"></select>
+            </label>
+            <label>學期
+              <select id="termSemester"></select>
+            </label>
+            <label>班級
+              <select id="termGrade">
+                <option value="國一">國一</option>
+                <option value="國二">國二</option>
+                <option value="國三">國三</option>
+              </select>
+            </label>
+            <label>段考
+              <select id="termStage">
+                <option value="一段">一段</option>
+                <option value="二段">二段</option>
+                <option value="三段">三段</option>
+              </select>
+            </label>
+            <button class="primary" type="submit">儲存段考成績</button>
+          </form>
+          <section class="panel list-panel">
+            <div class="panel-title">
+              <h2>段考加權設定</h2>
+              <span>預設每科權重 1，可依成績單需求調整</span>
+            </div>
+            <div id="termWeightControls" class="term-weight-grid"></div>
+          </section>
+          <section class="panel list-panel">
+            <div class="panel-title">
+              <h2>段考輸入</h2>
+              <span>學生直列輸入</span>
+            </div>
+            <div id="termScoreEntryList" class="score-entry-list"></div>
+          </section>
         </div>
         <div class="score-section" id="termHistorySection">
         <section class="panel list-panel">
@@ -1210,6 +1209,24 @@
           <div id="termReportBody"></div>
         </section>
         <div class="record-list panel list-panel" id="termHistoryList"></div>
+        </div>
+        <div class="score-section" id="termPeriodSection">
+          <form class="form-grid panel" id="termPeriodForm">
+            <label>學年
+              <select id="termPeriodYear"></select>
+            </label>
+            <label>學期
+              <select id="termPeriodSemester"></select>
+            </label>
+            <section class="panel form-span-2 term-period-grid">
+              <div class="panel-title">
+                <h2>各段考區間</h2>
+                <span>依已建立學年設定一段、二段、三段的開始與結束</span>
+              </div>
+              <div id="termPeriodStageRows"></div>
+            </section>
+            <button class="primary" type="submit">儲存段考區間</button>
+          </form>
         </div>
       </section>
 
