@@ -141,6 +141,11 @@
             <h2>聯絡本</h2>
             <span>今日與歷史課程紀錄</span>
           </div>
+          <div class="toolbar compact-toolbar">
+            <label>科目
+              <select id="parentContactSubjectFilter"></select>
+            </label>
+          </div>
           <div id="parentContactBookList" class="record-list"></div>
         </section>
         <section class="panel parent-side-panel parent-page-section" id="parentAboutSection" hidden>
@@ -589,11 +594,25 @@
               <textarea id="contactHomework" rows="3" placeholder="輸入作業內容"></textarea>
             </label>
             <button class="primary" type="submit">儲存聯絡本</button>
+            <button class="ghost" id="cancelContactEdit" type="button" hidden>取消編輯</button>
           </form>
           <section class="panel list-panel">
             <div class="panel-title">
               <h2>歷史聯絡本</h2>
               <span>可查看與刪除之前紀錄</span>
+            </div>
+            <div class="toolbar compact-toolbar">
+              <label>年級
+                <select id="contactFilterGrade">
+                  <option value="全部">全部</option>
+                  <option value="國一">國一</option>
+                  <option value="國二">國二</option>
+                  <option value="國三">國三</option>
+                </select>
+              </label>
+              <label>科目
+                <select id="contactFilterSubject"></select>
+              </label>
             </div>
             <div id="contactBookList" class="record-list contact-book-grid"></div>
           </section>

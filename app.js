@@ -37,6 +37,7 @@ let scoreDraft = null;
 let careerSubject = "全部";
 let parentCareerSubject = "全部";
 let editingEventId = null;
+let editingContactId = null;
 let currentBranch = sessionStorage.getItem(SESSION_KEY) || "";
 let state = currentBranch ? loadState() : emptyState();
 let syncReady = false;
@@ -4096,83 +4097,37 @@ function setupForms() {
 
   $("#contactBookForm")?.addEventListener("submit", (event) => {
     event.preventDefault();
-    state.contactBooks.push(normalizeContactBooks([{
-      id: crypto.randomUUID(),
+    const wasEditing = Boolean(editingContactId);
+    const payload = normalizeContactBooks([{
+      id: editingContactId || crypto.randomUUID(),
       date: $("#contactDate").value,
       grade: $("#contactGrade").value,
       subject: $("#contactSubject").value,
       todayTest: $("#contactTodayTest").value.trim(),
       nextTest: $("#contactNextTest").value.trim(),
       homework: $("#contactHomework").value.trim(),
-      createdAt: new Date().toISOString(),
+      createdAt: editingContactId ? state.contactBooks.find((item) => item.id === editingContactId)?.createdAt : new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-    }])[0]);
-    $("#contactTodayTest").value = "";
-    $("#contactNextTest").value = "";
-    $("#contactHomework").value = "";
+    }])[0];
+    if (editingContactId) {
+      state.contactBooks = state.contactBooks.map((item) => item.id === editingContactId ? payload : item);
+    } else {
+      state.contactBooks.push(payload);
+    }
+    clearContactForm();
     saveState();
     renderAll();
-    flashButton(event.submitter, "已儲存");
+    flashButton(event.submitter, wasEditing ? "已更新" : "已儲存");
   });
 
-  $("#addTeacherCard")?.addEventListener("click", async (event) => {
-    const name = $("#teacherName")?.value.trim();
-    const role = $("#teacherRole")?.value.trim();
-    const specialty = $("#teacherSpecialty")?.value.trim();
-    const experience = $("#teacherExperience")?.value.trim();
-    if (!name) return alert("請先輸入老師姓名");
-    const photo = await imageFileToDataUrl($("#teacherPhotoUpload")?.files?.[0], 900);
-    const certificates = await imageFilesToDataUrls($("#teacherCertUpload")?.files, 900);
-    state.about = normalizeAboutSettings(state.about || {});
-    state.about.teacherCards.push({
-      id: crypto.randomUUID(),
-      name,
-      role,
-      specialty,
-      experience,
-      photo,
-      certificates,
-      createdAt: new Date().toISOString(),
-    });
-    ["teacherName", "teacherRole", "teacherSpecialty", "teacherExperience", "teacherPhotoUpload", "teacherCertUpload"].forEach((id) => {
-      const field = $(`#${id}`);
-      if (field) field.value = "";
-    });
-    saveState();
-    renderAll();
-    flashButton(event.currentTarget, "已新增");
+  $("#cancelContactEdit")?.addEventListener("click", () => {
+    clearContactForm();
+    renderContactBooks();
   });
 
-  $("#aboutForm")?.addEventListener("submit", async (event) => {
-    event.preventDefault();
-    const currentAbout = normalizeAboutSettings(state.about || {});
-    const uploadedEnvironment = await imageFilesToDataUrls($("#aboutEnvironmentUpload")?.files, 1200);
-    const environmentPhotos = [
-      $("#aboutEnvironmentPhotos").value.trim(),
-      ...uploadedEnvironment,
-    ].filter(Boolean).join("\n");
-    state.about = normalizeAboutSettings({
-      publicEnabled: $("#aboutPublicEnabled").checked,
-      branch: $("#aboutBranch").value.trim(),
-      phone: $("#aboutPhone").value.trim(),
-      address: $("#aboutAddress").value.trim(),
-      slogan: $("#aboutSlogan").value.trim(),
-      lineUrl: $("#aboutLineUrl").value.trim(),
-      facebookUrl: $("#aboutFacebookUrl").value.trim(),
-      intro: $("#aboutIntro").value.trim(),
-      courses: $("#aboutCourses").value.trim(),
-      teachers: $("#aboutTeachers").value.trim(),
-      teacherCards: currentAbout.teacherCards,
-      planning: $("#aboutPlanning").value.trim(),
-      environmentPhotos,
-      teacherPhotos: $("#aboutTeacherPhotos").value.trim(),
-    });
-    if ($("#aboutEnvironmentUpload")) $("#aboutEnvironmentUpload").value = "";
-    saveState();
-    renderAll();
-    flashButton(event.submitter, "已儲存");
+  ["contactFilterGrade", "contactFilterSubject"].forEach((id) => {
+    onInputChange(id, renderContactBooks);
   });
-
   $("#aiSettingsForm")?.addEventListener("submit", (event) => {
     event.preventDefault();
     state.aiSettings = normalizeAiSettings({
@@ -4322,6 +4277,9 @@ function setupForms() {
     onInputChange(id, () => {
       if (parentStudentId) renderParentPortal();
     });
+  });
+  onInputChange("parentContactSubjectFilter", () => {
+    if (parentStudentId) renderParentPortal();
   });
 }
 
@@ -4812,11 +4770,70 @@ function renderContactSubjectOptions() {
       const subject = normalizeCourseName(state.schedule?.[itemGrade]?.[day]?.[period]);
       if (courses.includes(subject)) scheduled.add(subject);
       if (subject === "數A") scheduled.add("數B");
+      if (subject === "數B") scheduled.add("數A");
     });
   });
   const subjects = scheduled.size ? [...scheduled] : courses;
   target.innerHTML = subjects.map((subject) => `<option value="${subject}">${subject}</option>`).join("");
   target.value = previous && subjects.includes(previous) ? previous : subjects[0];
+}
+
+function contactSubjectOptions(records = state.contactBooks, student = null) {
+  const subjects = new Set(["全部"]);
+  records.forEach((record) => {
+    if (student && !(record.grade === "全體" || record.grade === student.grade)) return;
+    if (record.subject) subjects.add(record.subject);
+  });
+  courses.forEach((course) => subjects.add(course));
+  return [...subjects];
+}
+
+function renderContactFilters(student = null) {
+  const teacherSubject = $("#contactFilterSubject");
+  if (teacherSubject) {
+    const previous = teacherSubject.value || "全部";
+    const subjects = contactSubjectOptions(state.contactBooks);
+    teacherSubject.innerHTML = subjects.map((subject) => `<option value="${subject}">${subject}</option>`).join("");
+    teacherSubject.value = subjects.includes(previous) ? previous : "全部";
+  }
+  const parentSubject = $("#parentContactSubjectFilter");
+  if (parentSubject && student) {
+    const previous = parentSubject.value || "全部";
+    const subjects = contactSubjectOptions(state.contactBooks, student);
+    parentSubject.innerHTML = subjects.map((subject) => `<option value="${subject}">${subject}</option>`).join("");
+    parentSubject.value = subjects.includes(previous) ? previous : "全部";
+  }
+}
+
+function contactRecordMatchesFilters(record) {
+  const grade = $("#contactFilterGrade")?.value || "全部";
+  const subject = $("#contactFilterSubject")?.value || "全部";
+  return (grade === "全部" || record.grade === grade || record.grade === "全體") &&
+    (subject === "全部" || record.subject === subject);
+}
+
+function clearContactForm() {
+  editingContactId = null;
+  $("#contactTodayTest").value = "";
+  $("#contactNextTest").value = "";
+  $("#contactHomework").value = "";
+  $("#cancelContactEdit")?.setAttribute("hidden", "");
+}
+
+function fillContactForm(record) {
+  editingContactId = record.id;
+  $("#contactDate").value = record.date || todayISO();
+  $("#contactGrade").value = record.grade || "全體";
+  renderContactSubjectOptions();
+  if (record.subject && !Array.from($("#contactSubject").options).some((option) => option.value === record.subject)) {
+    $("#contactSubject").insertAdjacentHTML("beforeend", `<option value="${record.subject}">${record.subject}</option>`);
+  }
+  $("#contactSubject").value = record.subject || $("#contactSubject").value;
+  $("#contactTodayTest").value = record.todayTest || "";
+  $("#contactNextTest").value = record.nextTest || "";
+  $("#contactHomework").value = record.homework || "";
+  $("#cancelContactEdit")?.removeAttribute("hidden");
+  $("#contactBookForm")?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 function renderContactBookCard(record, withActions = false) {
@@ -4828,11 +4845,10 @@ function renderContactBookCard(record, withActions = false) {
         <span class="badge">下次考試：${record.nextTest || "未填"}</span>
         <span class="badge gold">作業：${record.homework || "未填"}</span>
       </div>
-      ${withActions ? `<div class="action-row"><button class="ghost danger" data-delete-contact="${record.id}">刪除</button></div>` : ""}
+      ${withActions ? `<div class="action-row"><button class="ghost" data-edit-contact="${record.id}">編輯</button><button class="ghost danger" data-delete-contact="${record.id}">刪除</button></div>` : ""}
     </article>
   `;
 }
-
 function sortedContactBooks(records = state.contactBooks) {
   return records.slice().sort((a, b) => b.date.localeCompare(a.date) || (b.updatedAt || "").localeCompare(a.updatedAt || ""));
 }
@@ -4842,11 +4858,12 @@ function renderContactBooks() {
   const target = $("#contactBookList");
   if (!target) return;
   renderContactSubjectOptions();
+  renderContactFilters();
   target.innerHTML = sortedContactBooks()
+    .filter(contactRecordMatchesFilters)
     .map((record) => renderContactBookCard(record, true))
-    .join("") || `<div class="empty">尚無聯絡本紀錄。</div>`;
+    .join("") || `<div class="empty">目前沒有符合條件的聯絡本。</div>`;
 }
-
 function aboutImageGrid(text) {
   const urls = String(text || "").split(/\r?\n/).map((item) => item.trim()).filter(Boolean).slice(0, 8);
   if (!urls.length) return "";
@@ -5100,6 +5117,7 @@ function setupActions() {
     const deleteTermReportKey = event.target.dataset.deleteTermReport;
     const editEventId = event.target.dataset.editEvent;
     const deleteEventId = event.target.dataset.deleteEvent;
+    const editContactId = event.target.dataset.editContact;
     const deleteContactId = event.target.dataset.deleteContact;
     const deleteTeacherId = event.target.dataset.deleteTeacher;
     const aiStudentId = event.target.dataset.aiStudent;
@@ -5254,6 +5272,13 @@ function setupActions() {
     if (deleteContactId && confirm("確定刪除這筆聯絡本？")) {
       state.contactBooks = state.contactBooks.filter((item) => item.id !== deleteContactId);
     }
+    if (editContactId) {
+      const record = state.contactBooks.find((item) => item.id === editContactId);
+      if (record) {
+        setContactBookSection("book");
+        fillContactForm(record);
+      }
+    }
     if (deleteTeacherId && confirm("確定刪除這張師資卡？")) {
       state.about = normalizeAboutSettings(state.about || {});
       state.about.teacherCards = state.about.teacherCards.filter((teacher) => teacher.id !== deleteTeacherId);
@@ -5303,14 +5328,23 @@ function showParentShell() {
 }
 
 async function loadParentBranchState(branch) {
+  cleanupCloudSync();
   currentBranch = branch;
   state = loadState();
   if (hasSupabaseConfig()) {
     const { createClient } = await import(`https://esm.sh/@supabase/supabase-js@${SUPABASE_SDK_VERSION}`);
     supabaseClient = createClient(window.SUPABASE_CONFIG.url, window.SUPABASE_CONFIG.anonKey);
     const remote = await loadSupabaseState();
-    if (remote) state = normalizeState(remote.data || emptyState());
+    const remoteExamRecords = await loadSupabaseExamRecords().catch(() => []);
+    if (remote) {
+      state = normalizeState(remote.data || emptyState());
+      state.exams = mergeExams(state.exams, remoteExamRecords);
+      lastRemoteUpdatedAt = remote.updatedAt || "";
+    }
+    syncReady = true;
+    supabasePollTimer = setInterval(checkSupabaseState, 3000);
   }
+  localStorage.setItem(storageKey(), JSON.stringify(state));
 }
 
 function normalizeParentCodeInput(value) {
@@ -5515,12 +5549,16 @@ function renderParentPortal() {
   $("#parentEventList").innerHTML = sortedEvents(state.events.filter((record) => eventVisibleToStudent(record, student)))
     .map((record) => renderEventCard(record))
     .join("") || `<div class="empty">目前尚無重大行事曆公告。</div>`;
+  renderContactFilters(student);
   if ($("#parentContactBookList")) {
-    $("#parentContactBookList").innerHTML = sortedContactBooks(state.contactBooks.filter((record) => record.grade === "全體" || record.grade === student.grade))
+    const contactSubject = $("#parentContactSubjectFilter")?.value || "全部";
+    $("#parentContactBookList").innerHTML = sortedContactBooks(state.contactBooks.filter((record) =>
+      (record.grade === "全體" || record.grade === student.grade) &&
+      (contactSubject === "全部" || record.subject === contactSubject)
+    ))
       .map((record) => renderContactBookCard(record))
-      .join("") || `<div class="empty">目前尚無聯絡本紀錄。</div>`;
-  }
-  if ($("#parentAboutContent")) $("#parentAboutContent").innerHTML = aboutHtml(normalizeAboutSettings(state.about || {}));
+      .join("") || `<div class="empty">目前沒有符合科目的聯絡本。</div>`;
+  }  if ($("#parentAboutContent")) $("#parentAboutContent").innerHTML = aboutHtml(normalizeAboutSettings(state.about || {}));
   $("#parentLeaveList").innerHTML = state.leaves
     .filter((record) => record.studentId === student.id)
     .sort((a, b) => getLeaveStart(b).localeCompare(getLeaveStart(a)))
