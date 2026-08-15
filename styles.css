@@ -1089,9 +1089,12 @@ legend {
   gap: .55rem;
   margin-bottom: .75rem;
   padding: .75rem;
-  border: 1px solid rgba(241, 211, 124, .14);
+  border: 1px solid rgba(241, 211, 124, .28);
   border-radius: .38rem;
-  background: rgba(0, 0, 0, .14);
+  background:
+    linear-gradient(135deg, rgba(198, 151, 53, .18), transparent 54%),
+    linear-gradient(180deg, rgba(255, 255, 255, .06), rgba(0, 0, 0, .06)),
+    rgba(18, 22, 28, .96);
 }
 
 .report-head strong {
@@ -1101,7 +1104,7 @@ legend {
 
 .report-head span,
 .report-copy {
-  color: var(--muted);
+  color: #e5dcc6;
 }
 
 .fail-score {
@@ -1124,12 +1127,13 @@ legend {
 .analysis-card {
   display: grid;
   gap: .45rem;
-  border: 1px solid rgba(241, 211, 124, .16);
+  border: 1px solid rgba(241, 211, 124, .24);
   border-radius: .38rem;
   padding: .75rem;
   background:
-    linear-gradient(180deg, rgba(241, 211, 124, .06), transparent),
-    rgba(0, 0, 0, .14);
+    linear-gradient(145deg, rgba(198, 151, 53, .14), transparent 48%),
+    linear-gradient(180deg, rgba(255, 255, 255, .045), rgba(0, 0, 0, .04)),
+    rgba(18, 22, 28, .94);
 }
 
 .analysis-card-head {
@@ -1678,8 +1682,10 @@ th {
 
 .badge.gold,
 .level-badge {
-  background: rgba(198, 151, 53, .17);
-  border-color: rgba(241, 211, 124, .28);
+  background: linear-gradient(180deg, #f1d37c, #a87824);
+  border-color: rgba(241, 211, 124, .5);
+  color: #161008;
+  box-shadow: 0 .45rem 1rem rgba(0, 0, 0, .24);
 }
 
 .analysis-grid {
@@ -1689,8 +1695,9 @@ th {
 .analysis-card {
   border-radius: .55rem;
   background:
-    linear-gradient(145deg, rgba(198, 151, 53, .1), transparent 42%),
-    rgba(0, 0, 0, .17);
+    linear-gradient(145deg, rgba(198, 151, 53, .14), transparent 42%),
+    linear-gradient(180deg, rgba(255, 255, 255, .05), rgba(0, 0, 0, .05)),
+    rgba(18, 22, 28, .94);
 }
 
 .career-score-browser {
@@ -1752,9 +1759,11 @@ th {
 .score-line-chart {
   width: 100%;
   min-height: 12rem;
-  border: 1px solid rgba(241, 211, 124, .12);
+  border: 1px solid rgba(241, 211, 124, .22);
   border-radius: .38rem;
-  background: linear-gradient(180deg, rgba(255, 255, 255, .035), rgba(0, 0, 0, .08));
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, .06), rgba(0, 0, 0, .02)),
+    #15191f;
 }
 
 .chart-axis,
@@ -1768,7 +1777,7 @@ th {
 }
 
 .chart-grid-line {
-  stroke: rgba(255, 255, 255, .58);
+  stroke: rgba(255, 255, 255, .5);
   stroke-width: 1;
 }
 
@@ -1788,14 +1797,18 @@ th {
 
 .chart-label,
 .chart-mark {
-  fill: var(--muted);
-  font-size: 11px;
+  fill: rgba(245, 241, 230, .82);
+  font-size: 12px;
+  font-weight: 800;
 }
 
 .chart-y-label {
-  fill: rgba(255, 255, 255, .9);
-  font-size: 11px;
-  font-weight: 800;
+  fill: #ffffff;
+  paint-order: stroke;
+  stroke: rgba(7, 9, 12, .9);
+  stroke-width: 3px;
+  font-size: 14px;
+  font-weight: 900;
 }
 
 .mini-bars {
@@ -2860,16 +2873,19 @@ body.parent-nav-open .parent-drawer {
   display: grid;
   gap: .2rem;
   padding: .65rem;
-  border: 1px solid rgba(241, 211, 124, .14);
+  border: 1px solid rgba(241, 211, 124, .24);
   border-radius: .45rem;
-  background: rgba(255, 255, 255, .035);
-  color: var(--muted);
+  background:
+    linear-gradient(145deg, rgba(198, 151, 53, .14), transparent 58%),
+    rgba(255, 255, 255, .055);
+  color: #e6dcc4;
   font-size: .82rem;
 }
 
 .student-stat-grid b {
-  color: var(--text);
-  font-size: 1.05rem;
+  color: #fff6da;
+  font-size: 1.16rem;
+  font-weight: 900;
 }
 
 .student-weak-panel {

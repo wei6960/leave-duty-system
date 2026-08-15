@@ -2337,7 +2337,7 @@ function chartGridLines(width, height, pad) {
     const y = height - pad - (value / 100) * (height - pad * 2);
     return `<g class="chart-grid-row">
       <line x1="${pad}" y1="${y.toFixed(1)}" x2="${width - pad}" y2="${y.toFixed(1)}" class="chart-grid-line"></line>
-      <text x="${pad - 8}" y="${(y + 4).toFixed(1)}" text-anchor="end" class="chart-y-label">${value}</text>
+      <text x="${pad - 10}" y="${(y + 4).toFixed(1)}" text-anchor="end" class="chart-y-label">${value}</text>
     </g>`;
   }).join("");
 }
@@ -2356,7 +2356,7 @@ function classOpsTrendSvg(rows) {
   if (pointsData.length < 2) return `<div class="empty small-empty">至少需要 2 個日期才會形成折線圖。</div>`;
   const width = 520;
   const height = 190;
-  const pad = 42;
+  const pad = 54;
   const points = pointsData.map((item, index) => {
     const x = pad + index * (width - pad * 2) / Math.max(1, pointsData.length - 1);
     const y = height - pad - Math.max(0, Math.min(100, item.average)) / 100 * (height - pad * 2);
@@ -2811,7 +2811,7 @@ function scoreLineChart(rows) {
   if (chartRows.length < 2) return `<div class="empty small-empty">至少需要 2 次成績才會形成折線圖。</div>`;
   const width = 640;
   const height = 220;
-  const pad = 42;
+  const pad = 56;
   const points = chartRows.map((row, index) => {
     const x = pad + (index * (width - pad * 2)) / Math.max(1, chartRows.length - 1);
     const y = height - pad - (Math.max(0, Math.min(100, row.score)) / 100) * (height - pad * 2);
@@ -2978,7 +2978,7 @@ function termScoreLineChart(rows) {
   if (chartRows.length < 2) return `<div class="empty small-empty">至少需要 2 次段考成績才會形成折線圖。</div>`;
   const width = 640;
   const height = 220;
-  const pad = 42;
+  const pad = 56;
   const points = chartRows.map((row, index) => {
     const x = pad + (index * (width - pad * 2)) / Math.max(1, chartRows.length - 1);
     const y = height - pad - (Math.max(0, Math.min(100, Number(row.score))) / 100) * (height - pad * 2);
