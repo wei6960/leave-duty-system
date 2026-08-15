@@ -4888,15 +4888,28 @@ function renderContactSubjectOptions() {
 }
 
 function contactSubjectOptions(records = state.contactBooks, student = null) {
-  const subjects = new Set(["全部"]);
-  records.forEach((record) => {
-    if (student && !(record.grade === "全體" || record.grade === student.grade)) return;
-    if (record.subject) subjects.add(record.subject);
-  });
-  courses.forEach((course) => subjects.add(course));
+  const allLabel = "全部";
+  const subjects = new Set([allLabel]);
+  if (student) {
+    (student.courses || []).forEach((course) => subjects.add(course));
+    records.forEach((record) => {
+      if (!(record.grade === "全體" || record.grade === student.grade)) return;
+      if (record.subject && studentTakesSubject(student, record.subject)) subjects.add(record.subject);
+    });
+  } else {
+    records.forEach((record) => {
+      if (record.subject) subjects.add(record.subject);
+    });
+    courses.forEach((course) => subjects.add(course));
+  }
   return [...subjects];
 }
 
+function parentContactRecordVisible(record, student) {
+  return Boolean(student) &&
+    (record.grade === "全體" || record.grade === student.grade) &&
+    studentTakesSubject(student, record.subject);
+}
 function renderContactFilters(student = null) {
   const teacherSubject = $("#contactFilterSubject");
   if (teacherSubject) {
@@ -5662,7 +5675,7 @@ function renderParentPortal() {
   if ($("#parentContactBookList")) {
     const contactSubject = $("#parentContactSubjectFilter")?.value || "全部";
     $("#parentContactBookList").innerHTML = sortedContactBooks(state.contactBooks.filter((record) =>
-      (record.grade === "全體" || record.grade === student.grade) &&
+      parentContactRecordVisible(record, student) &&
       (contactSubject === "全部" || record.subject === contactSubject)
     ))
       .map((record) => renderContactBookCard(record))
