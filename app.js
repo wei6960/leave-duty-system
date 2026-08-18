@@ -358,13 +358,18 @@ function aisleId(row, col) {
 function normalizeLayoutSeats(layoutSeats, room = "3F大", seats = {}) {
   const saved = Array.isArray(layoutSeats) ? layoutSeats : [];
   const assigned = seats && typeof seats === "object" ? Object.keys(seats) : [];
-  const ids = saved.length ? saved : [...defaultLayoutSeatIds(room), ...assigned, seatId(1, 1)];
+  const ids = (saved.length ? saved : [...defaultLayoutSeatIds(room), ...assigned, seatId(1, 1)])
+    .map((id) => {
+      const pos = seatPositionFromId(id);
+      return pos?.type === "aisle" ? aisleId(1, pos.col) : id;
+    });
   const byPosition = [];
   sortSeatIds(ids).forEach((id) => {
     const pos = seatPositionFromId(id);
     if (!pos) return;
     if (byPosition.some((item) => {
       const itemPos = seatPositionFromId(item);
+      if (pos.type === "aisle" || itemPos?.type === "aisle") return itemPos?.col === pos.col;
       return itemPos?.row === pos.row && itemPos?.col === pos.col;
     })) return;
     byPosition.push(id);
@@ -697,7 +702,7 @@ function queueRemoteSave() {
   clearTimeout(syncSaveTimer);
   syncSaveTimer = setTimeout(() => {
     remoteSave().catch(() => setSyncStatus("同步失敗"));
-  }, 350);
+  }, 180);
 }
 
 function renderSyncedState() {
@@ -816,7 +821,11 @@ async function loadSupabaseState() {
 function mergeById(localItems = [], remoteItems = []) {
   const byId = new Map();
   remoteItems.forEach((item) => item?.id && byId.set(item.id, item));
-  localItems.forEach((item) => item?.id && byId.set(item.id, item));
+  localItems.forEach((item) => {
+    if (!item?.id) return;
+    const current = byId.get(item.id);
+    if (!current || recordStamp(item) >= recordStamp(current)) byId.set(item.id, item);
+  });
   return [...byId.values()];
 }
 
@@ -1481,6 +1490,17 @@ function chooseDefaultExamSubject() {
   }
 }
 
+function seatGridTemplate(layoutSeats) {
+  const positions = layoutSeats.map(seatPositionFromId).filter(Boolean);
+  const maxCol = Math.max(1, ...positions.map((pos) => pos.col));
+  const aisleCols = new Set(positions.filter((pos) => pos.type === "aisle").map((pos) => pos.col));
+  return Array.from({ length: maxCol }, (_item, index) => aisleCols.has(index + 1) ? "1.15rem" : "minmax(5.5rem, 1fr)").join(" ");
+}
+
+function seatMaxRow(layoutSeats) {
+  return Math.max(1, ...layoutSeats.map((id) => seatPositionFromId(id)?.row || 1));
+}
+
 function renderSeatSettingBoard() {
   renderSeatSubjectOptions();
   const target = $("#seatSettingBoard");
@@ -1489,18 +1509,16 @@ function renderSeatSettingBoard() {
   if ($("#seatSettingRoom")) $("#seatSettingRoom").value = setting.room || "3F大";
   const students = studentsForGradeAndSubject(setting.grade, setting.subject);
   const layoutSeats = normalizeLayoutSeats(setting.layoutSeats, setting.room, setting.seats);
-  const maxCol = Math.max(1, ...layoutSeats.map((id) => seatPositionFromId(id)?.col || 1));
-  target.innerHTML = `<div class="podium-strip">講台</div><div class="seat-board custom-seat-board" style="grid-template-columns: repeat(${maxCol}, minmax(4.8rem, 1fr));">
+  const gridTemplate = seatGridTemplate(layoutSeats);
+  const maxRow = seatMaxRow(layoutSeats);
+  target.innerHTML = `<div class="podium-strip">講台</div><div class="seat-board custom-seat-board" style="grid-template-columns:${gridTemplate};">
     ${layoutSeats.map((id) => {
       const pos = seatPositionFromId(id);
       if (!pos) return "";
       if (pos.type === "aisle") {
-        return `<div class="seat-cell custom-seat-cell aisle-cell" style="grid-row:${pos.row};grid-column:${pos.col};" data-seat-cell="${id}">
-          <span>${pos.row}-${pos.col}</span>
+        return `<div class="seat-cell custom-seat-cell aisle-cell" style="grid-row:1 / span ${maxRow};grid-column:${pos.col};" data-seat-cell="${id}">
           <strong>走道</strong>
           <div class="seat-tools">
-            <button type="button" class="mini-icon-button" data-add-seat-right="${id}" title="往右新增座位">→座</button>
-            <button type="button" class="mini-icon-button" data-add-seat-down="${id}" title="往下新增座位">↓座</button>
             <button type="button" class="mini-icon-button danger" data-delete-seat-cell="${id}" title="刪除此走道">×</button>
           </div>
         </div>`;
@@ -1515,7 +1533,6 @@ function renderSeatSettingBoard() {
           <button type="button" class="mini-icon-button" data-add-seat-right="${id}" title="往右新增一個座位">→座</button>
           <button type="button" class="mini-icon-button" data-add-seat-down="${id}" title="往下新增一個座位">↓座</button>
           <button type="button" class="mini-icon-button" data-add-aisle-right="${id}" title="往右新增走道">→走</button>
-          <button type="button" class="mini-icon-button" data-add-aisle-down="${id}" title="往下新增走道">↓走</button>
           <button type="button" class="mini-icon-button danger" data-delete-seat-cell="${id}" title="刪除此座位" ${id === seatId(1, 1) ? "disabled" : ""}>×</button>
         </div>
       </label>`;
@@ -1652,7 +1669,8 @@ function renderRollCall() {
   const date = $("#rollDate")?.value || todayISO();
   const setting = state.seatSettings[seatSettingKey(grade, subject)] || { grade, subject, room: "3F大", seats: {}, layoutSeats: defaultLayoutSeatIds("3F大") };
   const layoutSeats = normalizeLayoutSeats(setting.layoutSeats, setting.room, setting.seats);
-  const maxCol = Math.max(1, ...layoutSeats.map((id) => seatPositionFromId(id)?.col || 1));
+  const gridTemplate = seatGridTemplate(layoutSeats);
+  const maxRow = seatMaxRow(layoutSeats);
   const record = currentRollRecord();
   const students = studentsForGradeAndSubject(grade, subject);
   const expectedIds = new Set(students.map((student) => student.id));
@@ -1663,13 +1681,13 @@ function renderRollCall() {
   if ($("#rollCallStats")) $("#rollCallStats").textContent = `應到 ${expectedIds.size}｜實到 ${presentIds.size}｜請假 ${leaveIds.size}`;
   const target = $("#rollCallBoard");
   if (!target) return;
-  target.innerHTML = `<div class="podium-strip">講台</div><div class="seat-board roll-board" style="grid-template-columns: repeat(${maxCol}, minmax(4.8rem, 1fr));">
+  target.innerHTML = `<div class="podium-strip">講台</div><div class="seat-board roll-board" style="grid-template-columns:${gridTemplate};">
     ${layoutSeats.map((id) => {
       const pos = seatPositionFromId(id);
       if (!pos) return "";
       if (pos.type === "aisle") {
-        return `<div class="seat-cell aisle-cell" style="grid-row:${pos.row};grid-column:${pos.col};">
-          <span>${pos.row}-${pos.col}</span><strong>走道</strong>
+        return `<div class="seat-cell aisle-cell" style="grid-row:1 / span ${maxRow};grid-column:${pos.col};">
+          <strong>走道</strong>
         </div>`;
       }
       const student = getStudent(setting.seats?.[id]);
@@ -1696,7 +1714,8 @@ function printRollCallPdf() {
   const subject = $("#rollSubject")?.value || courses[0] || "國文";
   const setting = state.seatSettings[seatSettingKey(grade, subject)] || { room: "3F大", seats: {}, layoutSeats: defaultLayoutSeatIds("3F大") };
   const layoutSeats = normalizeLayoutSeats(setting.layoutSeats, setting.room, setting.seats);
-  const maxCol = Math.max(1, ...layoutSeats.map((id) => seatPositionFromId(id)?.col || 1));
+  const gridTemplate = seatGridTemplate(layoutSeats);
+  const maxRow = seatMaxRow(layoutSeats);
   const record = currentRollRecord();
   const students = studentsForGradeAndSubject(grade, subject);
   const compactPrint = students.length > 34;
@@ -1723,7 +1742,7 @@ function printRollCallPdf() {
   const seatHtml = layoutSeats.map((id) => {
     const pos = seatPositionFromId(id);
     if (!pos) return "";
-    if (pos.type === "aisle") return `<div class="seat aisle-print" style="grid-row:${pos.row};grid-column:${pos.col};"><b>走道</b></div>`;
+    if (pos.type === "aisle") return `<div class="seat aisle-print" style="grid-row:1 / span ${maxRow};grid-column:${pos.col};"><b>走道</b></div>`;
     const student = getStudent(setting.seats?.[id]);
     return `<div class="seat" style="grid-row:${pos.row};grid-column:${pos.col};">${pos.row}-${pos.col}<br><b>${escapeHtml(student?.name || "")}</b></div>`;
   }).join("");
@@ -1752,7 +1771,7 @@ function printRollCallPdf() {
     .page-break { break-before: page; page-break-before: always; }
     .seat-wrap { display: flex; flex-direction: column; gap: 9px; flex: 1; padding: 10px; border: 2px solid #b88a31; border-radius: 16px; background: radial-gradient(circle at 18% 12%, rgba(184,138,49,.16), transparent 28%), #fffdf7; }
     .podium-print { padding: 10px; border-radius: 13px; text-align: center; font-weight: 900; color: #fff7df; background: linear-gradient(100deg, #111820, #7a5a21); }
-    .seat-map { display: grid; grid-template-columns: repeat(${maxCol}, 1fr); gap: 8px; flex: 1; align-items: stretch; }
+    .seat-map { display: grid; grid-template-columns: ${gridTemplate}; gap: 8px; flex: 1; align-items: stretch; }
     .seat { min-height: 54px; border: 1.5px solid #4e442e; border-radius: 10px; padding: 7px; text-align: center; background: linear-gradient(145deg, #fff8e8, #f5e9ca); font-size: 12px; }
     .aisle-print { display: grid; place-items: center; color: #7b6b4f; background: repeating-linear-gradient(45deg, #e4dccb 0 8px, #f8f2e6 8px 16px); border-style: dashed; }
     .seat-page-bottom { display: flex; justify-content: flex-end; }
@@ -2119,11 +2138,7 @@ function publishScoreDraft(draft, { immediate = false } = {}) {
   state.scoreDrafts[scoreDraft.key] = scoreDraft;
   saveScoreDraft();
   localStorage.setItem(storageKey(), JSON.stringify(state));
-  if (immediate) {
-    if (syncReady && remoteSave) remoteSave().catch(() => setSyncStatus("同步失敗"));
-  } else {
-    queueRemoteSave();
-  }
+  queueRemoteSave();
   renderScoreLiveStatus();
 }
 
@@ -2152,7 +2167,7 @@ function captureScoreDraft() {
     const paper = input.dataset.scorePaper;
     if (!draft.scores[studentId]) draft.scores[studentId] = {};
     if (input.value === "") {
-      delete draft.scores[studentId][paper];
+      draft.scores[studentId][paper] = { value: "", updatedAt, deviceId };
     } else {
       draft.scores[studentId][paper] = { value: input.value, updatedAt, deviceId };
     }
@@ -2182,11 +2197,11 @@ function updateScoreDraftCell(input) {
   const paper = input.dataset.scorePaper;
   if (!draft.scores[studentId]) draft.scores[studentId] = {};
   if (input.value === "") {
-    delete draft.scores[studentId][paper];
+    draft.scores[studentId][paper] = { value: "", updatedAt: new Date().toISOString(), deviceId };
   } else {
     draft.scores[studentId][paper] = { value: input.value, updatedAt: new Date().toISOString(), deviceId };
   }
-  publishScoreDraft(draft, { immediate: true });
+  publishScoreDraft(draft);
 }
 
 function updateScoreDraftAbsence(button) {
@@ -2197,7 +2212,7 @@ function updateScoreDraftAbsence(button) {
     updatedAt: new Date().toISOString(),
     deviceId,
   };
-  publishScoreDraft(draft, { immediate: true });
+  publishScoreDraft(draft);
 }
 
 function touchScoreActivity() {
