@@ -619,36 +619,62 @@
           </div>
           <button class="ghost back-button" type="button" data-back-tab="management">返回班務管理</button>
         </header>
-        <form class="form-grid panel" id="seatSettingForm">
-          <label>年級
-            <select id="seatSettingGrade">
-              <option value="國一">國一</option>
-              <option value="國二">國二</option>
-              <option value="國三">國三</option>
-            </select>
-          </label>
-          <label>科目
-            <select id="seatSettingSubject"></select>
-          </label>
-          <label>教室
-            <select id="seatSettingRoom">
-              <option value="3F大">3F大</option>
-              <option value="3F小">3F小</option>
-              <option value="2F大">2F大</option>
-              <option value="2F小">2F小</option>
-              <option value="1F小">1F小</option>
-            </select>
-          </label>
-          <button class="primary" type="submit">儲存座位表設定</button>
-          <p class="hint form-span-2">每個座位可單獨往右或往下新增一格，也可刪除單格；同一位學生只能被安排在一個座位。</p>
-        </form>
-        <section class="panel list-panel">
-          <div class="panel-title">
-            <h2>座位配置</h2>
-            <span>點選座位後選學生，會保留在該年級科目教室</span>
-          </div>
-          <div id="seatSettingBoard"></div>
-        </section>
+        <div class="portal-grid compact-portal-grid layer-panel">
+          <button class="portal-tile feature-tile" type="button" data-seat-section="assign">
+            <strong>位置安排</strong>
+            <span>選年級、科目、教室後安排學生座位</span>
+          </button>
+          <button class="portal-tile feature-tile" type="button" data-seat-section="layout">
+            <strong>設定教室格局</strong>
+            <span>新增教室、座位、走道，所有班級共用</span>
+          </button>
+        </div>
+        <div id="seatAssignPanel">
+          <form class="form-grid panel" id="seatSettingForm">
+            <label>年級
+              <select id="seatSettingGrade">
+                <option value="國一">國一</option>
+                <option value="國二">國二</option>
+                <option value="國三">國三</option>
+              </select>
+            </label>
+            <label>科目
+              <select id="seatSettingSubject"></select>
+            </label>
+            <label>教室
+              <select id="seatSettingRoom"></select>
+            </label>
+            <button class="primary" type="submit">儲存位置安排</button>
+            <p class="hint form-span-2">同一位學生只能被安排在一個座位；教室格局請到「設定教室格局」調整一次即可。</p>
+          </form>
+          <section class="panel list-panel">
+            <div class="panel-title">
+              <h2>位置安排</h2>
+              <span>依共用教室格局安排學生</span>
+            </div>
+            <div id="seatSettingBoard"></div>
+          </section>
+        </div>
+        <div id="seatLayoutPanel" hidden>
+          <form class="form-grid panel" id="roomLayoutForm">
+            <label>選擇教室
+              <select id="roomLayoutRoom"></select>
+            </label>
+            <label>新增教室名稱
+              <input id="roomLayoutName" placeholder="例：1F大教室">
+            </label>
+            <button class="primary" id="addRoomLayout" type="button">新增教室</button>
+            <button class="ghost danger" id="deleteRoomLayout" type="button">刪除教室</button>
+            <p class="hint form-span-2">格局會套用到所有使用同一教室的年級與科目；左上角第一個座位固定保留。</p>
+          </form>
+          <section class="panel list-panel">
+            <div class="panel-title">
+              <h2>教室格局</h2>
+              <span>新增座位、走道或刪除單格</span>
+            </div>
+            <div id="roomLayoutBoard"></div>
+          </section>
+        </div>
       </section>
 
       <section class="page" id="class-ops">
