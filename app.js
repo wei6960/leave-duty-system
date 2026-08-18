@@ -33,6 +33,7 @@ const roomLayouts = {
   "3F小": { rows: 4, cols: 6 },
   "2F大": { rows: 5, cols: 8 },
   "2F小": { rows: 4, cols: 6 },
+  "1F小": { rows: 4, cols: 6 },
 };
 const parentMode = new URLSearchParams(location.search).get("parent") === "1" || location.hash === "#parent";
 const deviceId = localStorage.getItem(DEVICE_KEY) || crypto.randomUUID();
@@ -62,6 +63,8 @@ let setDocRemote = null;
 let remoteSave = null;
 let supabaseClient = null;
 let supabasePollTimer = null;
+let supabaseRefreshTimer = null;
+let supabaseRealtimeChannel = null;
 let lastRemoteUpdatedAt = "";
 let parentStudentId = null;
 let parentActiveSection = "parentHomeSection";
@@ -325,8 +328,8 @@ function normalizePaperAnalyses(records) {
 }
 
 function seatPositionFromId(id = "") {
-  const match = String(id).match(/^r(\d+)c(\d+)$/);
-  return match ? { row: Number(match[1]), col: Number(match[2]) } : null;
+  const match = String(id).match(/^([ra])(\d+)c(\d+)$/);
+  return match ? { type: match[1] === "a" ? "aisle" : "seat", row: Number(match[2]), col: Number(match[3]) } : null;
 }
 
 function sortSeatIds(ids = []) {
@@ -348,11 +351,25 @@ function defaultLayoutSeatIds(room = "3F大") {
   });
 }
 
+function aisleId(row, col) {
+  return `a${row}c${col}`;
+}
+
 function normalizeLayoutSeats(layoutSeats, room = "3F大", seats = {}) {
   const saved = Array.isArray(layoutSeats) ? layoutSeats : [];
   const assigned = seats && typeof seats === "object" ? Object.keys(seats) : [];
   const ids = saved.length ? saved : [...defaultLayoutSeatIds(room), ...assigned, seatId(1, 1)];
-  return sortSeatIds(ids).includes(seatId(1, 1)) ? sortSeatIds(ids) : sortSeatIds([seatId(1, 1), ...ids]);
+  const byPosition = [];
+  sortSeatIds(ids).forEach((id) => {
+    const pos = seatPositionFromId(id);
+    if (!pos) return;
+    if (byPosition.some((item) => {
+      const itemPos = seatPositionFromId(item);
+      return itemPos?.row === pos.row && itemPos?.col === pos.col;
+    })) return;
+    byPosition.push(id);
+  });
+  return byPosition.includes(seatId(1, 1)) ? byPosition : sortSeatIds([seatId(1, 1), ...byPosition]);
 }
 
 function normalizeSeatSettings(raw = {}) {
@@ -676,7 +693,7 @@ function setSyncStatus(text) {
 }
 
 function queueRemoteSave() {
-  if (!syncReady || syncLoading || !remoteSave) return;
+  if (!syncReady || !remoteSave) return;
   clearTimeout(syncSaveTimer);
   syncSaveTimer = setTimeout(() => {
     remoteSave().catch(() => setSyncStatus("同步失敗"));
@@ -733,6 +750,14 @@ function cleanupCloudSync() {
     syncUnsubscribe();
     syncUnsubscribe = null;
   }
+  if (supabaseRealtimeChannel && supabaseClient) {
+    supabaseClient.removeChannel(supabaseRealtimeChannel);
+    supabaseRealtimeChannel = null;
+  }
+  if (supabaseRefreshTimer) {
+    clearTimeout(supabaseRefreshTimer);
+    supabaseRefreshTimer = null;
+  }
   if (supabasePollTimer) {
     clearInterval(supabasePollTimer);
     supabasePollTimer = null;
@@ -769,6 +794,7 @@ async function setupSupabaseSync() {
     syncReady = true;
     setSyncStatus("同步中");
     if (!remote) await saveSupabaseState();
+    setupSupabaseRealtime();
     supabasePollTimer = setInterval(checkSupabaseState, 1000);
   } catch (error) {
     syncReady = false;
@@ -792,6 +818,30 @@ function mergeById(localItems = [], remoteItems = []) {
   remoteItems.forEach((item) => item?.id && byId.set(item.id, item));
   localItems.forEach((item) => item?.id && byId.set(item.id, item));
   return [...byId.values()];
+}
+
+function scheduleSupabaseRefresh() {
+  if (supabaseRefreshTimer) clearTimeout(supabaseRefreshTimer);
+  supabaseRefreshTimer = setTimeout(() => {
+    checkSupabaseState();
+  }, 120);
+}
+
+function setupSupabaseRealtime() {
+  if (!supabaseClient || !currentBranch || supabaseRealtimeChannel) return;
+  try {
+    supabaseRealtimeChannel = supabaseClient
+      .channel(`leave-duty-${currentBranch}`)
+      .on("postgres_changes", {
+        event: "*",
+        schema: "public",
+        table: "app_records",
+        filter: `group_code=eq.${currentBranch}`,
+      }, scheduleSupabaseRefresh)
+      .subscribe();
+  } catch (_error) {
+    supabaseRealtimeChannel = null;
+  }
 }
 
 function recordStamp(item = {}) {
@@ -974,7 +1024,7 @@ async function checkSupabaseState() {
     const remote = await loadSupabaseState();
     const remoteExamRecords = await loadSupabaseExamRecords().catch(() => []);
     if (remote && remote.updatedAt && remote.updatedAt !== lastRemoteUpdatedAt) {
-      state = normalizeState(remote.data || emptyState());
+      state = mergeRemoteStateForSave(state, remote);
       state.exams = mergeExams(state.exams, remoteExamRecords, state.deletedExamIds);
       lastRemoteUpdatedAt = remote.updatedAt;
       localStorage.setItem(storageKey(), JSON.stringify(state));
@@ -1440,10 +1490,21 @@ function renderSeatSettingBoard() {
   const students = studentsForGradeAndSubject(setting.grade, setting.subject);
   const layoutSeats = normalizeLayoutSeats(setting.layoutSeats, setting.room, setting.seats);
   const maxCol = Math.max(1, ...layoutSeats.map((id) => seatPositionFromId(id)?.col || 1));
-  target.innerHTML = `<div class="seat-board custom-seat-board" style="grid-template-columns: repeat(${maxCol}, minmax(4.8rem, 1fr));">
+  target.innerHTML = `<div class="podium-strip">講台</div><div class="seat-board custom-seat-board" style="grid-template-columns: repeat(${maxCol}, minmax(4.8rem, 1fr));">
     ${layoutSeats.map((id) => {
       const pos = seatPositionFromId(id);
       if (!pos) return "";
+      if (pos.type === "aisle") {
+        return `<div class="seat-cell custom-seat-cell aisle-cell" style="grid-row:${pos.row};grid-column:${pos.col};" data-seat-cell="${id}">
+          <span>${pos.row}-${pos.col}</span>
+          <strong>走道</strong>
+          <div class="seat-tools">
+            <button type="button" class="mini-icon-button" data-add-seat-right="${id}" title="往右新增座位">→座</button>
+            <button type="button" class="mini-icon-button" data-add-seat-down="${id}" title="往下新增座位">↓座</button>
+            <button type="button" class="mini-icon-button danger" data-delete-seat-cell="${id}" title="刪除此走道">×</button>
+          </div>
+        </div>`;
+      }
       const assigned = setting.seats?.[id] || "";
       const usedIds = new Set(Object.entries(setting.seats || {}).filter(([seatKey]) => seatKey !== id).map((entry) => entry[1]).filter(Boolean));
       const options = `<option value="">空位</option>${students.map((student) => `<option value="${student.id}" ${usedIds.has(student.id) ? "disabled" : ""}>${student.name}${usedIds.has(student.id) ? "（已排）" : ""}</option>`).join("")}`;
@@ -1451,8 +1512,10 @@ function renderSeatSettingBoard() {
         <span>${pos.row}-${pos.col}</span>
         <select data-seat-student="${id}">${options}</select>
         <div class="seat-tools">
-          <button type="button" class="mini-icon-button" data-add-seat-right="${id}" title="往右新增一個座位">→</button>
-          <button type="button" class="mini-icon-button" data-add-seat-down="${id}" title="往下新增一個座位">↓</button>
+          <button type="button" class="mini-icon-button" data-add-seat-right="${id}" title="往右新增一個座位">→座</button>
+          <button type="button" class="mini-icon-button" data-add-seat-down="${id}" title="往下新增一個座位">↓座</button>
+          <button type="button" class="mini-icon-button" data-add-aisle-right="${id}" title="往右新增走道">→走</button>
+          <button type="button" class="mini-icon-button" data-add-aisle-down="${id}" title="往下新增走道">↓走</button>
           <button type="button" class="mini-icon-button danger" data-delete-seat-cell="${id}" title="刪除此座位" ${id === seatId(1, 1) ? "disabled" : ""}>×</button>
         </div>
       </label>`;
@@ -1460,6 +1523,20 @@ function renderSeatSettingBoard() {
   </div>`;
   $$("[data-seat-student]").forEach((select) => {
     select.value = setting.seats?.[select.dataset.seatStudent] || "";
+  });
+  refreshSeatSelectAvailability();
+}
+
+function refreshSeatSelectAvailability() {
+  const selectedBySeat = new Map($$("[data-seat-student]").map((select) => [select.dataset.seatStudent, select.value]).filter((entry) => entry[1]));
+  $$("[data-seat-student]").forEach((select) => {
+    [...select.options].forEach((option) => {
+      if (!option.value) return;
+      const usedElsewhere = [...selectedBySeat.entries()].some(([seat, studentId]) => seat !== select.dataset.seatStudent && studentId === option.value);
+      option.disabled = usedElsewhere;
+      const student = getStudent(option.value);
+      option.textContent = `${student?.name || option.textContent.replace("（已排）", "")}${usedElsewhere ? "（已排）" : ""}`;
+    });
   });
 }
 
@@ -1503,9 +1580,17 @@ function changeSeatLayout(anchorId, direction) {
   const setting = currentSeatSetting();
   const pos = seatPositionFromId(anchorId);
   if (!pos) return;
-  const nextId = direction === "right" ? seatId(pos.row, pos.col + 1) : seatId(pos.row + 1, pos.col);
-  if (setting.layoutSeats.includes(nextId)) {
-    alert("這個位置已經有座位了。");
+  const isAisle = direction.startsWith("aisle");
+  const isRight = direction.endsWith("right");
+  const row = isRight ? pos.row : pos.row + 1;
+  const col = isRight ? pos.col + 1 : pos.col;
+  const nextId = isAisle ? aisleId(row, col) : seatId(row, col);
+  const occupied = setting.layoutSeats.some((id) => {
+    const itemPos = seatPositionFromId(id);
+    return itemPos?.row === row && itemPos?.col === col;
+  });
+  if (occupied) {
+    alert("這個位置已經有座位或走道了。");
     return;
   }
   state.seatSettings[key] = {
@@ -1578,10 +1663,15 @@ function renderRollCall() {
   if ($("#rollCallStats")) $("#rollCallStats").textContent = `應到 ${expectedIds.size}｜實到 ${presentIds.size}｜請假 ${leaveIds.size}`;
   const target = $("#rollCallBoard");
   if (!target) return;
-  target.innerHTML = `<div class="seat-board roll-board" style="grid-template-columns: repeat(${maxCol}, minmax(4.8rem, 1fr));">
+  target.innerHTML = `<div class="podium-strip">講台</div><div class="seat-board roll-board" style="grid-template-columns: repeat(${maxCol}, minmax(4.8rem, 1fr));">
     ${layoutSeats.map((id) => {
       const pos = seatPositionFromId(id);
       if (!pos) return "";
+      if (pos.type === "aisle") {
+        return `<div class="seat-cell aisle-cell" style="grid-row:${pos.row};grid-column:${pos.col};">
+          <span>${pos.row}-${pos.col}</span><strong>走道</strong>
+        </div>`;
+      }
       const student = getStudent(setting.seats?.[id]);
       const leave = student ? rollLeaveForStudent(student.id, date) : null;
       const late = student ? rollLateForStudent(student.id, date) : null;
@@ -1610,56 +1700,94 @@ function printRollCallPdf() {
   const record = currentRollRecord();
   const students = studentsForGradeAndSubject(grade, subject);
   const compactPrint = students.length > 34;
-  const rows = students.map((student, index) => {
+  const rowHtml = (student, index) => {
     const leave = rollLeaveForStudent(student.id, date);
     const late = rollLateForStudent(student.id, date);
     const present = record.statuses?.[student.id] === "present";
     const mark = leave && leave.type !== "提早離班" ? "假" : present ? "✓" : "?";
     return `<tr><td>${index + 1}</td><td>${escapeHtml(student.name)}</td><td class="${mark === "假" ? "leave" : ""}">${mark}</td><td></td><td></td><td></td><td></td><td>${late ? "晚到" : ""}${leave?.type === "提早離班" ? "提早離班" : ""}</td></tr>`;
-  }).join("") + Array.from({ length: 5 }, (_item, index) => `<tr><td>${students.length + index + 1}</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>`).join("");
+  };
+  const allRows = [
+    ...students.map(rowHtml),
+    ...Array.from({ length: 5 }, (_item, index) => `<tr><td>${students.length + index + 1}</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>`),
+  ];
+  const half = Math.ceil(allRows.length / 2);
+  const tableHead = `<thead><tr><th>序號</th><th>名字</th><th>到班</th><th>作業</th><th colspan="2">聯絡本</th><th colspan="2">狀況/備註</th></tr></thead>`;
+  const leftRows = allRows.slice(0, half).join("");
+  const rightRows = allRows.slice(half).join("");
   const absent = students.filter((student) => !record.statuses?.[student.id] && !rollLeaveForStudent(student.id, date));
   const late = students.filter((student) => rollLateForStudent(student.id, date));
   const leaves = students.filter((student) => rollLeaveForStudent(student.id, date)?.type !== "提早離班");
+  const presentCount = students.filter((student) => record.statuses?.[student.id] === "present").length;
+  const summaryHtml = `<b>應到：</b>${students.length}　<b>實到：</b>${presentCount}　<b>請假：</b>${leaves.length}<br><b>未到：</b>${absent.map((student) => student.name).join("、") || "-"}<br><b>晚到：</b>${late.map((student) => student.name).join("、") || "-"}<br><b>請假：</b>${leaves.map((student) => student.name).join("、") || "-"}`;
   const seatHtml = layoutSeats.map((id) => {
     const pos = seatPositionFromId(id);
     if (!pos) return "";
+    if (pos.type === "aisle") return `<div class="seat aisle-print" style="grid-row:${pos.row};grid-column:${pos.col};"><b>走道</b></div>`;
     const student = getStudent(setting.seats?.[id]);
     return `<div class="seat" style="grid-row:${pos.row};grid-column:${pos.col};">${pos.row}-${pos.col}<br><b>${escapeHtml(student?.name || "")}</b></div>`;
   }).join("");
-  const printWindow = window.open("", "_blank");
-  if (!printWindow) return alert("請允許瀏覽器跳出視窗。");
-  printWindow.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>點名表</title><style>
-    @page { size: B4 landscape; margin: 8mm; }
+  const html = `<!doctype html><html><head><meta charset="utf-8"><title>點名表</title><style>
+    @page { size: B4 landscape; margin: 7mm; }
     * { box-sizing: border-box; }
-    body { margin: 0; font-family: "Microsoft JhengHei", Arial, sans-serif; color: #151515; }
-    .sheet { min-height: calc(100vh - 16mm); display: flex; flex-direction: column; gap: 7px; overflow: hidden; }
-    .brand-head { display: flex; justify-content: space-between; align-items: end; padding: 10px 12px; border-radius: 12px; color: #fff7df; background: linear-gradient(110deg, #111820, #5b4520 56%, #ad812d); }
-    .brand-head h1 { margin: 0; font-size: 24px; letter-spacing: 0; }
-    .brand-head p { margin: 4px 0 0; font-size: 13px; color: #ffe6a3; }
-    .brand-head strong { font-size: 18px; }
-    table { width: 100%; border-collapse: collapse; font-size: ${compactPrint ? "9px" : "11px"}; table-layout: fixed; }
-    th, td { border: 1px solid #333; padding: ${compactPrint ? "2px 3px" : "3px 4px"}; text-align: center; height: ${compactPrint ? "16px" : "22px"}; overflow: hidden; }
+    body { margin: 0; font-family: "Microsoft JhengHei", Arial, sans-serif; color: #151515; background: #f7f2e7; }
+    .sheet { min-height: calc(100vh - 14mm); display: flex; flex-direction: column; gap: 8px; overflow: hidden; }
+    .brand-head { display: flex; justify-content: space-between; align-items: end; padding: 10px 13px; border-radius: 14px; color: #fff7df; background: linear-gradient(112deg, #0f151d, #5b4520 56%, #b88a31); box-shadow: inset 0 0 0 1px rgba(255,255,255,.18); }
+    .brand-head h1 { margin: 0; font-size: 22px; letter-spacing: 0; }
+    .brand-head p { margin: 4px 0 0; font-size: 12px; color: #ffe6a3; }
+    .brand-head strong { font-size: 16px; }
+    .front-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; flex: 1; min-height: 0; }
+    .paper-panel { position: relative; padding: 8px; border: 1.5px solid #b88a31; border-radius: 13px; background: #fffdf7; overflow: hidden; }
+    .paper-panel::before { content: ""; position: absolute; inset: 0; background: linear-gradient(135deg, rgba(184,138,49,.12), transparent 38%); pointer-events: none; }
+    table { position: relative; width: 100%; border-collapse: collapse; font-size: ${compactPrint ? "8.5px" : "10px"}; table-layout: fixed; background: #fff; }
+    th, td { border: 1px solid #303030; padding: ${compactPrint ? "1px 2px" : "2px 3px"}; text-align: center; height: ${compactPrint ? "15px" : "19px"}; overflow: hidden; }
     th { background: #111820; color: #f5d77d; }
     td:nth-child(2), td:last-child { text-align: left; }
-    th:nth-child(1), td:nth-child(1) { width: 44px; }
-    th:nth-child(2), td:nth-child(2) { width: 120px; }
-    th:nth-child(3), td:nth-child(3) { width: 48px; }
+    th:nth-child(1), td:nth-child(1) { width: 34px; }
+    th:nth-child(2), td:nth-child(2) { width: 82px; }
+    th:nth-child(3), td:nth-child(3) { width: 36px; }
     .leave { color: #d90000; font-weight: 900; }
-    .summary { margin-left: auto; width: 42%; padding: 8px 10px; border: 2px solid #ad812d; border-radius: 10px; background: #fff8e8; font-size: 13px; line-height: 1.55; }
+    .summary { margin-left: auto; width: 43%; padding: 8px 10px; border: 2px solid #b88a31; border-radius: 12px; background: #fff8e8; font-size: 12px; line-height: 1.55; box-shadow: 0 8px 20px rgba(60,43,12,.12); }
     .summary b { color: #8b1d12; }
     .page-break { break-before: page; page-break-before: always; }
+    .seat-wrap { display: flex; flex-direction: column; gap: 9px; flex: 1; padding: 10px; border: 2px solid #b88a31; border-radius: 16px; background: radial-gradient(circle at 18% 12%, rgba(184,138,49,.16), transparent 28%), #fffdf7; }
+    .podium-print { padding: 10px; border-radius: 13px; text-align: center; font-weight: 900; color: #fff7df; background: linear-gradient(100deg, #111820, #7a5a21); }
     .seat-map { display: grid; grid-template-columns: repeat(${maxCol}, 1fr); gap: 8px; flex: 1; align-items: stretch; }
-    .seat { min-height: 54px; border: 1px solid #444; border-radius: 8px; padding: 7px; text-align: center; background: #fff8e8; font-size: 13px; }
+    .seat { min-height: 54px; border: 1.5px solid #4e442e; border-radius: 10px; padding: 7px; text-align: center; background: linear-gradient(145deg, #fff8e8, #f5e9ca); font-size: 12px; }
+    .aisle-print { display: grid; place-items: center; color: #7b6b4f; background: repeating-linear-gradient(45deg, #e4dccb 0 8px, #f8f2e6 8px 16px); border-style: dashed; }
+    .seat-page-bottom { display: flex; justify-content: flex-end; }
   </style></head><body>
     <section class="sheet">
-    <div class="brand-head"><div><h1>金牌躍騰平鎮分校 教務點名表</h1><p>${escapeHtml(dateLabel(date))}｜${escapeHtml(grade)}｜${escapeHtml(subject)}｜${escapeHtml(setting.room || "")}</p></div><strong>應到 ${students.length}　實到 ${students.filter((student) => record.statuses?.[student.id] === "present").length}　請假 ${leaves.length}</strong></div>
-    <table><thead><tr><th>序號</th><th>名字</th><th>到班</th><th>作業完成</th><th colspan="2">聯絡本繳交/簽名</th><th colspan="2">上課狀況/備註</th></tr></thead><tbody>${rows}</tbody></table>
-    <div class="summary"><b>未到：</b>${absent.map((student) => student.name).join("、") || "-"}<br><b>晚到：</b>${late.map((student) => student.name).join("、") || "-"}<br><b>請假：</b>${leaves.map((student) => student.name).join("、") || "-"}</div>
+      <div class="brand-head"><div><h1>金牌躍騰平鎮分校 教務點名表</h1><p>${escapeHtml(dateLabel(date))}｜${escapeHtml(grade)}｜${escapeHtml(subject)}｜${escapeHtml(setting.room || "")}</p></div><strong>應到 ${students.length}　實到 ${presentCount}　請假 ${leaves.length}</strong></div>
+      <div class="front-grid">
+        <div class="paper-panel"><table>${tableHead}<tbody>${leftRows}</tbody></table></div>
+        <div class="paper-panel"><table>${tableHead}<tbody>${rightRows}</tbody></table></div>
+      </div>
     </section>
-    <section class="sheet page-break"><div class="brand-head"><div><h1>金牌躍騰平鎮分校 座位圖</h1><p>${escapeHtml(dateLabel(date))}｜${escapeHtml(grade)}｜${escapeHtml(subject)}｜${escapeHtml(setting.room || "")}</p></div><strong>B4 第二面</strong></div><div class="seat-map">${seatHtml}</div></section>
-    <script>window.onload=()=>setTimeout(()=>window.print(),200);<\/script>
-  </body></html>`);
-  printWindow.document.close();
+    <section class="sheet page-break">
+      <div class="brand-head"><div><h1>金牌躍騰平鎮分校 座位圖</h1><p>${escapeHtml(dateLabel(date))}｜${escapeHtml(grade)}｜${escapeHtml(subject)}｜${escapeHtml(setting.room || "")}</p></div><strong>B4 第二面</strong></div>
+      <div class="seat-wrap"><div class="podium-print">講台</div><div class="seat-map">${seatHtml}</div><div class="seat-page-bottom"><div class="summary">${summaryHtml}</div></div></div>
+    </section>
+    <script>window.onload=()=>setTimeout(()=>window.print(),250);<\/script>
+  </body></html>`;
+  const printWindow = window.open("", "_blank");
+  if (printWindow) {
+    printWindow.document.write(html);
+    printWindow.document.close();
+    return;
+  }
+  const iframe = document.createElement("iframe");
+  iframe.style.position = "fixed";
+  iframe.style.right = "0";
+  iframe.style.bottom = "0";
+  iframe.style.width = "0";
+  iframe.style.height = "0";
+  iframe.style.border = "0";
+  document.body.appendChild(iframe);
+  iframe.contentDocument.open();
+  iframe.contentDocument.write(html);
+  iframe.contentDocument.close();
+  setTimeout(() => iframe.contentWindow?.print(), 400);
 }
 
 function mathCoursesForGrade(grade) {
@@ -5848,6 +5976,7 @@ function setupForms() {
     $$("[data-seat-student]").forEach((select) => {
       if (select !== seatSelect && select.value === seatSelect.value) select.value = "";
     });
+    refreshSeatSelectAvailability();
     saveCurrentSeatSetting({ render: false });
   });
 
@@ -6977,6 +7106,8 @@ async function generateStudentAiAnalysis(studentId, output) {
     const cleanArchiveYear = event.target.dataset.cleanArchiveYear;
     const addSeatRight = event.target.dataset.addSeatRight;
     const addSeatDown = event.target.dataset.addSeatDown;
+    const addAisleRight = event.target.dataset.addAisleRight;
+    const addAisleDown = event.target.dataset.addAisleDown;
     const deleteSeat = event.target.dataset.deleteSeatCell;
     const rollSeatStudentId = event.target.closest("[data-roll-seat]")?.dataset.rollSeat;
     const pickLeaveStudentId = event.target.closest("[data-pick-leave-student]")?.dataset.pickLeaveStudent;
@@ -7017,6 +7148,14 @@ async function generateStudentAiAnalysis(studentId, output) {
     }
     if (addSeatDown) {
       changeSeatLayout(addSeatDown, "down");
+      return;
+    }
+    if (addAisleRight) {
+      changeSeatLayout(addAisleRight, "aisle-right");
+      return;
+    }
+    if (addAisleDown) {
+      changeSeatLayout(addAisleDown, "aisle-down");
       return;
     }
     if (deleteSeat) {

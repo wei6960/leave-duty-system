@@ -3103,6 +3103,18 @@ tbody tr:hover {
   padding-bottom: .25rem;
 }
 
+.podium-strip {
+  margin-bottom: .75rem;
+  padding: .85rem;
+  border: 1px solid rgba(241, 211, 124, .26);
+  border-radius: .55rem;
+  background: linear-gradient(100deg, rgba(17, 24, 32, .96), rgba(184, 138, 49, .38));
+  color: #fff7df;
+  font-weight: 900;
+  text-align: center;
+  letter-spacing: .08em;
+}
+
 .seat-cell {
   display: grid;
   gap: .25rem;
@@ -3136,7 +3148,7 @@ tbody tr:hover {
 
 .seat-tools {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(2.1rem, 1fr));
   gap: .25rem;
 }
 
@@ -3181,6 +3193,17 @@ tbody tr:hover {
 .leave-seat {
   border-color: rgba(223, 93, 84, .72);
   background: linear-gradient(145deg, rgba(223, 93, 84, .25), rgba(255,255,255,.04));
+}
+
+.aisle-cell {
+  place-items: center;
+  border-style: dashed;
+  border-color: rgba(241, 211, 124, .28);
+  background:
+    repeating-linear-gradient(45deg, rgba(241, 211, 124, .08) 0 8px, rgba(255, 255, 255, .025) 8px 16px),
+    rgba(0, 0, 0, .18);
+  color: #ffe7a2;
+  text-align: center;
 }
 
 .empty-seat {
