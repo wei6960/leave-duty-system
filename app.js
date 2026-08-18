@@ -148,6 +148,7 @@ function emptyState() {
     courseCatalog: defaultCourses.map((name) => ({ name, core: coreCourses.includes(name) })),
     seatSettings: {},
     rollCalls: [],
+    scoreDrafts: {},
     scoreActivity: null,
     about: defaultAboutSettings(),
     aiSettings: defaultAiSettings(),
@@ -264,6 +265,7 @@ function normalizeState(raw) {
     courseCatalog,
     seatSettings: normalizeSeatSettings(raw.seatSettings || {}),
     rollCalls: normalizeRollCalls(raw.rollCalls || []),
+    scoreDrafts: normalizeScoreDrafts(raw.scoreDrafts || {}),
     scoreActivity: raw.scoreActivity || null,
     about: normalizeAboutSettings(raw.about || {}),
     aiSettings: normalizeAiSettings(raw.aiSettings || raw.ai || {}),
@@ -376,6 +378,90 @@ function normalizeRollCalls(records) {
     statuses: record.statuses && typeof record.statuses === "object" ? record.statuses : {},
     updatedAt: record.updatedAt || record.createdAt || new Date().toISOString(),
     createdAt: record.createdAt || new Date().toISOString(),
+  }));
+}
+
+function scoreDraftId(date, grade, subject) {
+  return [date || todayISO(), grade || "國一", normalizeCourseName(subject || "國文")].join("|");
+}
+
+function normalizeDraftScoreCell(cell) {
+  if (cell && typeof cell === "object" && "value" in cell) {
+    return {
+      value: String(cell.value ?? ""),
+      updatedAt: cell.updatedAt || cell.createdAt || "",
+      deviceId: cell.deviceId || "",
+    };
+  }
+  if (cell === undefined || cell === null || cell === "") return null;
+  return {
+    value: String(cell),
+    updatedAt: "",
+    deviceId: "",
+  };
+}
+
+function normalizeDraftAbsence(item, activeFallback = true) {
+  if (item && typeof item === "object") {
+    return {
+      active: item.active !== false,
+      updatedAt: item.updatedAt || item.createdAt || "",
+      deviceId: item.deviceId || "",
+    };
+  }
+  return {
+    active: activeFallback,
+    updatedAt: "",
+    deviceId: "",
+  };
+}
+
+function normalizeScoreDraft(record = {}) {
+  const date = record.date || todayISO();
+  const grade = grades.includes(record.grade) ? record.grade : "國一";
+  const subject = normalizeCourseName(record.subject || "國文");
+  const key = record.key || scoreDraftId(date, grade, subject);
+  const scores = {};
+  Object.entries(record.scores || {}).forEach(([studentId, papers]) => {
+    if (!papers || typeof papers !== "object") return;
+    Object.entries(papers).forEach(([paper, cell]) => {
+      const normalized = normalizeDraftScoreCell(cell);
+      if (!normalized) return;
+      if (!scores[studentId]) scores[studentId] = {};
+      scores[studentId][paper] = normalized;
+    });
+  });
+  const absences = {};
+  if (Array.isArray(record.absences)) {
+    record.absences.forEach((studentId) => {
+      if (studentId) absences[studentId] = normalizeDraftAbsence(null, true);
+    });
+  } else {
+    Object.entries(record.absences || {}).forEach(([studentId, item]) => {
+      absences[studentId] = normalizeDraftAbsence(item, Boolean(item));
+    });
+  }
+  return {
+    key,
+    editingExamId: record.editingExamId || null,
+    date,
+    grade,
+    subject,
+    scope: record.scope || "",
+    paperCount: Math.max(1, Number(record.paperCount) || 1),
+    paperTopics: Array.isArray(record.paperTopics) ? record.paperTopics : [],
+    noExam: Boolean(record.noExam),
+    scores,
+    absences,
+    updatedAt: record.updatedAt || record.createdAt || "",
+    updatedBy: record.updatedBy || "",
+  };
+}
+
+function normalizeScoreDrafts(raw = {}) {
+  return Object.fromEntries(Object.entries(raw || {}).map(([key, value]) => {
+    const draft = normalizeScoreDraft({ ...value, key: value?.key || key });
+    return [draft.key, draft];
   }));
 }
 
@@ -603,7 +689,23 @@ function renderSyncedState() {
     renderParentPortal();
     return;
   }
-  if (!$("#appShell")?.hidden) renderAll();
+  if (!$("#appShell")?.hidden) {
+    const active = document.activeElement;
+    const scoreFocus = active?.dataset?.scoreStudent ? {
+      student: active.dataset.scoreStudent,
+      paper: active.dataset.scorePaper,
+      start: active.selectionStart,
+      end: active.selectionEnd,
+    } : null;
+    renderAll();
+    if (scoreFocus && $("#scores")?.classList.contains("active")) {
+      const next = document.querySelector(`[data-score-student="${scoreFocus.student}"][data-score-paper="${scoreFocus.paper}"]`);
+      next?.focus({ preventScroll: true });
+      try {
+        next?.setSelectionRange(scoreFocus.start ?? next.value.length, scoreFocus.end ?? next.value.length);
+      } catch (_error) {}
+    }
+  }
 }
 
 function hasSupabaseConfig() {
@@ -667,7 +769,7 @@ async function setupSupabaseSync() {
     syncReady = true;
     setSyncStatus("同步中");
     if (!remote) await saveSupabaseState();
-    supabasePollTimer = setInterval(checkSupabaseState, 3000);
+    supabasePollTimer = setInterval(checkSupabaseState, 1000);
   } catch (error) {
     syncReady = false;
     setSyncStatus("同步失敗");
@@ -706,6 +808,43 @@ function mergeExams(localItems = [], remoteItems = [], deletedIds = state?.delet
     if (!current || recordStamp(exam) >= recordStamp(current)) byId.set(exam.id, exam);
   });
   return [...byId.values()];
+}
+
+function newestRecord(left, right) {
+  return recordStamp(left || {}) >= recordStamp(right || {}) ? left : right;
+}
+
+function mergeScoreDraft(localDraft, remoteDraft) {
+  if (!localDraft) return normalizeScoreDraft(remoteDraft || {});
+  if (!remoteDraft) return normalizeScoreDraft(localDraft || {});
+  const local = normalizeScoreDraft(localDraft || {});
+  const remote = normalizeScoreDraft(remoteDraft || {});
+  const base = newestRecord(local, remote) === local ? { ...remote, ...local } : { ...local, ...remote };
+  const scores = {};
+  const studentIds = new Set([...Object.keys(local.scores || {}), ...Object.keys(remote.scores || {})]);
+  studentIds.forEach((studentId) => {
+    const paperIds = new Set([...Object.keys(local.scores?.[studentId] || {}), ...Object.keys(remote.scores?.[studentId] || {})]);
+    paperIds.forEach((paper) => {
+      const cell = newestRecord(local.scores?.[studentId]?.[paper], remote.scores?.[studentId]?.[paper]);
+      if (!cell || cell.value === "") return;
+      if (!scores[studentId]) scores[studentId] = {};
+      scores[studentId][paper] = cell;
+    });
+  });
+  const absences = {};
+  [...new Set([...Object.keys(local.absences || {}), ...Object.keys(remote.absences || {})])].forEach((studentId) => {
+    const absence = newestRecord(local.absences?.[studentId], remote.absences?.[studentId]);
+    if (absence) absences[studentId] = absence;
+  });
+  return normalizeScoreDraft({ ...base, scores, absences });
+}
+
+function mergeScoreDrafts(localDrafts = {}, remoteDrafts = {}) {
+  const merged = {};
+  [...new Set([...Object.keys(remoteDrafts || {}), ...Object.keys(localDrafts || {})])].forEach((key) => {
+    merged[key] = mergeScoreDraft(localDrafts?.[key], remoteDrafts?.[key]);
+  });
+  return merged;
 }
 
 function supabaseExamRecordId(examId) {
@@ -778,6 +917,7 @@ function mergeRemoteStateForSave(localState, remotePayload) {
     paperAnalyses: mergeById(local.paperAnalyses, remoteState.paperAnalyses),
     rollCalls: mergeById(local.rollCalls, remoteState.rollCalls),
     archives: mergeById(local.archives, remoteState.archives),
+    scoreDrafts: mergeScoreDrafts(local.scoreDrafts, remoteState.scoreDrafts),
     seatSettings: { ...(remoteState.seatSettings || {}), ...(local.seatSettings || {}) },
     termPeriods: { ...(remoteState.termPeriods || {}), ...(local.termPeriods || {}) },
     termWeights: { ...(remoteState.termWeights || {}), ...(local.termWeights || {}) },
@@ -1762,6 +1902,23 @@ function scoreDraftKey() {
   return `${STORAGE_KEY_PREFIX}-score-draft-${currentBranch || "local"}`;
 }
 
+function currentScoreDraftKey() {
+  return scoreDraftId($("#examDate")?.value || todayISO(), $("#examGrade")?.value || "國一", $("#examSubject")?.value || "國文");
+}
+
+function currentSharedScoreDraft() {
+  const key = currentScoreDraftKey();
+  const localDraft = scoreDraft?.key === key ? scoreDraft : null;
+  const existing = state.scoreDrafts?.[key] || localDraft;
+  return normalizeScoreDraft({
+    ...(existing || {}),
+    key,
+    date: $("#examDate")?.value || todayISO(),
+    grade: $("#examGrade")?.value || "國一",
+    subject: $("#examSubject")?.value || "國文",
+  });
+}
+
 function loadScoreDraft() {
   try {
     scoreDraft = JSON.parse(localStorage.getItem(scoreDraftKey()) || "null");
@@ -1775,18 +1932,42 @@ function saveScoreDraft() {
   localStorage.setItem(scoreDraftKey(), JSON.stringify(scoreDraft));
 }
 
-function clearScoreDraft() {
+function clearScoreDraft({ remote = true } = {}) {
+  const key = scoreDraft?.key || currentScoreDraftKey();
   scoreDraft = null;
   localStorage.removeItem(scoreDraftKey());
+  if (remote && state.scoreDrafts?.[key]) {
+    delete state.scoreDrafts[key];
+    saveState();
+  }
+}
+
+function publishScoreDraft(draft, { immediate = false } = {}) {
+  if (!draft?.key) return;
+  if (!state.scoreDrafts) state.scoreDrafts = {};
+  scoreDraft = normalizeScoreDraft({
+    ...draft,
+    updatedAt: new Date().toISOString(),
+    updatedBy: deviceId,
+  });
+  state.scoreDrafts[scoreDraft.key] = scoreDraft;
+  saveScoreDraft();
+  localStorage.setItem(storageKey(), JSON.stringify(state));
+  if (immediate) {
+    if (syncReady && remoteSave) remoteSave().catch(() => setSyncStatus("同步失敗"));
+  } else {
+    queueRemoteSave();
+  }
+  renderScoreLiveStatus();
 }
 
 function captureScoreDraft() {
   if (!$("#examForm")) return;
-  const draft = scoreDraft || { scores: {}, absences: [] };
+  const draft = currentSharedScoreDraft();
   const nextKey = [$("#examDate").value, $("#examGrade").value, $("#examSubject").value].join("|");
   if (draft.key && draft.key !== nextKey) {
     draft.scores = {};
-    draft.absences = [];
+    draft.absences = {};
   }
   draft.key = nextKey;
   draft.editingExamId = editingExamId;
@@ -1798,7 +1979,8 @@ function captureScoreDraft() {
   draft.paperTopics = paperTopicValues();
   draft.noExam = $("#examNoTest").checked;
   draft.scores = draft.scores || {};
-  draft.absences = Array.isArray(draft.absences) ? draft.absences : [];
+  draft.absences = draft.absences && !Array.isArray(draft.absences) ? draft.absences : {};
+  const updatedAt = new Date().toISOString();
   $$("[data-score-student]").forEach((input) => {
     const studentId = input.dataset.scoreStudent;
     const paper = input.dataset.scorePaper;
@@ -1806,16 +1988,50 @@ function captureScoreDraft() {
     if (input.value === "") {
       delete draft.scores[studentId][paper];
     } else {
-      draft.scores[studentId][paper] = input.value;
+      draft.scores[studentId][paper] = { value: input.value, updatedAt, deviceId };
     }
   });
   $$("[data-score-absent]").forEach((input) => {
     const studentId = input.dataset.scoreAbsent;
-    draft.absences = draft.absences.filter((id) => id !== studentId);
-    if (input.classList.contains("active")) draft.absences.push(studentId);
+    draft.absences[studentId] = { active: input.classList.contains("active"), updatedAt, deviceId };
   });
-  scoreDraft = draft;
-  saveScoreDraft();
+  publishScoreDraft(draft);
+}
+
+function updateScoreDraftMeta({ immediate = false } = {}) {
+  if (!$("#examForm")) return;
+  const draft = currentSharedScoreDraft();
+  draft.editingExamId = editingExamId;
+  draft.scope = $("#examScope").value;
+  draft.paperCount = Math.max(1, Number($("#examPaperCount").value) || 1);
+  draft.paperTopics = paperTopicValues();
+  draft.noExam = $("#examNoTest").checked;
+  publishScoreDraft(draft, { immediate });
+}
+
+function updateScoreDraftCell(input) {
+  if (!input) return;
+  const draft = currentSharedScoreDraft();
+  const studentId = input.dataset.scoreStudent;
+  const paper = input.dataset.scorePaper;
+  if (!draft.scores[studentId]) draft.scores[studentId] = {};
+  if (input.value === "") {
+    delete draft.scores[studentId][paper];
+  } else {
+    draft.scores[studentId][paper] = { value: input.value, updatedAt: new Date().toISOString(), deviceId };
+  }
+  publishScoreDraft(draft, { immediate: true });
+}
+
+function updateScoreDraftAbsence(button) {
+  if (!button) return;
+  const draft = currentSharedScoreDraft();
+  draft.absences[button.dataset.scoreAbsent] = {
+    active: button.classList.contains("active"),
+    updatedAt: new Date().toISOString(),
+    deviceId,
+  };
+  publishScoreDraft(draft, { immediate: true });
 }
 
 function touchScoreActivity() {
@@ -1845,7 +2061,10 @@ function renderScoreLiveStatus() {
 }
 
 function restoreScoreDraftMeta() {
-  if (!scoreDraft || !$("#examForm")) return;
+  if (!$("#examForm")) return;
+  scoreDraft = state.scoreDrafts?.[currentScoreDraftKey()] || scoreDraft;
+  if (!scoreDraft) return;
+  scoreDraft = normalizeScoreDraft(scoreDraft);
   if (scoreDraft.date) $("#examDate").value = scoreDraft.date;
   if (scoreDraft.grade) $("#examGrade").value = scoreDraft.grade;
   renderExamSubjectOptions();
@@ -1861,14 +2080,28 @@ function restoreScoreDraftMeta() {
   updateExamFormMode();
 }
 
+function draftScoreValue(draft, studentId, paper) {
+  const cell = draft?.scores?.[studentId]?.[paper];
+  if (cell && typeof cell === "object" && "value" in cell) return cell.value;
+  return cell;
+}
+
+function draftAbsenceActive(draft, studentId) {
+  if (!draft) return false;
+  if (Array.isArray(draft.absences)) return draft.absences.includes(studentId);
+  return draft.absences?.[studentId]?.active === true;
+}
+
 function applyScoreDraftToRows() {
+  scoreDraft = state.scoreDrafts?.[currentScoreDraftKey()] || scoreDraft;
   if (!scoreDraft) return;
+  scoreDraft = normalizeScoreDraft(scoreDraft);
   $$("[data-score-student]").forEach((input) => {
-    const value = scoreDraft.scores?.[input.dataset.scoreStudent]?.[input.dataset.scorePaper];
+    const value = draftScoreValue(scoreDraft, input.dataset.scoreStudent, input.dataset.scorePaper);
     if (value !== undefined) input.value = value;
   });
   $$("[data-score-absent]").forEach((input) => {
-    setScoreAbsentButton(input, (scoreDraft.absences || []).includes(input.dataset.scoreAbsent));
+    setScoreAbsentButton(input, draftAbsenceActive(scoreDraft, input.dataset.scoreAbsent));
   });
 }
 
@@ -2165,14 +2398,14 @@ async function saveExam(event) {
   const scores = {};
   const absences = [];
   studentsForGradeAndSubject($("#examGrade").value, $("#examSubject").value).forEach((student) => {
-    const absent = (scoreDraft?.absences || []).includes(student.id) || document.querySelector(`[data-score-absent="${student.id}"]`)?.classList.contains("active");
+    const absent = draftAbsenceActive(scoreDraft, student.id) || document.querySelector(`[data-score-absent="${student.id}"]`)?.classList.contains("active");
     if (absent) {
       absences.push(student.id);
       return;
     }
     const values = Array.from({ length: paperCount }, (_, index) => {
       const input = document.querySelector(`[data-score-student="${student.id}"][data-score-paper="${index}"]`);
-      const draftValue = scoreDraft?.scores?.[student.id]?.[String(index)];
+      const draftValue = draftScoreValue(scoreDraft, student.id, String(index));
       const value = draftValue !== undefined ? draftValue : input?.value;
       return value !== "" && value !== undefined ? parseScoreInput(value) : null;
     }).filter((value) => value !== null && Number.isFinite(value));
@@ -5388,7 +5621,6 @@ function setupForms() {
 
   $("#examForm").addEventListener("submit", saveExam);
   $("#scoreEntryList")?.addEventListener("input", () => {
-    captureScoreDraft();
     touchScoreActivity();
   });
   $("#resetExamForm").addEventListener("click", resetExamForm);
@@ -5428,8 +5660,11 @@ function setupForms() {
     renderTermReport();
   });
 
-  ["examDate", "examGrade", "examSubject", "examScope", "examPaperCount", "examPaperTopics", "examNoTest", "scoreStudentPicker"].forEach((id) => {
-    onInputChange(id, captureScoreDraft);
+  ["examScope", "examPaperCount", "examPaperTopics", "examNoTest"].forEach((id) => {
+    onInputChange(id, () => updateScoreDraftMeta({ immediate: id !== "examScope" }));
+  });
+  ["scoreStudentPicker"].forEach((id) => {
+    onInputChange(id, renderScoreEntryList);
   });
   ["examDate", "examGrade", "examSubject"].forEach((id) => {
     onInputChange(id, () => {
@@ -5442,13 +5677,19 @@ function setupForms() {
       renderClassReport();
     });
   });
-  $("#scoreEntryList").addEventListener("input", captureScoreDraft);
-  $("#scoreEntryList").addEventListener("change", captureScoreDraft);
+  $("#scoreEntryList").addEventListener("input", (event) => {
+    const input = event.target.closest("[data-score-student]");
+    if (input) updateScoreDraftCell(input);
+  });
+  $("#scoreEntryList").addEventListener("change", (event) => {
+    const input = event.target.closest("[data-score-student]");
+    if (input) updateScoreDraftCell(input);
+  });
   $("#scoreEntryList").addEventListener("click", (event) => {
     const button = event.target.closest("[data-score-absent]");
     if (!button) return;
     setScoreAbsentButton(button, !button.classList.contains("active"));
-    captureScoreDraft();
+    updateScoreDraftAbsence(button);
   });
 
   $("#leaveGrade").addEventListener("change", () => {
@@ -6957,7 +7198,7 @@ async function loadParentBranchState(branch) {
       lastRemoteUpdatedAt = remote.updatedAt || "";
     }
     syncReady = true;
-    supabasePollTimer = setInterval(checkSupabaseState, 3000);
+    supabasePollTimer = setInterval(checkSupabaseState, 1000);
   }
   localStorage.setItem(storageKey(), JSON.stringify(state));
 }
