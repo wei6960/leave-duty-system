@@ -1750,21 +1750,22 @@ function printRollCallPdf() {
     @page { size: B4 landscape; margin: 7mm; }
     * { box-sizing: border-box; }
     body { margin: 0; font-family: "Microsoft JhengHei", Arial, sans-serif; color: #151515; background: #f7f2e7; }
-    .sheet { min-height: calc(100vh - 14mm); display: flex; flex-direction: column; gap: 8px; overflow: hidden; }
-    .brand-head { display: flex; justify-content: space-between; align-items: end; padding: 10px 13px; border-radius: 14px; color: #fff7df; background: linear-gradient(112deg, #0f151d, #5b4520 56%, #b88a31); box-shadow: inset 0 0 0 1px rgba(255,255,255,.18); }
-    .brand-head h1 { margin: 0; font-size: 22px; letter-spacing: 0; }
-    .brand-head p { margin: 4px 0 0; font-size: 12px; color: #ffe6a3; }
-    .brand-head strong { font-size: 16px; }
-    .front-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; flex: 1; min-height: 0; }
-    .paper-panel { position: relative; padding: 8px; border: 1.5px solid #b88a31; border-radius: 13px; background: #fffdf7; overflow: hidden; }
+    .sheet { min-height: calc(100vh - 14mm); display: flex; flex-direction: column; gap: 6px; overflow: hidden; }
+    .brand-head { display: flex; justify-content: space-between; align-items: end; padding: 8px 12px; border-radius: 12px; color: #fff7df; background: linear-gradient(112deg, #0f151d, #5b4520 56%, #b88a31); box-shadow: inset 0 0 0 1px rgba(255,255,255,.18); }
+    .brand-head h1 { margin: 0; font-size: 21px; letter-spacing: 0; }
+    .brand-head p { margin: 3px 0 0; font-size: 12px; color: #ffe6a3; }
+    .brand-head strong { font-size: 15px; }
+    .front-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; flex: 1; min-height: 0; }
+    .paper-panel { position: relative; display: flex; min-height: 0; padding: 6px; border: 1.5px solid #b88a31; border-radius: 13px; background: #fffdf7; overflow: hidden; }
     .paper-panel::before { content: ""; position: absolute; inset: 0; background: linear-gradient(135deg, rgba(184,138,49,.12), transparent 38%); pointer-events: none; }
-    table { position: relative; width: 100%; border-collapse: collapse; font-size: ${compactPrint ? "8.5px" : "10px"}; table-layout: fixed; background: #fff; }
-    th, td { border: 1px solid #303030; padding: ${compactPrint ? "1px 2px" : "2px 3px"}; text-align: center; height: ${compactPrint ? "15px" : "19px"}; overflow: hidden; }
-    th { background: #111820; color: #f5d77d; }
+    table { position: relative; width: 100%; height: 100%; border-collapse: collapse; font-size: ${compactPrint ? "11px" : "12.5px"}; table-layout: fixed; background: #fff; }
+    th, td { border: 1px solid #303030; padding: ${compactPrint ? "2px 3px" : "3px 4px"}; text-align: center; overflow: hidden; }
+    th { height: 24px; background: #111820; color: #f5d77d; font-size: ${compactPrint ? "10px" : "11.5px"}; }
+    tbody tr { height: auto; }
     td:nth-child(2), td:last-child { text-align: left; }
-    th:nth-child(1), td:nth-child(1) { width: 34px; }
-    th:nth-child(2), td:nth-child(2) { width: 82px; }
-    th:nth-child(3), td:nth-child(3) { width: 36px; }
+    th:nth-child(1), td:nth-child(1) { width: 38px; }
+    th:nth-child(2), td:nth-child(2) { width: 92px; }
+    th:nth-child(3), td:nth-child(3) { width: 42px; }
     .leave { color: #d90000; font-weight: 900; }
     .summary { margin-left: auto; width: 43%; padding: 8px 10px; border: 2px solid #b88a31; border-radius: 12px; background: #fff8e8; font-size: 12px; line-height: 1.55; box-shadow: 0 8px 20px rgba(60,43,12,.12); }
     .summary b { color: #8b1d12; }
