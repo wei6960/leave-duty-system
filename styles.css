@@ -3074,6 +3074,84 @@ tbody tr:hover {
     linear-gradient(180deg, #1c2229, #12171d);
 }
 
+.withdrawn-student {
+  opacity: .48;
+  filter: grayscale(1);
+  background: rgba(0, 0, 0, .22);
+}
+
+.paper-topic-panel {
+  display: grid;
+  gap: .6rem;
+  padding: .85rem;
+  border: 1px solid rgba(241, 211, 124, .16);
+  border-radius: .42rem;
+  background: rgba(0, 0, 0, .14);
+}
+
+#examPaperTopics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  gap: .65rem;
+}
+
+.seat-board {
+  display: grid;
+  gap: .65rem;
+  align-items: stretch;
+}
+
+.seat-cell {
+  display: grid;
+  gap: .25rem;
+  min-height: 5.4rem;
+  padding: .65rem;
+  border: 1px solid rgba(241, 211, 124, .2);
+  border-radius: .45rem;
+  background:
+    linear-gradient(145deg, rgba(198, 151, 53, .1), transparent 55%),
+    rgba(255, 255, 255, .035);
+  color: var(--text);
+  text-align: left;
+}
+
+.seat-cell span,
+.seat-cell small {
+  color: var(--muted);
+  font-size: .82rem;
+}
+
+.seat-cell strong {
+  color: #fff6da;
+}
+
+.roll-board .seat-cell {
+  cursor: pointer;
+}
+
+.present-seat {
+  border-color: rgba(49, 208, 112, .72);
+  background: linear-gradient(145deg, rgba(49, 208, 112, .28), rgba(255,255,255,.04));
+}
+
+.leave-seat {
+  border-color: rgba(223, 93, 84, .72);
+  background: linear-gradient(145deg, rgba(223, 93, 84, .25), rgba(255,255,255,.04));
+}
+
+.empty-seat {
+  opacity: .45;
+}
+
+.roll-summary {
+  margin-top: .85rem;
+  padding: .85rem;
+  border: 1px solid rgba(241, 211, 124, .16);
+  border-radius: .45rem;
+  color: var(--muted);
+  line-height: 1.7;
+}
+
 .record-card strong {
   font-size: 1.04rem;
   color: #fff7df;
