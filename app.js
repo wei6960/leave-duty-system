@@ -322,6 +322,37 @@ function normalizePaperAnalyses(records) {
   }));
 }
 
+function seatPositionFromId(id = "") {
+  const match = String(id).match(/^r(\d+)c(\d+)$/);
+  return match ? { row: Number(match[1]), col: Number(match[2]) } : null;
+}
+
+function sortSeatIds(ids = []) {
+  return [...new Set(ids)]
+    .filter((id) => seatPositionFromId(id))
+    .sort((a, b) => {
+      const left = seatPositionFromId(a);
+      const right = seatPositionFromId(b);
+      return left.row - right.row || left.col - right.col;
+    });
+}
+
+function defaultLayoutSeatIds(room = "3F大") {
+  const layout = roomLayouts[room] || roomLayouts["3F大"];
+  return Array.from({ length: layout.rows * layout.cols }, (_item, index) => {
+    const row = Math.floor(index / layout.cols) + 1;
+    const col = index % layout.cols + 1;
+    return seatId(row, col);
+  });
+}
+
+function normalizeLayoutSeats(layoutSeats, room = "3F大", seats = {}) {
+  const saved = Array.isArray(layoutSeats) ? layoutSeats : [];
+  const assigned = seats && typeof seats === "object" ? Object.keys(seats) : [];
+  const ids = saved.length ? saved : [...defaultLayoutSeatIds(room), ...assigned, seatId(1, 1)];
+  return sortSeatIds(ids).includes(seatId(1, 1)) ? sortSeatIds(ids) : sortSeatIds([seatId(1, 1), ...ids]);
+}
+
 function normalizeSeatSettings(raw = {}) {
   return Object.fromEntries(Object.entries(raw || {}).map(([key, value]) => [
     key,
@@ -330,6 +361,7 @@ function normalizeSeatSettings(raw = {}) {
       subject: normalizeCourseName(value?.subject || key.split("|")[1] || "國文"),
       room: roomLayouts[value?.room] ? value.room : "3F大",
       seats: value?.seats && typeof value.seats === "object" ? value.seats : {},
+      layoutSeats: normalizeLayoutSeats(value?.layoutSeats, value?.room, value?.seats),
       updatedAt: value?.updatedAt || "",
     },
   ]));
@@ -1057,12 +1089,58 @@ function todayLeaveStudentIds() {
 }
 
 function renderExpectedAttendance() {
-  const todayWeekday = weekdayFromDate(todayISO());
-  const leaveIds = todayLeaveStudentIds();
   const expected = dashboardStudents()
-    .filter((student) => studentHasClassOnDate(student, todayISO()))
-    .filter((student) => !leaveIds.has(student.id)).length;
+    .filter((student) => studentHasClassOnDate(student, todayISO())).length;
   $("#todayExpectedCount").textContent = expected;
+}
+
+function todaySubjectsForGrade(grade) {
+  const day = weekdayFromDate(todayISO());
+  const scheduled = periods
+    .map((period) => normalizeCourseName(state.schedule?.[grade]?.[day]?.[period]))
+    .filter((subject) => subject && subject !== "考加");
+  return [...new Set(scheduled)].filter((subject) => courses.includes(subject));
+}
+
+function rollStatsForCourse(date, grade, subject) {
+  const students = studentsForGradeAndSubject(grade, subject);
+  const record = state.rollCalls.find((item) => item.id === rollCallKey(date, grade, subject));
+  const leaveIds = new Set(students
+    .filter((student) => rollLeaveForStudent(student.id, date)?.type !== "提早離班" && rollLeaveForStudent(student.id, date))
+    .map((student) => student.id));
+  const presentIds = new Set(Object.entries(record?.statuses || {}).filter((entry) => entry[1] === "present").map(([id]) => id));
+  return {
+    expected: students.length,
+    present: students.filter((student) => presentIds.has(student.id)).length,
+    leave: leaveIds.size,
+  };
+}
+
+function renderTodayClassAttendance() {
+  const target = $("#todayClassAttendance");
+  if (!target) return;
+  const today = todayISO();
+  const cards = grades.flatMap((grade) => {
+    const subjects = todaySubjectsForGrade(grade);
+    return subjects.map((subject) => {
+      const stats = rollStatsForCourse(today, grade, subject);
+      return { grade, subject, ...stats };
+    });
+  }).filter((item) => dashboardGrade === "全體" || item.grade === dashboardGrade);
+  if ($("#todayClassSummary")) $("#todayClassSummary").textContent = `${dateLabel(today)}｜${cards.length} 堂課`;
+  target.innerHTML = cards.map((item) => `
+    <article class="today-class-card">
+      <div>
+        <strong>${escapeHtml(item.grade)} ${escapeHtml(item.subject)}</strong>
+        <span>今日課程</span>
+      </div>
+      <div class="mini-metrics">
+        <span><b>${item.expected}</b>應到</span>
+        <span><b>${item.present}</b>實到</span>
+        <span class="leave-text"><b>${item.leave}</b>請假</span>
+      </div>
+    </article>
+  `).join("") || `<div class="empty">今日課表尚未設定課程。</div>`;
 }
 
 function renderCourseInputs(targetId, name) {
@@ -1151,7 +1229,18 @@ function currentSeatSetting() {
   const grade = $("#seatSettingGrade")?.value || "國一";
   const subject = $("#seatSettingSubject")?.value || "國文";
   const key = seatSettingKey(grade, subject);
-  return state.seatSettings[key] || { grade, subject, room: $("#seatSettingRoom")?.value || "3F大", seats: {} };
+  const selectedRoom = $("#seatSettingRoom")?.value;
+  const stored = state.seatSettings[key];
+  const room = document.activeElement?.id === "seatSettingRoom" && selectedRoom ? selectedRoom : stored?.room || selectedRoom || "3F大";
+  const setting = state.seatSettings[key] || { grade, subject, room, seats: {}, layoutSeats: defaultLayoutSeatIds(room) };
+  return {
+    ...setting,
+    grade,
+    subject,
+    room: setting.room || room,
+    seats: setting.seats || {},
+    layoutSeats: normalizeLayoutSeats(setting.layoutSeats, setting.room || room, setting.seats),
+  };
 }
 
 function renderSeatSubjectOptions() {
@@ -1170,20 +1259,103 @@ function renderSeatSettingBoard() {
   if (!target) return;
   const setting = currentSeatSetting();
   if ($("#seatSettingRoom")) $("#seatSettingRoom").value = setting.room || "3F大";
-  const layout = roomLayouts[setting.room] || roomLayouts["3F大"];
   const students = studentsForGradeAndSubject(setting.grade, setting.subject);
-  const options = `<option value="">空位</option>${students.map((student) => `<option value="${student.id}">${student.name}</option>`).join("")}`;
-  target.innerHTML = `<div class="seat-board" style="grid-template-columns: repeat(${layout.cols}, minmax(5.8rem, 1fr));">
-    ${Array.from({ length: layout.rows * layout.cols }, (_item, index) => {
-      const row = Math.floor(index / layout.cols) + 1;
-      const col = index % layout.cols + 1;
-      const id = seatId(row, col);
-      return `<label class="seat-cell"><span>${row}-${col}</span><select data-seat-student="${id}">${options}</select></label>`;
+  const layoutSeats = normalizeLayoutSeats(setting.layoutSeats, setting.room, setting.seats);
+  const maxCol = Math.max(1, ...layoutSeats.map((id) => seatPositionFromId(id)?.col || 1));
+  target.innerHTML = `<div class="seat-board custom-seat-board" style="grid-template-columns: repeat(${maxCol}, minmax(4.8rem, 1fr));">
+    ${layoutSeats.map((id) => {
+      const pos = seatPositionFromId(id);
+      if (!pos) return "";
+      const assigned = setting.seats?.[id] || "";
+      const usedIds = new Set(Object.entries(setting.seats || {}).filter(([seatKey]) => seatKey !== id).map((entry) => entry[1]).filter(Boolean));
+      const options = `<option value="">空位</option>${students.map((student) => `<option value="${student.id}" ${usedIds.has(student.id) ? "disabled" : ""}>${student.name}${usedIds.has(student.id) ? "（已排）" : ""}</option>`).join("")}`;
+      return `<label class="seat-cell custom-seat-cell" style="grid-row:${pos.row};grid-column:${pos.col};" data-seat-cell="${id}">
+        <span>${pos.row}-${pos.col}</span>
+        <select data-seat-student="${id}">${options}</select>
+        <div class="seat-tools">
+          <button type="button" class="mini-icon-button" data-add-seat-right="${id}" title="往右新增一個座位">→</button>
+          <button type="button" class="mini-icon-button" data-add-seat-down="${id}" title="往下新增一個座位">↓</button>
+          <button type="button" class="mini-icon-button danger" data-delete-seat-cell="${id}" title="刪除此座位" ${id === seatId(1, 1) ? "disabled" : ""}>×</button>
+        </div>
+      </label>`;
     }).join("")}
   </div>`;
   $$("[data-seat-student]").forEach((select) => {
     select.value = setting.seats?.[select.dataset.seatStudent] || "";
   });
+}
+
+function collectSeatSettingFromDom() {
+  const seats = {};
+  const usedStudents = new Set();
+  const layoutSeats = $$("[data-seat-cell]").map((cell) => cell.dataset.seatCell).filter(Boolean);
+  $$("[data-seat-student]").forEach((select) => {
+    if (!select.value || usedStudents.has(select.value)) {
+      if (select.value && usedStudents.has(select.value)) select.value = "";
+      return;
+    }
+    seats[select.dataset.seatStudent] = select.value;
+    usedStudents.add(select.value);
+  });
+  return { seats, layoutSeats: normalizeLayoutSeats(layoutSeats, $("#seatSettingRoom")?.value || "3F大", seats) };
+}
+
+function saveCurrentSeatSetting({ render = true } = {}) {
+  const grade = $("#seatSettingGrade")?.value || "國一";
+  const subject = $("#seatSettingSubject")?.value || "國文";
+  const room = $("#seatSettingRoom")?.value || "3F大";
+  const { seats, layoutSeats } = collectSeatSettingFromDom();
+  state.seatSettings[seatSettingKey(grade, subject)] = {
+    grade,
+    subject,
+    room,
+    seats,
+    layoutSeats,
+    updatedAt: new Date().toISOString(),
+  };
+  saveState();
+  if (render) renderAll();
+}
+
+function changeSeatLayout(anchorId, direction) {
+  saveCurrentSeatSetting({ render: false });
+  const grade = $("#seatSettingGrade")?.value || "國一";
+  const subject = $("#seatSettingSubject")?.value || "國文";
+  const key = seatSettingKey(grade, subject);
+  const setting = currentSeatSetting();
+  const pos = seatPositionFromId(anchorId);
+  if (!pos) return;
+  const nextId = direction === "right" ? seatId(pos.row, pos.col + 1) : seatId(pos.row + 1, pos.col);
+  if (setting.layoutSeats.includes(nextId)) {
+    alert("這個位置已經有座位了。");
+    return;
+  }
+  state.seatSettings[key] = {
+    ...setting,
+    layoutSeats: normalizeLayoutSeats([...setting.layoutSeats, nextId], setting.room, setting.seats),
+    updatedAt: new Date().toISOString(),
+  };
+  saveState();
+  renderAll();
+}
+
+function deleteSeatCell(cellId) {
+  if (cellId === seatId(1, 1)) return alert("左上角第一個座位需保留。");
+  saveCurrentSeatSetting({ render: false });
+  const grade = $("#seatSettingGrade")?.value || "國一";
+  const subject = $("#seatSettingSubject")?.value || "國文";
+  const key = seatSettingKey(grade, subject);
+  const setting = currentSeatSetting();
+  const seats = { ...(setting.seats || {}) };
+  delete seats[cellId];
+  state.seatSettings[key] = {
+    ...setting,
+    seats,
+    layoutSeats: normalizeLayoutSeats(setting.layoutSeats.filter((id) => id !== cellId), setting.room, seats),
+    updatedAt: new Date().toISOString(),
+  };
+  saveState();
+  renderAll();
 }
 
 function currentRollRecord() {
@@ -1215,8 +1387,9 @@ function renderRollCall() {
   const grade = $("#rollGrade")?.value || rollCallGrade;
   const subject = $("#rollSubject")?.value || courses[0] || "國文";
   const date = $("#rollDate")?.value || todayISO();
-  const setting = state.seatSettings[seatSettingKey(grade, subject)] || { grade, subject, room: "3F大", seats: {} };
-  const layout = roomLayouts[setting.room] || roomLayouts["3F大"];
+  const setting = state.seatSettings[seatSettingKey(grade, subject)] || { grade, subject, room: "3F大", seats: {}, layoutSeats: defaultLayoutSeatIds("3F大") };
+  const layoutSeats = normalizeLayoutSeats(setting.layoutSeats, setting.room, setting.seats);
+  const maxCol = Math.max(1, ...layoutSeats.map((id) => seatPositionFromId(id)?.col || 1));
   const record = currentRollRecord();
   const students = studentsForGradeAndSubject(grade, subject);
   const expectedIds = new Set(students.map((student) => student.id));
@@ -1227,18 +1400,17 @@ function renderRollCall() {
   if ($("#rollCallStats")) $("#rollCallStats").textContent = `應到 ${expectedIds.size}｜實到 ${presentIds.size}｜請假 ${leaveIds.size}`;
   const target = $("#rollCallBoard");
   if (!target) return;
-  target.innerHTML = `<div class="seat-board roll-board" style="grid-template-columns: repeat(${layout.cols}, minmax(5.8rem, 1fr));">
-    ${Array.from({ length: layout.rows * layout.cols }, (_item, index) => {
-      const row = Math.floor(index / layout.cols) + 1;
-      const col = index % layout.cols + 1;
-      const id = seatId(row, col);
+  target.innerHTML = `<div class="seat-board roll-board" style="grid-template-columns: repeat(${maxCol}, minmax(4.8rem, 1fr));">
+    ${layoutSeats.map((id) => {
+      const pos = seatPositionFromId(id);
+      if (!pos) return "";
       const student = getStudent(setting.seats?.[id]);
       const leave = student ? rollLeaveForStudent(student.id, date) : null;
       const late = student ? rollLateForStudent(student.id, date) : null;
       const present = student ? presentIds.has(student.id) : false;
       const className = !student ? "empty-seat" : leave && leave.type !== "提早離班" ? "leave-seat" : present ? "present-seat" : "";
-      return `<button type="button" class="seat-cell ${className}" data-roll-seat="${student?.id || ""}">
-        <span>${row}-${col}</span><strong>${student?.name || "空位"}</strong>
+      return `<button type="button" class="seat-cell ${className}" style="grid-row:${pos.row};grid-column:${pos.col};" data-roll-seat="${student?.id || ""}">
+        <span>${pos.row}-${pos.col}</span><strong>${student?.name || "空位"}</strong>
         <small>${late ? "晚到" : ""}${leave?.type === "提早離班" ? " 提早離班" : ""}</small>
       </button>`;
     }).join("")}
@@ -1254,10 +1426,12 @@ function printRollCallPdf() {
   const date = $("#rollDate")?.value || todayISO();
   const grade = $("#rollGrade")?.value || rollCallGrade;
   const subject = $("#rollSubject")?.value || courses[0] || "國文";
-  const setting = state.seatSettings[seatSettingKey(grade, subject)] || { room: "3F大", seats: {} };
-  const layout = roomLayouts[setting.room] || roomLayouts["3F大"];
+  const setting = state.seatSettings[seatSettingKey(grade, subject)] || { room: "3F大", seats: {}, layoutSeats: defaultLayoutSeatIds("3F大") };
+  const layoutSeats = normalizeLayoutSeats(setting.layoutSeats, setting.room, setting.seats);
+  const maxCol = Math.max(1, ...layoutSeats.map((id) => seatPositionFromId(id)?.col || 1));
   const record = currentRollRecord();
   const students = studentsForGradeAndSubject(grade, subject);
+  const compactPrint = students.length > 34;
   const rows = students.map((student, index) => {
     const leave = rollLeaveForStudent(student.id, date);
     const late = rollLateForStudent(student.id, date);
@@ -1268,33 +1442,43 @@ function printRollCallPdf() {
   const absent = students.filter((student) => !record.statuses?.[student.id] && !rollLeaveForStudent(student.id, date));
   const late = students.filter((student) => rollLateForStudent(student.id, date));
   const leaves = students.filter((student) => rollLeaveForStudent(student.id, date)?.type !== "提早離班");
-  const seatHtml = Array.from({ length: layout.rows * layout.cols }, (_item, index) => {
-    const row = Math.floor(index / layout.cols) + 1;
-    const col = index % layout.cols + 1;
-    const student = getStudent(setting.seats?.[seatId(row, col)]);
-    return `<div class="seat">${row}-${col}<br><b>${escapeHtml(student?.name || "")}</b></div>`;
+  const seatHtml = layoutSeats.map((id) => {
+    const pos = seatPositionFromId(id);
+    if (!pos) return "";
+    const student = getStudent(setting.seats?.[id]);
+    return `<div class="seat" style="grid-row:${pos.row};grid-column:${pos.col};">${pos.row}-${pos.col}<br><b>${escapeHtml(student?.name || "")}</b></div>`;
   }).join("");
   const printWindow = window.open("", "_blank");
   if (!printWindow) return alert("請允許瀏覽器跳出視窗。");
   printWindow.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>點名表</title><style>
-    @page { size: B4 landscape; margin: 9mm; }
-    body { font-family: "Microsoft JhengHei", Arial, sans-serif; color: #151515; }
-    h1 { margin: 0 0 8px; font-size: 22px; }
-    table { width: 100%; border-collapse: collapse; font-size: 13px; }
-    th, td { border: 1px solid #333; padding: 6px; text-align: center; height: 28px; }
-    th { background: #111; color: #f5d77d; }
+    @page { size: B4 landscape; margin: 8mm; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: "Microsoft JhengHei", Arial, sans-serif; color: #151515; }
+    .sheet { min-height: calc(100vh - 16mm); display: flex; flex-direction: column; gap: 7px; overflow: hidden; }
+    .brand-head { display: flex; justify-content: space-between; align-items: end; padding: 10px 12px; border-radius: 12px; color: #fff7df; background: linear-gradient(110deg, #111820, #5b4520 56%, #ad812d); }
+    .brand-head h1 { margin: 0; font-size: 24px; letter-spacing: 0; }
+    .brand-head p { margin: 4px 0 0; font-size: 13px; color: #ffe6a3; }
+    .brand-head strong { font-size: 18px; }
+    table { width: 100%; border-collapse: collapse; font-size: ${compactPrint ? "9px" : "11px"}; table-layout: fixed; }
+    th, td { border: 1px solid #333; padding: ${compactPrint ? "2px 3px" : "3px 4px"}; text-align: center; height: ${compactPrint ? "16px" : "22px"}; overflow: hidden; }
+    th { background: #111820; color: #f5d77d; }
     td:nth-child(2), td:last-child { text-align: left; }
+    th:nth-child(1), td:nth-child(1) { width: 44px; }
+    th:nth-child(2), td:nth-child(2) { width: 120px; }
+    th:nth-child(3), td:nth-child(3) { width: 48px; }
     .leave { color: #d90000; font-weight: 900; }
-    .summary { margin-top: 10px; font-size: 14px; line-height: 1.7; }
+    .summary { margin-left: auto; width: 42%; padding: 8px 10px; border: 2px solid #ad812d; border-radius: 10px; background: #fff8e8; font-size: 13px; line-height: 1.55; }
+    .summary b { color: #8b1d12; }
     .page-break { break-before: page; page-break-before: always; }
-    .seat-map { display: grid; grid-template-columns: repeat(${layout.cols}, 1fr); gap: 8px; margin-top: 12px; }
-    .seat { min-height: 58px; border: 1px solid #444; border-radius: 6px; padding: 8px; text-align: center; background: #fff8e8; }
+    .seat-map { display: grid; grid-template-columns: repeat(${maxCol}, 1fr); gap: 8px; flex: 1; align-items: stretch; }
+    .seat { min-height: 54px; border: 1px solid #444; border-radius: 8px; padding: 7px; text-align: center; background: #fff8e8; font-size: 13px; }
   </style></head><body>
-    <h1>${escapeHtml(dateLabel(date))} ${escapeHtml(grade)} ${escapeHtml(subject)} 教務表</h1>
+    <section class="sheet">
+    <div class="brand-head"><div><h1>金牌躍騰平鎮分校 教務點名表</h1><p>${escapeHtml(dateLabel(date))}｜${escapeHtml(grade)}｜${escapeHtml(subject)}｜${escapeHtml(setting.room || "")}</p></div><strong>應到 ${students.length}　實到 ${students.filter((student) => record.statuses?.[student.id] === "present").length}　請假 ${leaves.length}</strong></div>
     <table><thead><tr><th>序號</th><th>名字</th><th>到班</th><th>作業完成</th><th colspan="2">聯絡本繳交/簽名</th><th colspan="2">上課狀況/備註</th></tr></thead><tbody>${rows}</tbody></table>
-    <div class="summary">應到 ${students.length}　實到 ${students.filter((student) => record.statuses?.[student.id] === "present").length}　請假 ${leaves.length}<br>
-    未到：${absent.map((student) => student.name).join("、") || "-"}<br>晚到：${late.map((student) => student.name).join("、") || "-"}<br>請假：${leaves.map((student) => student.name).join("、") || "-"}</div>
-    <section class="page-break"><h1>${escapeHtml(dateLabel(date))} ${escapeHtml(grade)} ${escapeHtml(subject)} 座位圖 - ${escapeHtml(setting.room || "")}</h1><div class="seat-map">${seatHtml}</div></section>
+    <div class="summary"><b>未到：</b>${absent.map((student) => student.name).join("、") || "-"}<br><b>晚到：</b>${late.map((student) => student.name).join("、") || "-"}<br><b>請假：</b>${leaves.map((student) => student.name).join("、") || "-"}</div>
+    </section>
+    <section class="sheet page-break"><div class="brand-head"><div><h1>金牌躍騰平鎮分校 座位圖</h1><p>${escapeHtml(dateLabel(date))}｜${escapeHtml(grade)}｜${escapeHtml(subject)}｜${escapeHtml(setting.room || "")}</p></div><strong>B4 第二面</strong></div><div class="seat-map">${seatHtml}</div></section>
     <script>window.onload=()=>setTimeout(()=>window.print(),200);<\/script>
   </body></html>`);
   printWindow.document.close();
@@ -5048,16 +5232,7 @@ function setupForms() {
 
   $("#seatSettingForm")?.addEventListener("submit", (event) => {
     event.preventDefault();
-    const grade = $("#seatSettingGrade").value;
-    const subject = $("#seatSettingSubject").value;
-    const room = $("#seatSettingRoom").value;
-    const seats = {};
-    $$("[data-seat-student]").forEach((select) => {
-      if (select.value) seats[select.dataset.seatStudent] = select.value;
-    });
-    state.seatSettings[seatSettingKey(grade, subject)] = { grade, subject, room, seats, updatedAt: new Date().toISOString() };
-    saveState();
-    renderAll();
+    saveCurrentSeatSetting();
     flashButton(event.submitter, "已儲存");
   });
 
@@ -5328,6 +5503,15 @@ function setupForms() {
       if (id === "rollGrade") rollCallGrade = $("#rollGrade").value;
       renderAll();
     });
+  });
+
+  document.addEventListener("change", (event) => {
+    const seatSelect = event.target.closest("[data-seat-student]");
+    if (!seatSelect || !seatSelect.value) return;
+    $$("[data-seat-student]").forEach((select) => {
+      if (select !== seatSelect && select.value === seatSelect.value) select.value = "";
+    });
+    saveCurrentSeatSetting();
   });
 
   $("#careerSubjectButtons")?.addEventListener("click", (event) => {
@@ -6454,6 +6638,9 @@ async function generateStudentAiAnalysis(studentId, output) {
     const editCourseName = event.target.dataset.editCourse;
     const deleteCourseName = event.target.dataset.deleteCourse;
     const cleanArchiveYear = event.target.dataset.cleanArchiveYear;
+    const addSeatRight = event.target.dataset.addSeatRight;
+    const addSeatDown = event.target.dataset.addSeatDown;
+    const deleteSeat = event.target.dataset.deleteSeatCell;
     const rollSeatStudentId = event.target.closest("[data-roll-seat]")?.dataset.rollSeat;
     const pickLeaveStudentId = event.target.closest("[data-pick-leave-student]")?.dataset.pickLeaveStudent;
     const pickCareerStudentId = event.target.closest("[data-pick-career-student]")?.dataset.pickCareerStudent;
@@ -6487,6 +6674,18 @@ async function generateStudentAiAnalysis(studentId, output) {
       examHistoryPage = Math.max(1, Number(examHistoryPageTarget) || 1);
       renderExamHistory();
     }
+    if (addSeatRight) {
+      changeSeatLayout(addSeatRight, "right");
+      return;
+    }
+    if (addSeatDown) {
+      changeSeatLayout(addSeatDown, "down");
+      return;
+    }
+    if (deleteSeat) {
+      deleteSeatCell(deleteSeat);
+      return;
+    }
     if (aiStudentId) {
       generateStudentAiAnalysis(aiStudentId, event.target.closest(".ai-analysis-panel")?.querySelector(".ai-analysis-result"));
     }
@@ -6499,6 +6698,7 @@ async function generateStudentAiAnalysis(studentId, output) {
       record.updatedAt = new Date().toISOString();
       saveState();
       renderRollCall();
+      renderTodayClassAttendance();
     }
     if (printPaperAnalysisId) {
       const record = state.paperAnalyses.find((item) => item.id === printPaperAnalysisId);
@@ -7074,6 +7274,7 @@ function renderAll() {
   renderReportRangeOptions();
   renderScoreStudentFilter();
   renderExpectedAttendance();
+  renderTodayClassAttendance();
   renderStudentOptions();
   renderStudents();
   renderSchedule();

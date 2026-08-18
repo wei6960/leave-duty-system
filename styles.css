@@ -3099,6 +3099,8 @@ tbody tr:hover {
   display: grid;
   gap: .65rem;
   align-items: stretch;
+  min-width: max-content;
+  padding-bottom: .25rem;
 }
 
 .seat-cell {
@@ -3113,6 +3115,48 @@ tbody tr:hover {
     rgba(255, 255, 255, .035);
   color: var(--text);
   text-align: left;
+}
+
+.custom-seat-board,
+.roll-board {
+  overflow: visible;
+}
+
+#seatSettingBoard,
+#rollCallBoard {
+  width: 100%;
+  overflow-x: auto;
+  padding-bottom: .35rem;
+  -webkit-overflow-scrolling: touch;
+}
+
+.custom-seat-cell {
+  min-width: 5.2rem;
+}
+
+.seat-tools {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: .25rem;
+}
+
+.mini-icon-button {
+  min-height: 1.75rem;
+  padding: 0;
+  border: 1px solid rgba(241, 211, 124, .22);
+  border-radius: .35rem;
+  background: rgba(255, 255, 255, .05);
+  color: #ffe7a2;
+  cursor: pointer;
+}
+
+.mini-icon-button:disabled {
+  opacity: .32;
+  cursor: not-allowed;
+}
+
+.mini-icon-button.danger {
+  color: #ffb2a9;
 }
 
 .seat-cell span,
@@ -3150,6 +3194,60 @@ tbody tr:hover {
   border-radius: .45rem;
   color: var(--muted);
   line-height: 1.7;
+}
+
+.today-class-panel {
+  margin-bottom: 1rem;
+}
+
+.today-class-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+  gap: .75rem;
+}
+
+.today-class-card {
+  display: grid;
+  gap: .75rem;
+  padding: .9rem;
+  border: 1px solid rgba(241, 211, 124, .16);
+  border-radius: .5rem;
+  background:
+    linear-gradient(135deg, rgba(198, 151, 53, .14), transparent 62%),
+    rgba(255, 255, 255, .035);
+}
+
+.today-class-card strong {
+  color: #fff7df;
+}
+
+.today-class-card span {
+  color: var(--muted);
+  font-size: .86rem;
+}
+
+.mini-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: .45rem;
+}
+
+.mini-metrics span {
+  display: grid;
+  place-items: center;
+  min-height: 3.2rem;
+  border: 1px solid rgba(255, 255, 255, .07);
+  border-radius: .45rem;
+  background: rgba(0, 0, 0, .16);
+}
+
+.mini-metrics b {
+  color: #ffe7a2;
+  font-size: 1.25rem;
+}
+
+.mini-metrics .leave-text b {
+  color: #ffb7ad;
 }
 
 .record-card strong {
@@ -3534,6 +3632,36 @@ tbody tr:hover {
 
   .career-score-browser {
     padding: .75rem;
+  }
+}
+
+@media (max-width: 720px) {
+  .today-class-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .seat-board {
+    gap: .45rem;
+  }
+
+  .seat-cell {
+    min-height: 4.7rem;
+    padding: .48rem;
+  }
+
+  .custom-seat-cell {
+    min-width: 4.8rem;
+  }
+
+  .seat-cell select {
+    min-width: 0;
+    width: 100%;
+    font-size: .82rem;
+  }
+
+  .mini-icon-button {
+    min-height: 1.55rem;
+    font-size: .82rem;
   }
 }
 
