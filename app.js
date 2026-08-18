@@ -690,21 +690,21 @@ function renderSyncedState() {
     return;
   }
   if (!$("#appShell")?.hidden) {
-    const active = document.activeElement;
-    const scoreFocus = active?.dataset?.scoreStudent ? {
-      student: active.dataset.scoreStudent,
-      paper: active.dataset.scorePaper,
-      start: active.selectionStart,
-      end: active.selectionEnd,
-    } : null;
-    renderAll();
-    if (scoreFocus && $("#scores")?.classList.contains("active")) {
-      const next = document.querySelector(`[data-score-student="${scoreFocus.student}"][data-score-paper="${scoreFocus.paper}"]`);
-      next?.focus({ preventScroll: true });
-      try {
-        next?.setSelectionRange(scoreFocus.start ?? next.value.length, scoreFocus.end ?? next.value.length);
-      } catch (_error) {}
+    if ($("#scores")?.classList.contains("active") && scoreSection === "entry") {
+      renderScoreLiveStatus();
+      applyRemoteScoreDraftToForm();
+      renderClassReport();
+      return;
     }
+    if ($("#seat-settings")?.classList.contains("active")) {
+      if (!document.activeElement?.closest?.("[data-seat-student]")) renderSeatSettingBoard();
+      return;
+    }
+    if ($("#roll-call")?.classList.contains("active")) {
+      renderRollCall();
+      return;
+    }
+    renderAll();
   }
 }
 
@@ -847,6 +847,16 @@ function mergeScoreDrafts(localDrafts = {}, remoteDrafts = {}) {
   return merged;
 }
 
+function mergeSeatSettings(localSettings = {}, remoteSettings = {}) {
+  const merged = {};
+  [...new Set([...Object.keys(remoteSettings || {}), ...Object.keys(localSettings || {})])].forEach((key) => {
+    const local = localSettings?.[key];
+    const remote = remoteSettings?.[key];
+    merged[key] = normalizeSeatSettings({ [key]: newestRecord(local, remote) })[key];
+  });
+  return merged;
+}
+
 function supabaseExamRecordId(examId) {
   return `${currentBranch}:${examId}`;
 }
@@ -918,7 +928,7 @@ function mergeRemoteStateForSave(localState, remotePayload) {
     rollCalls: mergeById(local.rollCalls, remoteState.rollCalls),
     archives: mergeById(local.archives, remoteState.archives),
     scoreDrafts: mergeScoreDrafts(local.scoreDrafts, remoteState.scoreDrafts),
-    seatSettings: { ...(remoteState.seatSettings || {}), ...(local.seatSettings || {}) },
+    seatSettings: mergeSeatSettings(local.seatSettings, remoteState.seatSettings),
     termPeriods: { ...(remoteState.termPeriods || {}), ...(local.termPeriods || {}) },
     termWeights: { ...(remoteState.termWeights || {}), ...(local.termWeights || {}) },
     schedule: local.schedule || remoteState.schedule,
@@ -1393,6 +1403,34 @@ function renderSeatSubjectOptions() {
   });
 }
 
+function scheduledSubjectsForGradeDate(grade, date) {
+  const day = weekdayFromDate(date || todayISO());
+  const scheduled = periods
+    .map((period) => normalizeCourseName(state.schedule?.[grade]?.[day]?.[period]))
+    .filter((subject) => subject && subject !== "考加");
+  return [...new Set(scheduled)].filter((subject) => courses.includes(subject));
+}
+
+function chooseDefaultRollSubject() {
+  const target = $("#rollSubject");
+  if (!target) return;
+  renderSeatSubjectOptions();
+  const grade = $("#rollGrade")?.value || rollCallGrade;
+  const date = $("#rollDate")?.value || todayISO();
+  const scheduled = scheduledSubjectsForGradeDate(grade, date);
+  if (scheduled.length) target.value = scheduled[0];
+}
+
+function chooseDefaultExamSubject() {
+  const target = $("#examSubject");
+  if (!target) return;
+  renderExamSubjectOptions();
+  const scheduled = scheduledSubjectsForGradeDate($("#examGrade")?.value || "國一", $("#examDate")?.value || todayISO());
+  if (scheduled.length && Array.from(target.options).some((option) => option.value === scheduled[0])) {
+    target.value = scheduled[0];
+  }
+}
+
 function renderSeatSettingBoard() {
   renderSeatSubjectOptions();
   const target = $("#seatSettingBoard");
@@ -1454,7 +1492,7 @@ function saveCurrentSeatSetting({ render = true } = {}) {
     updatedAt: new Date().toISOString(),
   };
   saveState();
-  if (render) renderAll();
+  if (render) renderSeatSettingBoard();
 }
 
 function changeSeatLayout(anchorId, direction) {
@@ -1476,7 +1514,7 @@ function changeSeatLayout(anchorId, direction) {
     updatedAt: new Date().toISOString(),
   };
   saveState();
-  renderAll();
+  renderSeatSettingBoard();
 }
 
 function deleteSeatCell(cellId) {
@@ -1495,7 +1533,7 @@ function deleteSeatCell(cellId) {
     updatedAt: new Date().toISOString(),
   };
   saveState();
-  renderAll();
+  renderSeatSettingBoard();
 }
 
 function currentRollRecord() {
@@ -2102,6 +2140,28 @@ function applyScoreDraftToRows() {
   });
   $$("[data-score-absent]").forEach((input) => {
     setScoreAbsentButton(input, draftAbsenceActive(scoreDraft, input.dataset.scoreAbsent));
+  });
+}
+
+function applyRemoteScoreDraftToForm() {
+  const remoteDraft = state.scoreDrafts?.[currentScoreDraftKey()];
+  if (!remoteDraft) return;
+  scoreDraft = normalizeScoreDraft(remoteDraft);
+  const focused = document.activeElement;
+  if (!focused?.matches?.("#examScope")) $("#examScope").value = scoreDraft.scope || "";
+  if (!focused?.matches?.("#examPaperCount")) $("#examPaperCount").value = Math.max(1, Number(scoreDraft.paperCount) || 1);
+  if (!focused?.matches?.("#examNoTest")) $("#examNoTest").checked = Boolean(scoreDraft.noExam);
+  if (!focused?.closest?.("#examPaperTopics")) renderPaperTopicInputs(scoreDraft.paperTopics || []);
+  const noExam = $("#examNoTest")?.checked;
+  if (!noExam && !$("#scoreEntryList [data-score-student]").length) renderScoreEntryList();
+  $$("[data-score-student]").forEach((input) => {
+    if (input === focused) return;
+    const value = draftScoreValue(scoreDraft, input.dataset.scoreStudent, input.dataset.scorePaper);
+    input.value = value !== undefined ? value : "";
+  });
+  $$("[data-score-absent]").forEach((button) => {
+    if (button === focused) return;
+    setScoreAbsentButton(button, draftAbsenceActive(scoreDraft, button.dataset.scoreAbsent));
   });
 }
 
@@ -5326,15 +5386,18 @@ function setupTabs() {
       $("#rollGrade").value = rollCallGrade;
       $("#rollCallGradeMenu").hidden = true;
       $("#rollCallPanel").hidden = false;
+      chooseDefaultRollSubject();
       renderRollCall();
     });
   });
   $("#rollPrevDay")?.addEventListener("click", () => {
     $("#rollDate").value = addDays($("#rollDate").value || todayISO(), -1);
+    chooseDefaultRollSubject();
     renderRollCall();
   });
   $("#rollNextDay")?.addEventListener("click", () => {
     $("#rollDate").value = addDays($("#rollDate").value || todayISO(), 1);
+    chooseDefaultRollSubject();
     renderRollCall();
   });
   $("#exportRollCallPdf")?.addEventListener("click", printRollCallPdf);
@@ -5742,17 +5805,50 @@ function setupForms() {
     onInputChange(id, () => {
       if (id.startsWith("scoreHistory")) examHistoryPage = 1;
       if (id === "rollGrade") rollCallGrade = $("#rollGrade").value;
+      if ($("#scores")?.classList.contains("active") && ["examDate", "examGrade"].includes(id)) {
+        if (!editingExamId) selectedClassReportExamId = null;
+        chooseDefaultExamSubject();
+        $("#scoreStudentFilter").value = "全部";
+        $("#scoreStudentPicker").value = "";
+        renderScoreStudentFilter();
+        renderScoreEntryList();
+        renderClassReport();
+        updateScoreDraftMeta({ immediate: true });
+        return;
+      }
+      if ($("#scores")?.classList.contains("active") && id === "examSubject") {
+        if (!editingExamId) selectedClassReportExamId = null;
+        $("#scoreStudentFilter").value = "全部";
+        $("#scoreStudentPicker").value = "";
+        renderScoreStudentFilter();
+        renderScoreEntryList();
+        renderClassReport();
+        updateScoreDraftMeta({ immediate: true });
+        return;
+      }
+      if ($("#scores")?.classList.contains("active") && ["examPaperCount", "examNoTest"].includes(id)) {
+        return;
+      }
+      if (id.startsWith("seatSetting")) {
+        renderSeatSettingBoard();
+        return;
+      }
+      if (["rollDate", "rollGrade"].includes(id)) {
+        chooseDefaultRollSubject();
+        renderRollCall();
+        return;
+      }
       renderAll();
     });
   });
 
   document.addEventListener("change", (event) => {
     const seatSelect = event.target.closest("[data-seat-student]");
-    if (!seatSelect || !seatSelect.value) return;
+    if (!seatSelect) return;
     $$("[data-seat-student]").forEach((select) => {
       if (select !== seatSelect && select.value === seatSelect.value) select.value = "";
     });
-    saveCurrentSeatSetting();
+    saveCurrentSeatSetting({ render: false });
   });
 
   $("#careerSubjectButtons")?.addEventListener("click", (event) => {
