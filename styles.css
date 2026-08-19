@@ -3335,6 +3335,18 @@ tbody tr:hover {
   color: #ffb7ad;
 }
 
+.retention-overview .metric {
+  min-height: 6.2rem;
+}
+
+.retention-overview .metric p {
+  margin: .45rem 0 0;
+  color: #fff4d2;
+  font-size: .96rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
 .record-card strong {
   font-size: 1.04rem;
   color: #fff7df;

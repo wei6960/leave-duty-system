@@ -1945,11 +1945,12 @@ function printRollCallPdf() {
     ...Array.from({ length: 5 }, (_item, index) => `<tr><td>${students.length + index + 1}</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>`),
   ];
   const rowsPerColumn = Math.ceil(allRows.length / 2);
-  const tableHead = `<thead><tr><th rowspan="2">序號</th><th rowspan="2">名字</th><th rowspan="2">到班</th><th rowspan="2">成績</th><th rowspan="2">作業</th><th colspan="2">聯絡本</th><th colspan="2">上課狀況</th><th rowspan="2">備註</th></tr><tr><th>繳交</th><th>未簽名</th><th>筆記</th><th>專注</th></tr></thead>`;
+  const tableCols = `<colgroup><col class="col-no"><col class="col-name"><col class="col-roll"><col class="col-score"><col class="col-homework"><col class="col-check"><col class="col-check"><col class="col-check"><col class="col-check"><col class="col-remark"></colgroup>`;
+  const tableHead = `${tableCols}<thead><tr><th rowspan="2">序號</th><th rowspan="2">名字</th><th rowspan="2">到班</th><th rowspan="2">成績</th><th rowspan="2">作業</th><th colspan="2">聯絡本</th><th colspan="2">上課狀況</th><th rowspan="2">備註</th></tr><tr><th>繳交</th><th>未簽名</th><th>筆記</th><th>專注</th></tr></thead>`;
   const leftRows = allRows.slice(0, rowsPerColumn).join("");
   const rightRows = allRows.slice(rowsPerColumn).join("");
-  const summaryHtml = `<b>日期：</b>${escapeHtml(dateLabel(date))}　<b>年級：</b>${escapeHtml(grade)}　<b>科目：</b>${escapeHtml(subject)}<br><b>應到：</b>${summary.expected}　<b>實到：</b>${summary.present}　<b>請假：</b>${summary.leave}　<b>未到：</b>${summary.absent}<br><b>未到：</b>${summary.absentStudents.map((student) => student.name).join("、") || "-"}<br><b>晚到：</b>${summary.lateStudents.map((student) => student.name).join("、") || "-"}<br><b>請假：</b>${summary.leaveStudents.map((student) => student.name).join("、") || "-"}<br><b>補課日期：</b>　　　　<b>補考成績：</b>　　　<br><b>班導師簽核：</b>　　　　<b>主管簽核：</b>`;
-  const focusHtml = `<div class="focus-title">本日重點事項</div><div class="focus-grid"><b>帶班導師</b><span></span><b>授課師</b><span></span><b>進度</b><span></span><b>作業</b><span></span><b>考試</b><span></span><b>備註</b><span></span><b>上課狀況</b><span></span></div>`;
+  const summaryHtml = `<div class="summary-counts"><b>日期</b><span>${escapeHtml(dateLabel(date))}</span><b>年級</b><span>${escapeHtml(grade)}</span><b>科目</b><span>${escapeHtml(subject)}</span><b>應到</b><span>${summary.expected}</span><b>實到</b><span>${summary.present}</span><b>請假</b><span>${summary.leave}</span><b>未到</b><span>${summary.absent}</span></div><div class="summary-list"><b>未到：</b>${summary.absentStudents.map((student) => student.name).join("、") || "-"}<br><b>晚到：</b>${summary.lateStudents.map((student) => student.name).join("、") || "-"}<br><b>請假：</b>${summary.leaveStudents.map((student) => student.name).join("、") || "-"}</div><div class="makeup-grid"><b>補課日期</b><span></span><b>補考成績</b><span></span></div><div class="sign-grid"><b>班導師簽核</b><span></span><b>主管簽核</b><span></span></div>`;
+  const focusHtml = `<div class="focus-title">本日重點事項</div><div class="focus-grid"><b>帶班導師</b><span></span><b>授課師</b><span></span><b>進度</b><span class="wide"></span><b>作業</b><span class="wide"></span><b>考試</b><span class="wide"></span><b>備註</b><span class="wide tall"></span><b>上課狀況</b><span class="wide extra-tall"></span></div>`;
   const seatHtml = layoutSeats.map((id) => {
     const pos = seatPositionFromId(id);
     if (!pos) return "";
@@ -1974,23 +1975,36 @@ function printRollCallPdf() {
     .front-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; flex: 1; min-height: 0; }
     .paper-panel { position: relative; display: flex; min-height: 0; padding: 6px; border: 1.5px solid #b88a31; border-radius: 13px; background: #fffdf7; overflow: hidden; }
     .paper-panel::before { content: ""; position: absolute; inset: 0; background: linear-gradient(135deg, rgba(184,138,49,.12), transparent 38%); pointer-events: none; }
-    table { position: relative; width: 100%; height: 100%; border-collapse: collapse; font-size: ${compactPrint ? "10.5px" : "12px"}; table-layout: fixed; background: #fff; }
-    th, td { border: 1px solid #303030; padding: ${compactPrint ? "2px 3px" : "3px 4px"}; text-align: center; overflow: hidden; }
-    th { height: 24px; background: #111820; color: #f5d77d; font-size: ${compactPrint ? "10px" : "11.5px"}; }
+    table { position: relative; width: 100%; height: 100%; border-collapse: collapse; font-size: ${compactPrint ? "10px" : "11.2px"}; table-layout: fixed; background: #fff; }
+    th, td { border: 1px solid #303030; padding: ${compactPrint ? "2px 2px" : "3px 3px"}; text-align: center; overflow: hidden; }
+    th { height: 22px; background: #111820; color: #f5d77d; font-size: ${compactPrint ? "8.8px" : "10px"}; line-height: 1.08; }
     tbody tr { height: auto; }
     td:nth-child(2), td:last-child { text-align: left; }
-    th:nth-child(1), td:nth-child(1) { width: 38px; }
-    th:nth-child(2), td:nth-child(2) { width: 92px; }
-    th:nth-child(3), td:nth-child(3) { width: 42px; }
+    .col-no { width: 5%; }
+    .col-name { width: 13%; }
+    .col-roll { width: 5%; }
+    .col-score { width: 5%; }
+    .col-homework { width: 5%; }
+    .col-check { width: 5%; }
+    .col-remark { width: 42%; }
     .leave { color: #d90000; font-weight: 900; }
-    .front-footer { display: grid; grid-template-columns: 1fr 39%; gap: 8px; min-height: 31mm; }
+    .front-footer { display: grid; grid-template-columns: 1fr 34%; gap: 8px; min-height: 45mm; }
     .focus-panel { padding: 7px 9px; border: 2px solid #303030; border-radius: 10px; background: #fffdf7; font-size: 11px; overflow: hidden; }
     .focus-title { font-weight: 900; text-align: center; margin-bottom: 5px; color: #7a5a21; }
-    .focus-grid { display: grid; grid-template-columns: 58px 1fr 58px 1fr; border-top: 1px solid #303030; border-left: 1px solid #303030; }
-    .focus-grid b, .focus-grid span { min-height: 20px; padding: 3px 5px; border-right: 1px solid #303030; border-bottom: 1px solid #303030; }
+    .focus-grid { display: grid; grid-template-columns: 68px 1fr 68px 1fr; border-top: 1px solid #303030; border-left: 1px solid #303030; }
+    .focus-grid b, .focus-grid span { min-height: 22px; padding: 3px 5px; border-right: 1px solid #303030; border-bottom: 1px solid #303030; }
     .focus-grid b { display: grid; place-items: center; background: #f2ead9; }
-    .summary { width: 39%; padding: 8px 10px; border: 2px solid #b88a31; border-radius: 12px; background: rgba(255,248,232,.96); font-size: 11.5px; line-height: 1.45; box-shadow: 0 8px 20px rgba(60,43,12,.12); overflow: hidden; }
+    .focus-grid .wide { grid-column: span 3; }
+    .focus-grid .tall { min-height: 30px; }
+    .focus-grid .extra-tall { min-height: 54px; }
+    .summary { padding: 7px 9px; border: 2px solid #b88a31; border-radius: 12px; background: rgba(255,248,232,.96); font-size: 10.8px; line-height: 1.35; box-shadow: 0 8px 20px rgba(60,43,12,.12); overflow: hidden; }
     .summary b { color: #8b1d12; }
+    .summary-counts, .makeup-grid, .sign-grid { display: grid; grid-template-columns: 56px 1fr 56px 1fr; border-top: 1px solid #303030; border-left: 1px solid #303030; margin-bottom: 5px; }
+    .summary-counts b, .summary-counts span, .makeup-grid b, .makeup-grid span, .sign-grid b, .sign-grid span { min-height: 18px; padding: 3px 4px; border-right: 1px solid #303030; border-bottom: 1px solid #303030; background: #fff; }
+    .summary-counts b, .makeup-grid b, .sign-grid b { display: grid; place-items: center; background: #f2ead9; }
+    .summary-list { margin: 4px 0 5px; min-height: 27px; }
+    .makeup-grid span { min-height: 23px; }
+    .sign-grid span { min-height: 34px; }
     .page-break { break-before: page; page-break-before: always; }
     .seat-wrap { display: flex; flex-direction: column; gap: 9px; flex: 1; padding: 10px; border: 2px solid #b88a31; border-radius: 16px; background: radial-gradient(circle at 18% 12%, rgba(184,138,49,.16), transparent 28%), #fffdf7; }
     .podium-print { padding: 10px; border-radius: 13px; text-align: center; font-weight: 900; color: #fff7df; background: linear-gradient(100deg, #111820, #7a5a21); }
@@ -2103,16 +2117,21 @@ function studentSubjectAverageBefore(studentId, subject, date) {
   return rows.reduce((sum, row) => sum + row.score, 0) / rows.length;
 }
 
-function retentionDecision(row) {
+function retentionDecision(row, examRows) {
   const baseline = studentSubjectAverageBefore(row.student.id, row.exam.subject, row.exam.date);
-  const reasonable = Number.isFinite(baseline) ? Math.max(45, Math.min(85, baseline - 8)) : 60;
-  const shouldStay = row.score < 60 || row.score < reasonable;
-  const reason = row.score < 60
-    ? "未達基本及格線"
-    : shouldStay
-      ? `低於個人合理值 ${scoreDisplay(reasonable)}`
-      : "達合理水準";
-  return { baseline, reasonable, shouldStay, reason };
+  const total = Math.max(1, examRows.length);
+  const classAverage = examRows.length ? examRows.reduce((sum, item) => sum + item.score, 0) / examRows.length : NaN;
+  const rankRatio = row.rank / total;
+  const reasonable = Number.isFinite(baseline)
+    ? Math.max(35, Math.min(88, baseline - (baseline >= 80 ? 10 : baseline >= 60 ? 8 : 5)))
+    : (Number.isFinite(classAverage) ? Math.max(35, Math.min(60, classAverage - 10)) : 50);
+  const reasons = [];
+  if (Number.isFinite(baseline) && row.score < reasonable) reasons.push(`低於個人合理值 ${scoreDisplay(reasonable)}`);
+  if (Number.isFinite(baseline) && baseline >= 70 && row.score <= baseline - 15) reasons.push("較長期水準明顯失常");
+  if (total >= 6 && rankRatio >= 0.72 && (!Number.isFinite(classAverage) || row.score < classAverage)) reasons.push(`本次排名後段 ${row.rank}/${total}`);
+  if (!Number.isFinite(baseline) && row.score < reasonable) reasons.push("新資料偏低需追蹤");
+  if (row.score < 35) reasons.push("基礎分數過低需立即補強");
+  return { baseline, reasonable, classAverage, total, rankRatio, shouldStay: reasons.length > 0, reason: reasons.join("、") || "達個人合理水準" };
 }
 
 function renderRetentionReport() {
@@ -2129,8 +2148,15 @@ function renderRetentionReport() {
     target.innerHTML = `<div class="empty">這一天尚無符合的考試成績單。</div>`;
     return;
   }
-  const rows = exams.flatMap((exam) => currentScoreRows(exam).map((row) => ({ ...row, exam })));
-  const stayRows = rows.map((row) => ({ ...row, decision: retentionDecision(row) })).filter((row) => row.decision.shouldStay);
+  const rows = exams.flatMap((exam) => {
+    const examRows = currentScoreRows(exam);
+    return examRows.map((row) => ({ ...row, exam, decision: retentionDecision({ ...row, exam }, examRows) }));
+  });
+  const stayRows = rows
+    .filter((row) => row.decision.shouldStay)
+    .sort((a, b) => a.exam.subject.localeCompare(b.exam.subject, "zh-Hant") || a.rank - b.rank || a.score - b.score);
+  const scopes = [...new Set(exams.map((exam) => `${exam.subject}：${exam.scope || "未填單元"}`).filter(Boolean))];
+  const totalStudents = rows.length;
   const subjectCards = exams.map((exam) => {
     const examRows = currentScoreRows(exam);
     const avg = examRows.length ? examRows.reduce((sum, row) => sum + row.score, 0) / examRows.length : NaN;
@@ -2145,13 +2171,20 @@ function renderRetentionReport() {
     </article>`;
   }).join("");
   target.innerHTML = `
+    <div class="status-grid retention-overview">
+      <article class="metric"><span>班級</span><strong>${escapeHtml(retentionGrade)}</strong></article>
+      <article class="metric"><span>今日考試人數</span><strong>${totalStudents}</strong></article>
+      <article class="metric"><span>建議留班</span><strong>${stayRows.length}</strong></article>
+      <article class="metric"><span>今日考試單元內容</span><p>${escapeHtml(scopes.join("、") || "-")}</p></article>
+    </div>
     <div class="record-list compact-record-list">${subjectCards}</div>
     <h3 class="subhead">留班名單</h3>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>學生</th><th>科目</th><th>單元</th><th>成績</th><th>歷史平均</th><th>合理值</th><th>原因</th></tr></thead>
+        <thead><tr><th>排名</th><th>學生</th><th>科目</th><th>單元</th><th>成績</th><th>歷史平均</th><th>合理值</th><th>原因</th></tr></thead>
         <tbody>${stayRows.map((row) => `
           <tr>
+            <td>${row.rank}/${row.decision.total}</td>
             <td>${escapeHtml(row.student.name)}</td>
             <td>${escapeHtml(row.exam.subject)}</td>
             <td>${escapeHtml(row.exam.scope || "-")}</td>
@@ -2160,7 +2193,7 @@ function renderRetentionReport() {
             <td>${scoreDisplay(row.decision.reasonable)}</td>
             <td>${escapeHtml(row.decision.reason)}</td>
           </tr>
-        `).join("") || `<tr><td colspan="7">目前沒有建議留班名單。</td></tr>`}</tbody>
+        `).join("") || `<tr><td colspan="8">目前沒有建議留班名單。</td></tr>`}</tbody>
       </table>
     </div>
   `;
