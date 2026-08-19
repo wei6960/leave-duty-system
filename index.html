@@ -619,7 +619,7 @@
           </div>
           <button class="ghost back-button" type="button" data-back-tab="management">返回班務管理</button>
         </header>
-        <div class="portal-grid compact-portal-grid layer-panel">
+        <div class="portal-grid compact-portal-grid layer-panel" id="seatSettingsMenu">
           <button class="portal-tile feature-tile" type="button" data-seat-section="assign">
             <strong>位置安排</strong>
             <span>選年級、科目、教室後安排學生座位</span>
@@ -629,7 +629,7 @@
             <span>新增教室、座位、走道，所有班級共用</span>
           </button>
         </div>
-        <div id="seatAssignPanel">
+        <div id="seatAssignPanel" hidden>
           <form class="form-grid panel" id="seatSettingForm">
             <label>年級
               <select id="seatSettingGrade">
@@ -645,6 +645,8 @@
               <select id="seatSettingRoom"></select>
             </label>
             <button class="primary" type="submit">儲存位置安排</button>
+            <button class="ghost danger" id="clearSeatAssignments" type="button">清除全部</button>
+            <button class="ghost" type="button" data-seat-section="menu">返回座位設定</button>
             <p class="hint form-span-2">同一位學生只能被安排在一個座位；教室格局請到「設定教室格局」調整一次即可。</p>
           </form>
           <section class="panel list-panel">
@@ -665,6 +667,7 @@
             </label>
             <button class="primary" id="addRoomLayout" type="button">新增教室</button>
             <button class="ghost danger" id="deleteRoomLayout" type="button">刪除教室</button>
+            <button class="ghost" type="button" data-seat-section="menu">返回座位設定</button>
             <p class="hint form-span-2">格局會套用到所有使用同一教室的年級與科目；左上角第一個座位固定保留。</p>
           </form>
           <section class="panel list-panel">
