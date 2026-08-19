@@ -1396,12 +1396,33 @@ function renderExpectedAttendance() {
   $("#todayExpectedCount").textContent = expected;
 }
 
-function todaySubjectsForGrade(grade) {
-  const day = weekdayFromDate(todayISO());
+function scheduledSubjectsFromSchedule(grade, date) {
+  const day = weekdayFromDate(date || todayISO());
   const scheduled = periods
     .map((period) => normalizeCourseName(state.schedule?.[grade]?.[day]?.[period]))
     .filter((subject) => subject && subject !== "考加");
-  return [...new Set(scheduled)].filter((subject) => courses.includes(subject));
+  return expandMathScheduleSubjects([...new Set(scheduled)], grade);
+}
+
+function expandMathScheduleSubjects(subjects, grade) {
+  const expanded = new Set();
+  subjects.forEach((subject) => {
+    if (["數學", "數A", "數B"].includes(subject)) {
+      ["數A", "數B"].forEach((mathSubject) => {
+        if (courses.includes(mathSubject) && state.students.some((student) => student.grade === grade && studentTakesSubject(student, mathSubject))) {
+          expanded.add(mathSubject);
+        }
+      });
+      if (!expanded.has("數A") && !expanded.has("數B") && courses.includes(subject)) expanded.add(subject);
+      return;
+    }
+    if (courses.includes(subject)) expanded.add(subject);
+  });
+  return [...expanded];
+}
+
+function todaySubjectsForGrade(grade) {
+  return scheduledSubjectsFromSchedule(grade, todayISO());
 }
 
 function rollSummaryForCourse(date, grade, subject) {
@@ -1588,11 +1609,7 @@ function renderRoomOptions() {
 }
 
 function scheduledSubjectsForGradeDate(grade, date) {
-  const day = weekdayFromDate(date || todayISO());
-  const scheduled = periods
-    .map((period) => normalizeCourseName(state.schedule?.[grade]?.[day]?.[period]))
-    .filter((subject) => subject && subject !== "考加");
-  return [...new Set(scheduled)].filter((subject) => courses.includes(subject));
+  return scheduledSubjectsFromSchedule(grade, date || todayISO());
 }
 
 function chooseDefaultRollSubject() {
