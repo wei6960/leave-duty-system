@@ -83,6 +83,9 @@ let paperAnalysisImageData = "";
 let editingCourseName = null;
 let rollCallGrade = "國一";
 let seatSettingsSection = "menu";
+let retentionGrade = "國一";
+let retentionDate = todayISO();
+let retentionSubject = "全部";
 const studentAiCache = new Map();
 
 const $ = (selector) => document.querySelector(selector);
@@ -93,9 +96,7 @@ const parentTabs = {
   late: "attendance",
   history: "attendance",
   students: "management",
-  "course-admin": "management",
-  "seat-settings": "management",
-  schedule: "management",
+  schedule: "settings",
   scores: "management",
   term: "management",
   "class-ops": "class-ops",
@@ -105,7 +106,11 @@ const parentTabs = {
   "grade-promotion": "class-ops",
   "contact-book": "contact-book",
   "about-admin": "about-admin",
-  "ai-settings": "ai-settings",
+  settings: "settings",
+  "course-admin": "settings",
+  "seat-settings": "settings",
+  "ai-settings": "settings",
+  "retention-report": "management",
 };
 
 function academicPeriodForDate(date = todayISO()) {
@@ -141,6 +146,7 @@ function emptyState() {
     leaves: [],
     deletedLeaveIds: [],
     lateRecords: [],
+    deletedLateIds: [],
     schedule: defaultSchedule(),
     settings: defaultAcademicSettings(),
     exams: [],
@@ -257,7 +263,8 @@ function normalizeState(raw) {
     })),
     deletedLeaveIds: Array.isArray(raw.deletedLeaveIds) ? raw.deletedLeaveIds : [],
     leaves: normalizeLeaves(raw.leaves || []).filter((record) => !(raw.deletedLeaveIds || []).includes(record.id)),
-    lateRecords: raw.lateRecords || [],
+    deletedLateIds: Array.isArray(raw.deletedLateIds) ? raw.deletedLateIds : [],
+    lateRecords: (raw.lateRecords || []).filter((record) => !(raw.deletedLateIds || []).includes(record.id)),
     schedule: baseSchedule,
     settings: normalizeAcademicSettings(raw.settings),
     deletedExamIds: Array.isArray(raw.deletedExamIds) ? raw.deletedExamIds : [],
@@ -784,7 +791,7 @@ function renderSyncedState() {
       return;
     }
     if ($("#seat-settings")?.classList.contains("active")) {
-      if (!document.activeElement?.closest?.("[data-seat-student]")) renderSeatSettingBoard();
+      if (!document.activeElement?.closest?.("[data-seat-student], [data-seat-student-search]")) renderSeatSettingBoard();
       return;
     }
     if ($("#roll-call")?.classList.contains("active")) {
@@ -1060,7 +1067,8 @@ function mergeRemoteStateForSave(localState, remotePayload) {
     students: mergeById(local.students, remoteState.students),
     deletedLeaveIds: [...new Set([...(remoteState.deletedLeaveIds || []), ...(local.deletedLeaveIds || [])])],
     leaves: mergeByIdWithDeleted(local.leaves, remoteState.leaves, [...(remoteState.deletedLeaveIds || []), ...(local.deletedLeaveIds || [])]),
-    lateRecords: mergeById(local.lateRecords, remoteState.lateRecords),
+    deletedLateIds: [...new Set([...(remoteState.deletedLateIds || []), ...(local.deletedLateIds || [])])],
+    lateRecords: mergeByIdWithDeleted(local.lateRecords, remoteState.lateRecords, [...(remoteState.deletedLateIds || []), ...(local.deletedLateIds || [])]),
     deletedExamIds: [...new Set([...(remoteState.deletedExamIds || []), ...(local.deletedExamIds || [])])],
     exams: mergeExams(local.exams, remoteState.exams, [...(remoteState.deletedExamIds || []), ...(local.deletedExamIds || [])]),
     termScores: mergeById(local.termScores, remoteState.termScores),
@@ -1638,7 +1646,8 @@ function renderSeatSettingBoard() {
   const gridTemplate = seatGridTemplate(layoutSeats);
   const maxRow = seatMaxRow(layoutSeats);
   const listId = "seatStudentSearchList";
-  target.innerHTML = `<datalist id="${listId}">${students.map((student) => `<option value="${escapeHtml(student.name)}"></option>`).join("")}</datalist><div class="podium-strip">講台</div><div class="seat-board custom-seat-board" style="grid-template-columns:${gridTemplate};">
+  const assignedIds = new Set(Object.values(setting.seats || {}).filter(Boolean));
+  target.innerHTML = `<datalist id="${listId}">${students.map((student) => `<option value="${escapeHtml(student.name)}" label="${assignedIds.has(student.id) ? "已排" : ""}"></option>`).join("")}</datalist><div class="podium-strip">講台</div><div class="seat-board custom-seat-board" style="grid-template-columns:${gridTemplate};">
     ${layoutSeats.map((id) => {
       const pos = seatPositionFromId(id);
       if (!pos) return "";
@@ -1652,6 +1661,7 @@ function renderSeatSettingBoard() {
       return `<label class="seat-cell custom-seat-cell" style="grid-row:${pos.row};grid-column:${pos.col};" data-seat-cell="${id}">
         <span>${pos.row}-${pos.col}</span>
         <input data-seat-student-search="${id}" list="${listId}" value="${escapeHtml(assignedStudent?.name || "")}" placeholder="搜尋學生">
+        ${assignedStudent ? `<small>已排</small>` : ""}
         <input type="hidden" data-seat-student="${id}" value="${escapeHtml(assigned)}">
       </label>`;
     }).join("")}
@@ -1911,17 +1921,18 @@ function printRollCallPdf() {
     const late = rollLateForStudent(student.id, date);
     const present = record.statuses?.[student.id] === "present";
     const mark = present ? "✓" : leave && leave.type !== "提早離班" ? "假" : "?";
-    return `<tr><td>${index + 1}</td><td>${escapeHtml(student.name)}</td><td class="${mark === "假" ? "leave" : ""}">${mark}</td><td></td><td></td><td></td><td></td><td></td><td>${late ? "晚到" : ""}${leave?.type === "提早離班" ? "提早離班" : ""}</td></tr>`;
+    return `<tr><td>${index + 1}</td><td>${escapeHtml(student.name)}</td><td class="${mark === "假" ? "leave" : ""}">${mark}</td><td></td><td></td><td></td><td></td><td></td><td></td><td>${late ? "晚到" : ""}${leave?.type === "提早離班" ? "提早離班" : ""}</td></tr>`;
   };
   const allRows = [
     ...students.map(rowHtml),
-    ...Array.from({ length: 5 }, (_item, index) => `<tr><td>${students.length + index + 1}</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>`),
+    ...Array.from({ length: 5 }, (_item, index) => `<tr><td>${students.length + index + 1}</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>`),
   ];
   const rowsPerColumn = Math.ceil(allRows.length / 2);
-  const tableHead = `<thead><tr><th>序號</th><th>名字</th><th>到班</th><th>成績</th><th>作業</th><th colspan="2">聯絡本</th><th colspan="2">狀況/備註</th></tr></thead>`;
+  const tableHead = `<thead><tr><th rowspan="2">序號</th><th rowspan="2">名字</th><th rowspan="2">到班</th><th rowspan="2">成績</th><th rowspan="2">作業</th><th colspan="2">聯絡本</th><th colspan="2">上課狀況</th><th rowspan="2">備註</th></tr><tr><th>繳交</th><th>未簽名</th><th>筆記</th><th>專注</th></tr></thead>`;
   const leftRows = allRows.slice(0, rowsPerColumn).join("");
   const rightRows = allRows.slice(rowsPerColumn).join("");
-  const summaryHtml = `<b>日期：</b>${escapeHtml(dateLabel(date))}　<b>年級：</b>${escapeHtml(grade)}　<b>科目：</b>${escapeHtml(subject)}<br><b>應到：</b>${summary.expected}　<b>實到：</b>${summary.present}　<b>請假：</b>${summary.leave}　<b>未到：</b>${summary.absent}<br><b>未到：</b>${summary.absentStudents.map((student) => student.name).join("、") || "-"}<br><b>晚到：</b>${summary.lateStudents.map((student) => student.name).join("、") || "-"}<br><b>請假：</b>${summary.leaveStudents.map((student) => student.name).join("、") || "-"}`;
+  const summaryHtml = `<b>日期：</b>${escapeHtml(dateLabel(date))}　<b>年級：</b>${escapeHtml(grade)}　<b>科目：</b>${escapeHtml(subject)}<br><b>應到：</b>${summary.expected}　<b>實到：</b>${summary.present}　<b>請假：</b>${summary.leave}　<b>未到：</b>${summary.absent}<br><b>未到：</b>${summary.absentStudents.map((student) => student.name).join("、") || "-"}<br><b>晚到：</b>${summary.lateStudents.map((student) => student.name).join("、") || "-"}<br><b>請假：</b>${summary.leaveStudents.map((student) => student.name).join("、") || "-"}<br><b>補課日期：</b>　　　　<b>補考成績：</b>　　　<br><b>班導師簽核：</b>　　　　<b>主管簽核：</b>`;
+  const focusHtml = `<div class="focus-title">本日重點事項</div><div class="focus-grid"><b>帶班導師</b><span></span><b>授課師</b><span></span><b>進度</b><span></span><b>作業</b><span></span><b>考試</b><span></span><b>備註</b><span></span><b>上課狀況</b><span></span></div>`;
   const seatHtml = layoutSeats.map((id) => {
     const pos = seatPositionFromId(id);
     if (!pos) return "";
@@ -1955,7 +1966,13 @@ function printRollCallPdf() {
     th:nth-child(2), td:nth-child(2) { width: 92px; }
     th:nth-child(3), td:nth-child(3) { width: 42px; }
     .leave { color: #d90000; font-weight: 900; }
-    .summary { position: absolute; right: 8px; bottom: 8px; width: 36%; padding: 8px 10px; border: 2px solid #b88a31; border-radius: 12px; background: rgba(255,248,232,.96); font-size: 11.5px; line-height: 1.45; box-shadow: 0 8px 20px rgba(60,43,12,.12); }
+    .front-footer { display: grid; grid-template-columns: 1fr 39%; gap: 8px; min-height: 31mm; }
+    .focus-panel { padding: 7px 9px; border: 2px solid #303030; border-radius: 10px; background: #fffdf7; font-size: 11px; overflow: hidden; }
+    .focus-title { font-weight: 900; text-align: center; margin-bottom: 5px; color: #7a5a21; }
+    .focus-grid { display: grid; grid-template-columns: 58px 1fr 58px 1fr; border-top: 1px solid #303030; border-left: 1px solid #303030; }
+    .focus-grid b, .focus-grid span { min-height: 20px; padding: 3px 5px; border-right: 1px solid #303030; border-bottom: 1px solid #303030; }
+    .focus-grid b { display: grid; place-items: center; background: #f2ead9; }
+    .summary { width: 39%; padding: 8px 10px; border: 2px solid #b88a31; border-radius: 12px; background: rgba(255,248,232,.96); font-size: 11.5px; line-height: 1.45; box-shadow: 0 8px 20px rgba(60,43,12,.12); overflow: hidden; }
     .summary b { color: #8b1d12; }
     .page-break { break-before: page; page-break-before: always; }
     .seat-wrap { display: flex; flex-direction: column; gap: 9px; flex: 1; padding: 10px; border: 2px solid #b88a31; border-radius: 16px; background: radial-gradient(circle at 18% 12%, rgba(184,138,49,.16), transparent 28%), #fffdf7; }
@@ -1974,7 +1991,7 @@ function printRollCallPdf() {
         <div class="paper-panel"><table>${tableHead}<tbody>${leftRows}</tbody></table></div>
         <div class="paper-panel"><table>${tableHead}<tbody>${rightRows}</tbody></table></div>
       </div>
-      <div class="summary">${summaryHtml}</div>
+      <div class="front-footer"><div class="focus-panel">${focusHtml}</div><div class="summary">${summaryHtml}</div></div>
     </section>
     <section class="sheet page-break">
       <div class="brand-head"><div class="brand-left"><img class="brand-logo" src="assets/logo.png"><div><h1>金牌躍騰平鎮分校 座位圖</h1><p>${escapeHtml(dateLabel(date))}｜${escapeHtml(grade)}｜${escapeHtml(subject)}｜${escapeHtml(setting.room || "")}</p></div></div><strong>B4 第二面</strong></div>
@@ -2000,6 +2017,136 @@ function printRollCallPdf() {
   iframe.contentDocument.write(html);
   iframe.contentDocument.close();
   setTimeout(() => iframe.contentWindow?.print(), 400);
+}
+
+function printSeatAssignmentPdf() {
+  const grade = $("#seatSettingGrade")?.value || "國一";
+  const subject = $("#seatSettingSubject")?.value || courses[0] || "國文";
+  const setting = currentSeatSetting();
+  const layoutSeats = roomLayoutSeats(setting.room);
+  const gridTemplate = seatGridTemplate(layoutSeats);
+  const maxRow = seatMaxRow(layoutSeats);
+  const today = todayISO();
+  const seatHtml = layoutSeats.map((id) => {
+    const pos = seatPositionFromId(id);
+    if (!pos) return "";
+    if (pos.type === "aisle") return `<div class="seat aisle-print" style="grid-row:1 / span ${maxRow};grid-column:${pos.col};"><b>走道</b></div>`;
+    const student = getStudent(setting.seats?.[id]);
+    const leave = student ? rollLeaveForStudent(student.id, today) : null;
+    const leaveClass = student && leave?.type !== "提早離班" ? " seat-leave" : "";
+    return `<div class="seat${leaveClass}" style="grid-row:${pos.row};grid-column:${pos.col};">${pos.row}-${pos.col}<br><b>${escapeHtml(student?.name || "")}</b></div>`;
+  }).join("");
+  const html = `<!doctype html><html><head><meta charset="utf-8"><title>座位表</title><style>
+    @page { size: B4 landscape; margin: 8mm; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: "Microsoft JhengHei", Arial, sans-serif; color: #151515; background: #f7f2e7; }
+    .sheet { min-height: calc(100vh - 16mm); display: flex; flex-direction: column; gap: 9px; }
+    .brand-head { display: flex; justify-content: space-between; align-items: end; padding: 9px 12px; border-radius: 12px; color: #fff7df; background: linear-gradient(112deg, #0f151d, #5b4520 56%, #b88a31); }
+    .brand-left { display: flex; align-items: center; gap: 10px; }
+    .brand-logo { width: 42px; height: 42px; border-radius: 50%; object-fit: contain; background: rgba(255,255,255,.08); }
+    h1 { margin: 0; font-size: 24px; }
+    p { margin: 3px 0 0; color: #ffe6a3; }
+    .seat-wrap { display: flex; flex-direction: column; gap: 9px; flex: 1; padding: 10px; border: 2px solid #b88a31; border-radius: 16px; background: #fffdf7; }
+    .podium-print { padding: 12px; border-radius: 13px; text-align: center; font-weight: 900; color: #fff7df; background: linear-gradient(100deg, #111820, #7a5a21); }
+    .seat-map { display: grid; grid-template-columns: ${gridTemplate}; gap: 8px; flex: 1; align-items: stretch; }
+    .seat { min-height: 68px; border: 1.5px solid #4e442e; border-radius: 10px; padding: 8px; text-align: center; background: linear-gradient(145deg, #fff8e8, #f5e9ca); font-size: 15px; }
+    .seat b { font-size: 18px; }
+    .seat-leave { color: #a40000; border-color: #c23a32; background: linear-gradient(145deg, #ffe4df, #f7c8bf); }
+    .aisle-print { display: grid; place-items: center; color: #7b6b4f; background: repeating-linear-gradient(45deg, #e4dccb 0 8px, #f8f2e6 8px 16px); border-style: dashed; }
+    .aisle-print b { writing-mode: vertical-rl; text-orientation: upright; }
+  </style></head><body><section class="sheet">
+    <div class="brand-head"><div class="brand-left"><img class="brand-logo" src="assets/logo.png"><div><h1>金牌躍騰平鎮分校 座位表</h1><p>${escapeHtml(grade)}｜${escapeHtml(subject)}｜${escapeHtml(setting.room || "")}｜${escapeHtml(dateLabel(today))}</p></div></div><strong>座位安排</strong></div>
+    <div class="seat-wrap"><div class="podium-print">講台</div><div class="seat-map">${seatHtml}</div></div>
+  </section><script>window.onload=()=>setTimeout(()=>window.print(),250);<\/script></body></html>`;
+  const printWindow = window.open("", "_blank");
+  if (printWindow) {
+    printWindow.document.write(html);
+    printWindow.document.close();
+  }
+}
+
+function renderRetentionSubjectOptions() {
+  const target = $("#retentionSubject");
+  if (!target) return;
+  const previous = target.value || retentionSubject || "全部";
+  const subjects = [...new Set(state.exams
+    .filter((exam) => exam.grade === retentionGrade && exam.date === retentionDate && !exam.noTest)
+    .map((exam) => exam.subject)
+    .filter(Boolean))];
+  target.innerHTML = `<option value="全部">全部科目</option>${subjects.map((subject) => `<option value="${escapeHtml(subject)}">${escapeHtml(subject)}</option>`).join("")}`;
+  target.value = previous === "全部" || subjects.includes(previous) ? previous : "全部";
+  retentionSubject = target.value;
+}
+
+function studentSubjectAverageBefore(studentId, subject, date) {
+  const rows = state.exams
+    .filter((exam) => exam.subject === subject && exam.date < date && !exam.noTest)
+    .flatMap((exam) => currentScoreRows(exam).filter((row) => row.student.id === studentId));
+  if (!rows.length) return NaN;
+  return rows.reduce((sum, row) => sum + row.score, 0) / rows.length;
+}
+
+function retentionDecision(row) {
+  const baseline = studentSubjectAverageBefore(row.student.id, row.exam.subject, row.exam.date);
+  const reasonable = Number.isFinite(baseline) ? Math.max(45, Math.min(85, baseline - 8)) : 60;
+  const shouldStay = row.score < 60 || row.score < reasonable;
+  const reason = row.score < 60
+    ? "未達基本及格線"
+    : shouldStay
+      ? `低於個人合理值 ${scoreDisplay(reasonable)}`
+      : "達合理水準";
+  return { baseline, reasonable, shouldStay, reason };
+}
+
+function renderRetentionReport() {
+  if (!$("#retention-report")) return;
+  if ($("#retentionDate")) $("#retentionDate").value = retentionDate;
+  renderRetentionSubjectOptions();
+  if ($("#retentionTitle")) $("#retentionTitle").textContent = `${dateLabel(retentionDate)} ${retentionGrade} 留班報告`;
+  const target = $("#retentionReportBody");
+  if (!target) return;
+  const exams = state.exams
+    .filter((exam) => exam.grade === retentionGrade && exam.date === retentionDate && !exam.noTest)
+    .filter((exam) => retentionSubject === "全部" || exam.subject === retentionSubject);
+  if (!exams.length) {
+    target.innerHTML = `<div class="empty">這一天尚無符合的考試成績單。</div>`;
+    return;
+  }
+  const rows = exams.flatMap((exam) => currentScoreRows(exam).map((row) => ({ ...row, exam })));
+  const stayRows = rows.map((row) => ({ ...row, decision: retentionDecision(row) })).filter((row) => row.decision.shouldStay);
+  const subjectCards = exams.map((exam) => {
+    const examRows = currentScoreRows(exam);
+    const avg = examRows.length ? examRows.reduce((sum, row) => sum + row.score, 0) / examRows.length : NaN;
+    const stayCount = stayRows.filter((row) => row.exam.id === exam.id).length;
+    return `<article class="record-card">
+      <strong>${escapeHtml(exam.subject)}｜${escapeHtml(exam.scope || "未填單元")}</strong>
+      <div class="meta">
+        <span class="badge">人數 ${examRows.length}</span>
+        <span class="badge">班平均 ${scoreDisplay(avg)}</span>
+        <span class="badge gold">留班 ${stayCount}</span>
+      </div>
+    </article>`;
+  }).join("");
+  target.innerHTML = `
+    <div class="record-list compact-record-list">${subjectCards}</div>
+    <h3 class="subhead">留班名單</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>學生</th><th>科目</th><th>單元</th><th>成績</th><th>歷史平均</th><th>合理值</th><th>原因</th></tr></thead>
+        <tbody>${stayRows.map((row) => `
+          <tr>
+            <td>${escapeHtml(row.student.name)}</td>
+            <td>${escapeHtml(row.exam.subject)}</td>
+            <td>${escapeHtml(row.exam.scope || "-")}</td>
+            <td class="${scoreClass(row.score)}">${scoreDisplay(row.score)}</td>
+            <td>${scoreDisplay(row.decision.baseline)}</td>
+            <td>${scoreDisplay(row.decision.reasonable)}</td>
+            <td>${escapeHtml(row.decision.reason)}</td>
+          </tr>
+        `).join("") || `<tr><td colspan="7">目前沒有建議留班名單。</td></tr>`}</tbody>
+      </table>
+    </div>
+  `;
 }
 
 function mathCoursesForGrade(grade) {
@@ -5691,6 +5838,10 @@ function setupTabs() {
       if (button.dataset.tab === "contact-book") contactBookSection = "menu";
       if (button.dataset.tab === "about-admin") aboutSection = "display";
       if (button.dataset.tab === "seat-settings") seatSettingsSection = "menu";
+      if (button.dataset.tab === "retention-report") {
+        $("#retentionGradeMenu") && ($("#retentionGradeMenu").hidden = false);
+        $("#retentionReportPanel") && ($("#retentionReportPanel").hidden = true);
+      }
       if (button.dataset.tab === "scores" && !editingExamId && $("#examDate")) $("#examDate").value = todayISO();
       navigateToTab(button.dataset.tab);
     });
@@ -5702,6 +5853,10 @@ function setupTabs() {
     button.addEventListener("click", () => {
       if (button.dataset.tab === "events") contactBookSection = "menu";
       if (button.dataset.tab === "seat-settings") seatSettingsSection = "menu";
+      if (button.dataset.tab === "retention-report") {
+        $("#retentionGradeMenu") && ($("#retentionGradeMenu").hidden = false);
+        $("#retentionReportPanel") && ($("#retentionReportPanel").hidden = true);
+      }
       if (button.dataset.tab === "scores" && !editingExamId && $("#examDate")) $("#examDate").value = todayISO();
       navigateToTab(button.dataset.tab);
     });
@@ -5727,6 +5882,28 @@ function setupTabs() {
       chooseDefaultRollSubject();
       renderRollCall();
     });
+  });
+  $$("[data-retention-grade]").forEach((button) => {
+    button.addEventListener("click", () => {
+      retentionGrade = button.dataset.retentionGrade;
+      retentionDate = $("#retentionDate")?.value || todayISO();
+      retentionSubject = "全部";
+      $("#retentionGradeMenu").hidden = true;
+      $("#retentionReportPanel").hidden = false;
+      renderRetentionReport();
+    });
+  });
+  $("[data-retention-back]")?.addEventListener("click", () => {
+    $("#retentionGradeMenu").hidden = false;
+    $("#retentionReportPanel").hidden = true;
+  });
+  $("#retentionPrevDay")?.addEventListener("click", () => {
+    retentionDate = addDays(retentionDate || todayISO(), -1);
+    renderRetentionReport();
+  });
+  $("#retentionNextDay")?.addEventListener("click", () => {
+    retentionDate = addDays(retentionDate || todayISO(), 1);
+    renderRetentionReport();
   });
   $("#rollPrevDay")?.addEventListener("click", () => {
     $("#rollDate").value = addDays($("#rollDate").value || todayISO(), -1);
@@ -5875,6 +6052,7 @@ function setupForms() {
     $$("[data-seat-student-search]").forEach((field) => { field.value = ""; });
     saveCurrentSeatSetting();
   });
+  $("#printSeatAssignment")?.addEventListener("click", printSeatAssignmentPdf);
   $("#addRoomLayout")?.addEventListener("click", () => {
     const name = ($("#roomLayoutName")?.value || "").trim();
     if (!name) return alert("請輸入教室名稱。");
@@ -6185,7 +6363,7 @@ function setupForms() {
     }
   });
 
-  ["studentFilter", "studentSearch", "leaveManageSearch", "lateGrade", "historyType", "historySearch", "scheduleGrade", "examGrade", "examSubject", "examPaperCount", "examNoTest", "scoreHistoryYear", "scoreHistorySemester", "scoreHistoryGrade", "careerQueryDate", "careerExamYear", "careerExamSemester", "careerTermYear", "careerTermAnalysisYear", "careerTermAnalysisSemester", "careerTermAnalysisStage", "careerReportRange", "careerReportYear", "careerReportSemester", "careerReportStage", "careerReportStartDate", "careerReportEndDate", "careerReportDetailRange", "termYear", "termSemester", "termGrade", "termStage", "termPeriodYear", "termPeriodSemester", "seatSettingGrade", "seatSettingSubject", "seatSettingRoom", "roomLayoutRoom", "rollDate", "rollGrade", "rollSubject"].forEach((id) => {
+  ["studentFilter", "studentSearch", "leaveManageSearch", "lateGrade", "historyType", "historySearch", "scheduleGrade", "examGrade", "examSubject", "examPaperCount", "examNoTest", "scoreHistoryYear", "scoreHistorySemester", "scoreHistoryGrade", "careerQueryDate", "careerExamYear", "careerExamSemester", "careerTermYear", "careerTermAnalysisYear", "careerTermAnalysisSemester", "careerTermAnalysisStage", "careerReportRange", "careerReportYear", "careerReportSemester", "careerReportStage", "careerReportStartDate", "careerReportEndDate", "careerReportDetailRange", "termYear", "termSemester", "termGrade", "termStage", "termPeriodYear", "termPeriodSemester", "seatSettingGrade", "seatSettingSubject", "seatSettingRoom", "roomLayoutRoom", "rollDate", "rollGrade", "rollSubject", "retentionDate", "retentionSubject"].forEach((id) => {
     onInputChange(id, () => {
       if (id.startsWith("scoreHistory")) examHistoryPage = 1;
       if (id === "rollGrade") rollCallGrade = $("#rollGrade").value;
@@ -6224,6 +6402,17 @@ function setupForms() {
       if (["rollDate", "rollGrade"].includes(id)) {
         chooseDefaultRollSubject();
         renderRollCall();
+        return;
+      }
+      if (id === "retentionDate") {
+        retentionDate = $("#retentionDate")?.value || todayISO();
+        retentionSubject = "全部";
+        renderRetentionReport();
+        return;
+      }
+      if (id === "retentionSubject") {
+        retentionSubject = $("#retentionSubject")?.value || "全部";
+        renderRetentionReport();
         return;
       }
       renderAll();
@@ -7531,10 +7720,12 @@ async function generateStudentAiAnalysis(studentId, output) {
     }
     if (deleteStudentId && confirm("確定移除這位學生檔案？相關請假與晚到紀錄也會一起移除。")) {
       const removedLeaveIds = state.leaves.filter((record) => record.studentId === deleteStudentId).map((record) => record.id);
+      const removedLateIds = state.lateRecords.filter((record) => record.studentId === deleteStudentId).map((record) => record.id);
       state.students = state.students.filter((student) => student.id !== deleteStudentId);
       state.leaves = state.leaves.filter((record) => record.studentId !== deleteStudentId);
       state.deletedLeaveIds = [...new Set([...(state.deletedLeaveIds || []), ...removedLeaveIds])];
       state.lateRecords = state.lateRecords.filter((record) => record.studentId !== deleteStudentId);
+      state.deletedLateIds = [...new Set([...(state.deletedLateIds || []), ...removedLateIds])];
       if (editingStudentId === deleteStudentId) clearStudentForm();
     }
     if (dismissLeaveId) {
@@ -7551,6 +7742,7 @@ async function generateStudentAiAnalysis(studentId, output) {
     }
     if (deleteLateId && confirm("確定刪除這筆晚到紀錄？刪除後不會保留在歷史紀錄。")) {
       state.lateRecords = state.lateRecords.filter((record) => record.id !== deleteLateId);
+      state.deletedLateIds = [...new Set([...(state.deletedLateIds || []), deleteLateId])];
     }
     if (viewExamId) {
       const exam = state.exams.find((record) => record.id === viewExamId);
@@ -8058,6 +8250,7 @@ function renderAll() {
   renderTermPeriodSettings();
   renderTermPeriodList();
   renderClassOps();
+  renderRetentionReport();
   renderPromotionPreview();
   renderEventManageList();
   renderContactBooks();

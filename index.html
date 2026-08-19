@@ -330,9 +330,9 @@
         <button class="tab-button" data-tab="roll-call">點名系統</button>
         <button class="tab-button" data-tab="class-ops">班級經營</button>
         <button class="tab-button" data-tab="contact-book">聯絡本系統</button>
+        <button class="tab-button" data-tab="settings">設定</button>
         <button class="tab-button" data-tab="academic">學年設定</button>
         <button class="tab-button" data-tab="archive-cleanup">歷屆資料</button>
-        <button class="tab-button" data-tab="ai-settings">AI設定</button>
       </nav>
       <button class="logout-button" id="logoutButton" type="button">登出 / 切換分校</button>
     </aside>
@@ -453,6 +453,22 @@
             <strong>段考成績</strong>
             <span>段考登記、排名、區間設定與 PDF</span>
           </button>
+          <button class="portal-tile" type="button" data-tab="retention-report">
+            <strong>留班報告</strong>
+            <span>依當天考試與歷史水準分析留班名單</span>
+          </button>
+        </div>
+      </section>
+
+      <section class="page" id="settings">
+        <header class="section-head">
+          <div>
+            <p class="eyebrow">設定</p>
+            <h1>系統設定與基礎資料</h1>
+          </div>
+          <button class="ghost back-button" type="button" data-back-tab="dashboard">返回主頁</button>
+        </header>
+        <div class="portal-grid management-grid">
           <button class="portal-tile" type="button" data-tab="course-admin">
             <strong>班部課程建立與新增</strong>
             <span>新增、編輯、刪除可調整課程</span>
@@ -464,6 +480,10 @@
           <button class="portal-tile" type="button" data-tab="schedule">
             <strong>課表設定</strong>
             <span>國一到國三上午、下午、晚上課程</span>
+          </button>
+          <button class="portal-tile" type="button" data-tab="ai-settings">
+            <strong>AI 設定</strong>
+            <span>Gemini API 與模型選擇</span>
           </button>
         </div>
       </section>
@@ -496,6 +516,50 @@
           </div>
           <div id="academicPeriodList" class="record-list"></div>
         </section>
+      </section>
+
+      <section class="page" id="retention-report">
+        <header class="section-head">
+          <div>
+            <p class="eyebrow">班務管理</p>
+            <h1>留班報告</h1>
+          </div>
+          <button class="ghost back-button" type="button" data-back-tab="management">返回班務管理</button>
+        </header>
+        <div class="portal-grid compact-portal-grid layer-panel" id="retentionGradeMenu">
+          <button class="portal-tile grade-entry-tile" type="button" data-retention-grade="國一">
+            <strong>國一</strong>
+            <span>查看國一當日留班分析</span>
+          </button>
+          <button class="portal-tile grade-entry-tile" type="button" data-retention-grade="國二">
+            <strong>國二</strong>
+            <span>查看國二當日留班分析</span>
+          </button>
+          <button class="portal-tile grade-entry-tile" type="button" data-retention-grade="國三">
+            <strong>國三</strong>
+            <span>查看國三當日留班分析</span>
+          </button>
+        </div>
+        <div id="retentionReportPanel" hidden>
+          <section class="panel class-ops-toolbar">
+            <button class="ghost" id="retentionPrevDay" type="button">前一天</button>
+            <label>日期
+              <input id="retentionDate" type="date">
+            </label>
+            <button class="ghost" id="retentionNextDay" type="button">後一天</button>
+            <label>科目
+              <select id="retentionSubject"></select>
+            </label>
+            <button class="ghost" type="button" data-retention-back>返回年級選擇</button>
+          </section>
+          <section class="panel list-panel">
+            <div class="panel-title">
+              <h2 id="retentionTitle">當日留班分析</h2>
+              <span>依當天成績與歷史水準估合理標準</span>
+            </div>
+            <div id="retentionReportBody"></div>
+          </section>
+        </div>
       </section>
 
       <section class="page" id="roll-call">
@@ -555,7 +619,7 @@
             <p class="eyebrow">AI 設定</p>
             <h1>Gemini 真實分析設定</h1>
           </div>
-          <button class="ghost back-button" type="button" data-back-tab="dashboard">返回上一層</button>
+          <button class="ghost back-button" type="button" data-back-tab="settings">返回設定</button>
         </header>
         <form class="form-grid panel" id="aiSettingsForm">
           <label class="wide-field">Gemini API Key
@@ -592,7 +656,7 @@
             <p class="eyebrow">班務管理</p>
             <h1>班部課程建立與新增</h1>
           </div>
-          <button class="ghost back-button" type="button" data-back-tab="management">返回班務管理</button>
+          <button class="ghost back-button" type="button" data-back-tab="settings">返回設定</button>
         </header>
         <form class="form-grid panel" id="courseForm">
           <label>課程名稱
@@ -617,7 +681,7 @@
             <p class="eyebrow">班務管理</p>
             <h1>年級座位表設定</h1>
           </div>
-          <button class="ghost back-button" type="button" data-back-tab="management">返回班務管理</button>
+          <button class="ghost back-button" type="button" data-back-tab="settings">返回設定</button>
         </header>
         <div class="portal-grid compact-portal-grid layer-panel" id="seatSettingsMenu">
           <button class="portal-tile feature-tile" type="button" data-seat-section="assign">
@@ -645,6 +709,7 @@
               <select id="seatSettingRoom"></select>
             </label>
             <button class="primary" type="submit">儲存位置安排</button>
+            <button class="ghost" id="printSeatAssignment" type="button">輸出座位表</button>
             <button class="ghost danger" id="clearSeatAssignments" type="button">清除全部</button>
             <button class="ghost" type="button" data-seat-section="menu">返回座位設定</button>
             <p class="hint form-span-2">同一位學生只能被安排在一個座位；教室格局請到「設定教室格局」調整一次即可。</p>
@@ -686,7 +751,7 @@
             <p class="eyebrow">班級經營</p>
             <h1>各年級各科狀況分析</h1>
           </div>
-          <button class="ghost back-button" type="button" data-back-tab="management">返回班務管理</button>
+          <button class="ghost back-button" type="button" data-back-tab="settings">返回設定</button>
         </header>
 
         <div class="portal-grid compact-portal-grid layer-panel" id="classOpsMenu">
