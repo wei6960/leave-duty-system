@@ -3347,6 +3347,10 @@ tbody tr:hover {
   overflow-wrap: anywhere;
 }
 
+.attention-row td {
+  background: rgba(241, 211, 124, .08);
+}
+
 .record-card strong {
   font-size: 1.04rem;
   color: #fff7df;

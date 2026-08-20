@@ -143,6 +143,7 @@ function normalizeAcademicSettings(settings = {}) {
 function emptyState() {
   return {
     students: [],
+    deletedStudentIds: [],
     leaves: [],
     deletedLeaveIds: [],
     lateRecords: [],
@@ -248,7 +249,10 @@ function normalizeState(raw) {
     });
   });
   return {
-    students: (raw.students || []).map((student) => ({
+    deletedStudentIds: Array.isArray(raw.deletedStudentIds) ? raw.deletedStudentIds : [],
+    students: (raw.students || [])
+      .filter((student) => !(raw.deletedStudentIds || []).includes(student.id))
+      .map((student) => ({
       id: student.id || crypto.randomUUID(),
       grade: studentStatuses.includes(student.grade) ? student.grade : "國一",
       name: student.name || "",
@@ -547,6 +551,7 @@ function normalizeScoreDraft(record = {}) {
     noExam: Boolean(record.noExam),
     scores,
     absences,
+    clearedAt: record.clearedAt || "",
     updatedAt: record.updatedAt || record.createdAt || "",
     updatedBy: record.updatedBy || "",
   };
@@ -872,7 +877,7 @@ async function setupSupabaseSync() {
     setSyncStatus("同步中");
     if (!remote) await saveSupabaseState();
     setupSupabaseRealtime();
-    supabasePollTimer = setInterval(checkSupabaseState, 1000);
+    supabasePollTimer = setInterval(checkSupabaseState, 500);
   } catch (error) {
     syncReady = false;
     setSyncStatus("同步失敗");
@@ -958,6 +963,8 @@ function mergeScoreDraft(localDraft, remoteDraft) {
   if (!remoteDraft) return normalizeScoreDraft(localDraft || {});
   const local = normalizeScoreDraft(localDraft || {});
   const remote = normalizeScoreDraft(remoteDraft || {});
+  if (local.clearedAt && recordStamp(local) >= recordStamp(remote)) return local;
+  if (remote.clearedAt && recordStamp(remote) >= recordStamp(local)) return remote;
   const base = newestRecord(local, remote) === local ? { ...remote, ...local } : { ...local, ...remote };
   const scores = {};
   const studentIds = new Set([...Object.keys(local.scores || {}), ...Object.keys(remote.scores || {})]);
@@ -1064,7 +1071,8 @@ function mergeRemoteStateForSave(localState, remotePayload) {
   const local = normalizeState(localState || emptyState());
   return {
     ...local,
-    students: mergeById(local.students, remoteState.students),
+    deletedStudentIds: [...new Set([...(remoteState.deletedStudentIds || []), ...(local.deletedStudentIds || [])])],
+    students: mergeByIdWithDeleted(local.students, remoteState.students, [...(remoteState.deletedStudentIds || []), ...(local.deletedStudentIds || [])]),
     deletedLeaveIds: [...new Set([...(remoteState.deletedLeaveIds || []), ...(local.deletedLeaveIds || [])])],
     leaves: mergeByIdWithDeleted(local.leaves, remoteState.leaves, [...(remoteState.deletedLeaveIds || []), ...(local.deletedLeaveIds || [])]),
     deletedLateIds: [...new Set([...(remoteState.deletedLateIds || []), ...(local.deletedLateIds || [])])],
@@ -1575,15 +1583,15 @@ function currentSeatSetting() {
   const key = seatSettingKey(grade, subject);
   const selectedRoom = $("#seatSettingRoom")?.value;
   const stored = state.seatSettings[key];
-  const room = document.activeElement?.id === "seatSettingRoom" && selectedRoom ? selectedRoom : stored?.room || selectedRoom || defaultRoomName();
+  const room = selectedRoom || stored?.room || defaultRoomName();
   const setting = state.seatSettings[key] || { grade, subject, room, seats: {} };
   return {
     ...setting,
     grade,
     subject,
-    room: setting.room || room,
+    room,
     seats: setting.seats || {},
-    layoutSeats: roomLayoutSeats(setting.room || room),
+    layoutSeats: roomLayoutSeats(room),
   };
 }
 
@@ -1940,16 +1948,18 @@ function printRollCallPdf() {
     const mark = present ? "✓" : leave && leave.type !== "提早離班" ? "假" : "?";
     return `<tr><td>${index + 1}</td><td>${escapeHtml(student.name)}</td><td class="${mark === "假" ? "leave" : ""}">${mark}</td><td></td><td></td><td></td><td></td><td></td><td></td><td>${late ? "晚到" : ""}${leave?.type === "提早離班" ? "提早離班" : ""}</td></tr>`;
   };
-  const allRows = [
-    ...students.map(rowHtml),
-    ...Array.from({ length: 5 }, (_item, index) => `<tr><td>${students.length + index + 1}</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>`),
-  ];
-  const rowsPerColumn = Math.ceil(allRows.length / 2);
+  const totalPrintRows = Math.max(50, students.length + 5);
+  const allRows = Array.from({ length: totalPrintRows }, (_item, index) => {
+    const student = students[index];
+    return student
+      ? rowHtml(student, index)
+      : `<tr><td>${index + 1}</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>`;
+  });
   const tableCols = `<colgroup><col class="col-no"><col class="col-name"><col class="col-roll"><col class="col-score"><col class="col-homework"><col class="col-check"><col class="col-check"><col class="col-check"><col class="col-check"><col class="col-remark"></colgroup>`;
   const tableHead = `${tableCols}<thead><tr><th rowspan="2">序號</th><th rowspan="2">名字</th><th rowspan="2">到班</th><th rowspan="2">成績</th><th rowspan="2">作業</th><th colspan="2">聯絡本</th><th colspan="2">上課狀況</th><th rowspan="2">備註</th></tr><tr><th>繳交</th><th>未簽名</th><th>筆記</th><th>專注</th></tr></thead>`;
-  const leftRows = allRows.slice(0, rowsPerColumn).join("");
-  const rightRows = allRows.slice(rowsPerColumn).join("");
-  const summaryHtml = `<div class="summary-counts"><b>日期</b><span>${escapeHtml(dateLabel(date))}</span><b>年級</b><span>${escapeHtml(grade)}</span><b>科目</b><span>${escapeHtml(subject)}</span><b>應到</b><span>${summary.expected}</span><b>實到</b><span>${summary.present}</span><b>請假</b><span>${summary.leave}</span><b>未到</b><span>${summary.absent}</span></div><div class="summary-list"><b>未到：</b>${summary.absentStudents.map((student) => student.name).join("、") || "-"}<br><b>晚到：</b>${summary.lateStudents.map((student) => student.name).join("、") || "-"}<br><b>請假：</b>${summary.leaveStudents.map((student) => student.name).join("、") || "-"}</div><div class="makeup-grid"><b>補課日期</b><span></span><b>補考成績</b><span></span></div><div class="sign-grid"><b>班導師簽核</b><span></span><b>主管簽核</b><span></span></div>`;
+  const leftRows = allRows.slice(0, 40).join("");
+  const rightRows = allRows.slice(40).join("");
+  const summaryHtml = `<div class="summary-counts"><b>應到</b><span>${summary.expected}</span><b>實到</b><span>${summary.present}</span><b>請假</b><span>${summary.leave}</span><b>未到</b><span>${summary.absent}</span></div><div class="summary-list"><b>未到：</b>${summary.absentStudents.map((student) => student.name).join("、") || "-"}<br><b>晚到：</b>${summary.lateStudents.map((student) => student.name).join("、") || "-"}<br><b>請假：</b>${summary.leaveStudents.map((student) => student.name).join("、") || "-"}</div><div class="sign-grid"><b>班導師簽核</b><span></span><b>主管簽核</b><span></span></div>`;
   const focusHtml = `<div class="focus-title">本日重點事項</div><div class="focus-grid"><b>帶班導師</b><span></span><b>授課師</b><span></span><b>進度</b><span class="wide"></span><b>作業</b><span class="wide"></span><b>考試</b><span class="wide"></span><b>備註</b><span class="wide tall"></span><b>上課狀況</b><span class="wide extra-tall"></span></div>`;
   const seatHtml = layoutSeats.map((id) => {
     const pos = seatPositionFromId(id);
@@ -1973,7 +1983,9 @@ function printRollCallPdf() {
     .brand-head p { margin: 3px 0 0; font-size: 12px; color: #ffe6a3; }
     .brand-head strong { font-size: 15px; }
     .front-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; flex: 1; min-height: 0; }
+    .front-right { display: grid; grid-template-rows: auto 1fr; gap: 6px; min-height: 0; }
     .paper-panel { position: relative; display: flex; min-height: 0; padding: 6px; border: 1.5px solid #b88a31; border-radius: 13px; background: #fffdf7; overflow: hidden; }
+    .right-roster { min-height: 0; max-height: 45mm; }
     .paper-panel::before { content: ""; position: absolute; inset: 0; background: linear-gradient(135deg, rgba(184,138,49,.12), transparent 38%); pointer-events: none; }
     table { position: relative; width: 100%; height: 100%; border-collapse: collapse; font-size: ${compactPrint ? "10px" : "11.2px"}; table-layout: fixed; background: #fff; }
     th, td { border: 1px solid #303030; padding: ${compactPrint ? "2px 2px" : "3px 3px"}; text-align: center; overflow: hidden; }
@@ -1983,28 +1995,27 @@ function printRollCallPdf() {
     .col-no { width: 5%; }
     .col-name { width: 13%; }
     .col-roll { width: 5%; }
-    .col-score { width: 5%; }
-    .col-homework { width: 5%; }
-    .col-check { width: 5%; }
-    .col-remark { width: 42%; }
+    .col-score { width: 4.5%; }
+    .col-homework { width: 4.5%; }
+    .col-check { width: 4.5%; }
+    .col-remark { width: 44%; }
     .leave { color: #d90000; font-weight: 900; }
-    .front-footer { display: grid; grid-template-columns: 1fr 34%; gap: 8px; min-height: 45mm; }
+    .front-footer { display: grid; grid-template-columns: 1fr 30%; gap: 6px; min-height: 0; }
     .focus-panel { padding: 7px 9px; border: 2px solid #303030; border-radius: 10px; background: #fffdf7; font-size: 11px; overflow: hidden; }
     .focus-title { font-weight: 900; text-align: center; margin-bottom: 5px; color: #7a5a21; }
     .focus-grid { display: grid; grid-template-columns: 68px 1fr 68px 1fr; border-top: 1px solid #303030; border-left: 1px solid #303030; }
     .focus-grid b, .focus-grid span { min-height: 22px; padding: 3px 5px; border-right: 1px solid #303030; border-bottom: 1px solid #303030; }
     .focus-grid b { display: grid; place-items: center; background: #f2ead9; }
     .focus-grid .wide { grid-column: span 3; }
-    .focus-grid .tall { min-height: 30px; }
-    .focus-grid .extra-tall { min-height: 54px; }
+    .focus-grid .tall { min-height: 38px; }
+    .focus-grid .extra-tall { min-height: 88px; }
     .summary { padding: 7px 9px; border: 2px solid #b88a31; border-radius: 12px; background: rgba(255,248,232,.96); font-size: 10.8px; line-height: 1.35; box-shadow: 0 8px 20px rgba(60,43,12,.12); overflow: hidden; }
     .summary b { color: #8b1d12; }
-    .summary-counts, .makeup-grid, .sign-grid { display: grid; grid-template-columns: 56px 1fr 56px 1fr; border-top: 1px solid #303030; border-left: 1px solid #303030; margin-bottom: 5px; }
-    .summary-counts b, .summary-counts span, .makeup-grid b, .makeup-grid span, .sign-grid b, .sign-grid span { min-height: 18px; padding: 3px 4px; border-right: 1px solid #303030; border-bottom: 1px solid #303030; background: #fff; }
-    .summary-counts b, .makeup-grid b, .sign-grid b { display: grid; place-items: center; background: #f2ead9; }
+    .summary-counts, .sign-grid { display: grid; grid-template-columns: 56px 1fr 56px 1fr; border-top: 1px solid #303030; border-left: 1px solid #303030; margin-bottom: 5px; }
+    .summary-counts b, .summary-counts span, .sign-grid b, .sign-grid span { min-height: 18px; padding: 3px 4px; border-right: 1px solid #303030; border-bottom: 1px solid #303030; background: #fff; }
+    .summary-counts b, .sign-grid b { display: grid; place-items: center; background: #f2ead9; }
     .summary-list { margin: 4px 0 5px; min-height: 27px; }
-    .makeup-grid span { min-height: 23px; }
-    .sign-grid span { min-height: 34px; }
+    .sign-grid span { min-height: 42px; }
     .page-break { break-before: page; page-break-before: always; }
     .seat-wrap { display: flex; flex-direction: column; gap: 9px; flex: 1; padding: 10px; border: 2px solid #b88a31; border-radius: 16px; background: radial-gradient(circle at 18% 12%, rgba(184,138,49,.16), transparent 28%), #fffdf7; }
     .podium-print { padding: 10px; border-radius: 13px; text-align: center; font-weight: 900; color: #fff7df; background: linear-gradient(100deg, #111820, #7a5a21); }
@@ -2020,9 +2031,11 @@ function printRollCallPdf() {
       <div class="brand-head"><div class="brand-left"><img class="brand-logo" src="assets/logo.png"><div><h1>金牌躍騰平鎮分校 教務點名表</h1><p>${escapeHtml(dateLabel(date))}｜${escapeHtml(grade)}｜${escapeHtml(subject)}｜${escapeHtml(setting.room || "")}</p></div></div><strong>應到 ${summary.expected}　實到 ${summary.present}　請假 ${summary.leave}　未到 ${summary.absent}</strong></div>
       <div class="front-grid">
         <div class="paper-panel"><table>${tableHead}<tbody>${leftRows}</tbody></table></div>
-        <div class="paper-panel"><table>${tableHead}<tbody>${rightRows}</tbody></table></div>
+        <div class="front-right">
+          <div class="paper-panel right-roster"><table>${tableHead}<tbody>${rightRows}</tbody></table></div>
+          <div class="front-footer"><div class="focus-panel">${focusHtml}</div><div class="summary">${summaryHtml}</div></div>
+        </div>
       </div>
-      <div class="front-footer"><div class="focus-panel">${focusHtml}</div><div class="summary">${summaryHtml}</div></div>
     </section>
     <section class="sheet page-break">
       <div class="brand-head"><div class="brand-left"><img class="brand-logo" src="assets/logo.png"><div><h1>金牌躍騰平鎮分校 座位圖</h1><p>${escapeHtml(dateLabel(date))}｜${escapeHtml(grade)}｜${escapeHtml(subject)}｜${escapeHtml(setting.room || "")}</p></div></div><strong>B4 第二面</strong></div>
@@ -2128,7 +2141,6 @@ function retentionDecision(row, examRows) {
   const reasons = [];
   if (Number.isFinite(baseline) && row.score < reasonable) reasons.push(`低於個人合理值 ${scoreDisplay(reasonable)}`);
   if (Number.isFinite(baseline) && baseline >= 70 && row.score <= baseline - 15) reasons.push("較長期水準明顯失常");
-  if (total >= 6 && rankRatio >= 0.72 && (!Number.isFinite(classAverage) || row.score < classAverage)) reasons.push(`本次排名後段 ${row.rank}/${total}`);
   if (!Number.isFinite(baseline) && row.score < reasonable) reasons.push("新資料偏低需追蹤");
   if (row.score < 35) reasons.push("基礎分數過低需立即補強");
   return { baseline, reasonable, classAverage, total, rankRatio, shouldStay: reasons.length > 0, reason: reasons.join("、") || "達個人合理水準" };
@@ -2151,7 +2163,7 @@ function renderRetentionReport() {
   const rows = exams.flatMap((exam) => {
     const examRows = currentScoreRows(exam);
     return examRows.map((row) => ({ ...row, exam, decision: retentionDecision({ ...row, exam }, examRows) }));
-  });
+  }).sort((a, b) => a.exam.subject.localeCompare(b.exam.subject, "zh-Hant") || a.rank - b.rank || a.score - b.score);
   const stayRows = rows
     .filter((row) => row.decision.shouldStay)
     .sort((a, b) => a.exam.subject.localeCompare(b.exam.subject, "zh-Hant") || a.rank - b.rank || a.score - b.score);
@@ -2178,12 +2190,12 @@ function renderRetentionReport() {
       <article class="metric"><span>今日考試單元內容</span><p>${escapeHtml(scopes.join("、") || "-")}</p></article>
     </div>
     <div class="record-list compact-record-list">${subjectCards}</div>
-    <h3 class="subhead">留班名單</h3>
+    <h3 class="subhead">當天成績排名</h3>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>排名</th><th>學生</th><th>科目</th><th>單元</th><th>成績</th><th>歷史平均</th><th>合理值</th><th>原因</th></tr></thead>
-        <tbody>${stayRows.map((row) => `
-          <tr>
+        <thead><tr><th>排名</th><th>學生</th><th>科目</th><th>單元</th><th>成績</th><th>歷史平均</th><th>合理值</th><th>留班</th><th>原因</th></tr></thead>
+        <tbody>${rows.map((row) => `
+          <tr class="${row.decision.shouldStay ? "attention-row" : ""}">
             <td>${row.rank}/${row.decision.total}</td>
             <td>${escapeHtml(row.student.name)}</td>
             <td>${escapeHtml(row.exam.subject)}</td>
@@ -2191,11 +2203,14 @@ function renderRetentionReport() {
             <td class="${scoreClass(row.score)}">${scoreDisplay(row.score)}</td>
             <td>${scoreDisplay(row.decision.baseline)}</td>
             <td>${scoreDisplay(row.decision.reasonable)}</td>
+            <td>${row.decision.shouldStay ? "留班" : "-"}</td>
             <td>${escapeHtml(row.decision.reason)}</td>
           </tr>
-        `).join("") || `<tr><td colspan="8">目前沒有建議留班名單。</td></tr>`}</tbody>
+        `).join("") || `<tr><td colspan="9">目前沒有當天成績。</td></tr>`}</tbody>
       </table>
     </div>
+    <h3 class="subhead">留班名單</h3>
+    <div class="record-list compact-record-list">${stayRows.map((row) => `<article class="record-card"><strong>${escapeHtml(row.student.name)}｜${escapeHtml(row.exam.subject)}｜第 ${row.rank} 名</strong><p>${escapeHtml(row.decision.reason)}</p></article>`).join("") || `<div class="empty">目前沒有建議留班名單。</div>`}</div>
   `;
 }
 
@@ -2511,8 +2526,21 @@ function clearScoreDraft({ remote = true } = {}) {
   const key = scoreDraft?.key || currentScoreDraftKey();
   scoreDraft = null;
   localStorage.removeItem(scoreDraftKey());
-  if (remote && state.scoreDrafts?.[key]) {
-    delete state.scoreDrafts[key];
+  if (remote) {
+    if (!state.scoreDrafts) state.scoreDrafts = {};
+    const [date, grade, subject] = key.split("|");
+    const now = new Date().toISOString();
+    state.scoreDrafts[key] = normalizeScoreDraft({
+      key,
+      date,
+      grade,
+      subject,
+      scores: {},
+      absences: {},
+      clearedAt: now,
+      updatedAt: now,
+      updatedBy: deviceId,
+    });
     saveState();
   }
 }
@@ -2522,6 +2550,7 @@ function publishScoreDraft(draft, { immediate = false } = {}) {
   if (!state.scoreDrafts) state.scoreDrafts = {};
   scoreDraft = normalizeScoreDraft({
     ...draft,
+    clearedAt: "",
     updatedAt: new Date().toISOString(),
     updatedBy: deviceId,
   });
@@ -2636,6 +2665,7 @@ function restoreScoreDraftMeta() {
   scoreDraft = state.scoreDrafts?.[currentScoreDraftKey()] || scoreDraft;
   if (!scoreDraft) return;
   scoreDraft = normalizeScoreDraft(scoreDraft);
+  if (scoreDraft.clearedAt) return;
   if (scoreDraft.date) $("#examDate").value = scoreDraft.date;
   if (scoreDraft.grade) $("#examGrade").value = scoreDraft.grade;
   renderExamSubjectOptions();
@@ -2667,6 +2697,7 @@ function applyScoreDraftToRows() {
   scoreDraft = state.scoreDrafts?.[currentScoreDraftKey()] || scoreDraft;
   if (!scoreDraft) return;
   scoreDraft = normalizeScoreDraft(scoreDraft);
+  if (scoreDraft.clearedAt) return;
   $$("[data-score-student]").forEach((input) => {
     const value = draftScoreValue(scoreDraft, input.dataset.scoreStudent, input.dataset.scorePaper);
     if (value !== undefined) input.value = value;
@@ -2680,6 +2711,7 @@ function applyRemoteScoreDraftToForm() {
   const remoteDraft = state.scoreDrafts?.[currentScoreDraftKey()];
   if (!remoteDraft) return;
   scoreDraft = normalizeScoreDraft(remoteDraft);
+  if (scoreDraft.clearedAt) return;
   const focused = document.activeElement;
   if (!focused?.matches?.("#examScope")) $("#examScope").value = scoreDraft.scope || "";
   if (!focused?.matches?.("#examPaperCount")) $("#examPaperCount").value = Math.max(1, Number(scoreDraft.paperCount) || 1);
@@ -3046,11 +3078,20 @@ async function saveExam(event) {
 
 function resetExamForm() {
   if (!confirm("確定重設當天成績輸入？尚未儲存的分數會清空。")) return;
+  const date = $("#examDate").value || todayISO();
+  const grade = $("#examGrade").value || "國一";
+  const subject = $("#examSubject").value || "國文";
   editingExamId = null;
   scoreSection = "entry";
   selectedClassReportExamId = null;
   clearScoreDraft();
-  $("#examDate").value = todayISO();
+  $("#examDate").value = date;
+  $("#examGrade").value = grade;
+  renderExamSubjectOptions();
+  if (!Array.from($("#examSubject").options).some((option) => option.value === subject)) {
+    $("#examSubject").insertAdjacentHTML("beforeend", `<option value="${subject}">${subject}</option>`);
+  }
+  $("#examSubject").value = subject;
   $("#examScope").value = "";
   $("#examPaperCount").value = 1;
   renderPaperTopicInputs([]);
@@ -7691,6 +7732,7 @@ async function generateStudentAiAnalysis(studentId, output) {
       if (!record.statuses[rollSeatStudentId]) delete record.statuses[rollSeatStudentId];
       record.updatedAt = new Date().toISOString();
       saveState();
+      scheduleSupabaseRefresh();
       renderRollCall();
       renderTodayClassAttendance();
     }
@@ -7772,6 +7814,7 @@ async function generateStudentAiAnalysis(studentId, output) {
       const removedLeaveIds = state.leaves.filter((record) => record.studentId === deleteStudentId).map((record) => record.id);
       const removedLateIds = state.lateRecords.filter((record) => record.studentId === deleteStudentId).map((record) => record.id);
       state.students = state.students.filter((student) => student.id !== deleteStudentId);
+      state.deletedStudentIds = [...new Set([...(state.deletedStudentIds || []), deleteStudentId])];
       state.leaves = state.leaves.filter((record) => record.studentId !== deleteStudentId);
       state.deletedLeaveIds = [...new Set([...(state.deletedLeaveIds || []), ...removedLeaveIds])];
       state.lateRecords = state.lateRecords.filter((record) => record.studentId !== deleteStudentId);
@@ -7959,7 +8002,7 @@ async function loadParentBranchState(branch) {
       lastRemoteUpdatedAt = remote.updatedAt || "";
     }
     syncReady = true;
-    supabasePollTimer = setInterval(checkSupabaseState, 1000);
+    supabasePollTimer = setInterval(checkSupabaseState, 500);
   }
   localStorage.setItem(storageKey(), JSON.stringify(state));
 }
