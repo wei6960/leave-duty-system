@@ -1946,17 +1946,17 @@ function printRollCallPdf() {
     const late = rollLateForStudent(student.id, date);
     const present = record.statuses?.[student.id] === "present";
     const mark = present ? "✓" : leave && leave.type !== "提早離班" ? "假" : "?";
-    return `<tr><td>${index + 1}</td><td>${escapeHtml(student.name)}</td><td class="${mark === "假" ? "leave" : ""}">${mark}</td><td></td><td></td><td></td><td></td><td></td><td></td><td>${late ? "晚到" : ""}${leave?.type === "提早離班" ? "提早離班" : ""}</td></tr>`;
+    return `<tr><td>${index + 1}</td><td>${escapeHtml(student.name)}</td><td class="${mark === "假" ? "leave" : ""}">${mark}</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td>${late ? "晚到" : ""}${leave?.type === "提早離班" ? "提早離班" : ""}</td></tr>`;
   };
   const totalPrintRows = Math.max(50, students.length + 5);
   const allRows = Array.from({ length: totalPrintRows }, (_item, index) => {
     const student = students[index];
     return student
       ? rowHtml(student, index)
-      : `<tr><td>${index + 1}</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>`;
+      : `<tr><td>${index + 1}</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>`;
   });
-  const tableCols = `<colgroup><col class="col-no"><col class="col-name"><col class="col-roll"><col class="col-score"><col class="col-homework"><col class="col-check"><col class="col-check"><col class="col-check"><col class="col-check"><col class="col-remark"></colgroup>`;
-  const tableHead = `${tableCols}<thead><tr><th rowspan="2">序號</th><th rowspan="2">名字</th><th rowspan="2">到班</th><th rowspan="2">成績</th><th rowspan="2">作業</th><th colspan="2">聯絡本</th><th colspan="2">上課狀況</th><th rowspan="2">備註</th></tr><tr><th>繳交</th><th>未簽名</th><th>筆記</th><th>專注</th></tr></thead>`;
+  const tableCols = `<colgroup><col class="col-no"><col class="col-name"><col class="col-roll"><col class="col-score"><col class="col-score"><col class="col-homework"><col class="col-check"><col class="col-check"><col class="col-check"><col class="col-check"><col class="col-remark"></colgroup>`;
+  const tableHead = `${tableCols}<thead><tr><th rowspan="2">序號</th><th rowspan="2">名字</th><th rowspan="2">到班</th><th colspan="2">成績</th><th rowspan="2">作業</th><th colspan="2">聯絡本</th><th colspan="2">上課狀況</th><th rowspan="2">備註</th></tr><tr><th>1</th><th>2</th><th>繳交</th><th>未簽名</th><th>筆記</th><th>專注</th></tr></thead>`;
   const leftRows = allRows.slice(0, 40).join("");
   const rightRows = allRows.slice(40).join("");
   const summaryHtml = `<div class="summary-counts"><b>應到</b><span>${summary.expected}</span><b>實到</b><span>${summary.present}</span><b>請假</b><span>${summary.leave}</span><b>未到</b><span>${summary.absent}</span></div><div class="summary-list"><b>未到：</b>${summary.absentStudents.map((student) => student.name).join("、") || "-"}<br><b>晚到：</b>${summary.lateStudents.map((student) => student.name).join("、") || "-"}<br><b>請假：</b>${summary.leaveStudents.map((student) => student.name).join("、") || "-"}</div><div class="sign-grid"><b>班導師簽核</b><span></span><b>主管簽核</b><span></span></div>`;
@@ -1998,17 +1998,17 @@ function printRollCallPdf() {
     .col-score { width: 4.5%; }
     .col-homework { width: 4.5%; }
     .col-check { width: 4.5%; }
-    .col-remark { width: 44%; }
+    .col-remark { width: 45.5%; }
     .leave { color: #d90000; font-weight: 900; }
     .front-footer { display: grid; grid-template-columns: 1fr 30%; gap: 6px; min-height: 0; }
-    .focus-panel { padding: 7px 9px; border: 2px solid #303030; border-radius: 10px; background: #fffdf7; font-size: 11px; overflow: hidden; }
+    .focus-panel { display: flex; flex-direction: column; height: 100%; min-height: 0; padding: 7px 9px; border: 2px solid #303030; border-radius: 10px; background: #fffdf7; font-size: 11px; overflow: hidden; }
     .focus-title { font-weight: 900; text-align: center; margin-bottom: 5px; color: #7a5a21; }
-    .focus-grid { display: grid; grid-template-columns: 68px 1fr 68px 1fr; border-top: 1px solid #303030; border-left: 1px solid #303030; }
-    .focus-grid b, .focus-grid span { min-height: 22px; padding: 3px 5px; border-right: 1px solid #303030; border-bottom: 1px solid #303030; }
+    .focus-grid { flex: 1; min-height: 0; display: grid; grid-template-columns: 68px 1fr 68px 1fr; grid-template-rows: 24px 28px 28px 28px 42px minmax(90px, 1fr); border-top: 1px solid #303030; border-left: 1px solid #303030; }
+    .focus-grid b, .focus-grid span { min-height: 0; padding: 3px 5px; border-right: 1px solid #303030; border-bottom: 1px solid #303030; }
     .focus-grid b { display: grid; place-items: center; background: #f2ead9; }
     .focus-grid .wide { grid-column: span 3; }
-    .focus-grid .tall { min-height: 38px; }
-    .focus-grid .extra-tall { min-height: 88px; }
+    .focus-grid .tall { min-height: 0; }
+    .focus-grid .extra-tall { min-height: 0; }
     .summary { padding: 7px 9px; border: 2px solid #b88a31; border-radius: 12px; background: rgba(255,248,232,.96); font-size: 10.8px; line-height: 1.35; box-shadow: 0 8px 20px rgba(60,43,12,.12); overflow: hidden; }
     .summary b { color: #8b1d12; }
     .summary-counts, .sign-grid { display: grid; grid-template-columns: 56px 1fr 56px 1fr; border-top: 1px solid #303030; border-left: 1px solid #303030; margin-bottom: 5px; }
