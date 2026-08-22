@@ -116,7 +116,10 @@ select {
 .app-shell {
   display: grid;
   grid-template-columns: 18rem minmax(0, 1fr);
+  width: 100%;
+  max-width: 100vw;
   min-height: 100vh;
+  overflow-x: hidden;
 }
 
 .mobile-menu-button,
@@ -1442,6 +1445,8 @@ body::before {
 
 main {
   padding: 1.4rem 1.6rem 2rem;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .sidebar {
@@ -1522,6 +1527,8 @@ h2 {
 
 .panel {
   padding: 1.05rem;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .panel-title {
@@ -3094,7 +3101,9 @@ tbody tr:hover {
   display: grid;
   gap: .65rem;
   align-items: stretch;
-  min-width: max-content;
+  width: max-content;
+  min-width: 100%;
+  max-width: none;
   padding-bottom: .25rem;
 }
 
@@ -3135,9 +3144,25 @@ tbody tr:hover {
 #dutyCheckBoard,
 #seatViewBoard {
   width: 100%;
+  max-width: 100%;
+  min-width: 0;
   overflow-x: auto;
   padding-bottom: .35rem;
   -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+}
+
+#seatSettingBoard .seat-board,
+#rollCallBoard .seat-board,
+#dutyCheckBoard .seat-board,
+#seatViewBoard .seat-board {
+  min-width: 100%;
+}
+
+#rollCallBoard .seat-board,
+#dutyCheckBoard .seat-board,
+#seatViewBoard .seat-board {
+  --seat-cell-min: 4.9rem;
 }
 
 .custom-seat-cell {
@@ -3240,7 +3265,8 @@ tbody tr:hover {
 }
 
 .duty-mode-switch {
-  overflow-x: auto;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  overflow: visible;
 }
 
 .duty-summary {
