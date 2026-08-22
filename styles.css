@@ -3242,7 +3242,12 @@ tbody tr:hover {
 #rollCallBoard .seat-board,
 #dutyCheckBoard .seat-board,
 #seatViewBoard .seat-board {
-  --seat-cell-min: 4.9rem;
+  --seat-cell-min: 0;
+  --aisle-width: .62rem;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  gap: .35rem;
 }
 
 .custom-seat-cell {
@@ -3384,6 +3389,62 @@ tbody tr:hover {
   font-size: .82rem;
   letter-spacing: 0;
   line-height: 1;
+}
+
+#rollCallBoard .seat-cell,
+#dutyCheckBoard .seat-cell,
+#seatViewBoard .seat-cell {
+  min-width: 0;
+  min-height: clamp(3rem, 4.25vw, 4.35rem);
+  padding: .38rem .42rem;
+  gap: .12rem;
+  border-radius: .38rem;
+  font-size: clamp(.74rem, .76vw, .9rem);
+}
+
+#rollCallBoard .seat-cell span,
+#rollCallBoard .seat-cell small,
+#dutyCheckBoard .seat-cell span,
+#dutyCheckBoard .seat-cell small,
+#seatViewBoard .seat-cell span,
+#seatViewBoard .seat-cell small {
+  min-width: 0;
+  font-size: clamp(.62rem, .64vw, .76rem);
+  line-height: 1.25;
+}
+
+#rollCallBoard .seat-cell strong,
+#dutyCheckBoard .seat-cell strong,
+#seatViewBoard .seat-cell strong {
+  min-width: 0;
+  overflow: hidden;
+  color: #fff6da;
+  font-size: clamp(.84rem, .82vw, .98rem);
+  line-height: 1.18;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#rollCallBoard .seat-cell small,
+#dutyCheckBoard .seat-cell small {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+#rollCallBoard .aisle-cell,
+#dutyCheckBoard .aisle-cell,
+#seatViewBoard .aisle-cell {
+  min-width: .62rem;
+  width: auto;
+  padding-inline: 0;
+}
+
+#rollCallBoard .aisle-cell strong,
+#dutyCheckBoard .aisle-cell strong,
+#seatViewBoard .aisle-cell strong {
+  font-size: .66rem;
 }
 
 .empty-seat {
@@ -3930,6 +3991,23 @@ tbody tr:hover {
   .aisle-cell {
     min-width: 1.15rem;
     width: 1.15rem;
+  }
+
+  #rollCallBoard .seat-board,
+  #dutyCheckBoard .seat-board,
+  #seatViewBoard .seat-board {
+    --seat-cell-min: 4.35rem;
+    --aisle-width: .62rem;
+    width: max-content;
+    min-width: 42rem;
+    max-width: none;
+  }
+
+  #rollCallBoard .seat-cell,
+  #dutyCheckBoard .seat-cell,
+  #seatViewBoard .seat-cell {
+    min-height: 4.4rem;
+    padding: .46rem;
   }
 
   .mini-icon-button {
