@@ -82,6 +82,10 @@ let examHistoryPage = 1;
 let paperAnalysisImageData = "";
 let editingCourseName = null;
 let rollCallGrade = "國一";
+let dutyCheckGrade = "國一";
+let dutyCheckMode = "homeworkMissing";
+let dutyArchiveGrade = "國一";
+let seatViewGrade = "國一";
 let seatSettingsSection = "menu";
 let retentionGrade = "國一";
 let retentionDate = todayISO();
@@ -101,6 +105,8 @@ const parentTabs = {
   term: "management",
   "class-ops": "class-ops",
   "roll-call": "management",
+  "duty-check": "management",
+  "duty-archive": "management",
   career: "class-ops",
   events: "contact-book",
   "grade-promotion": "class-ops",
@@ -108,9 +114,11 @@ const parentTabs = {
   "about-admin": "about-admin",
   settings: "settings",
   "course-admin": "settings",
+  "seat-view": "settings",
   "seat-settings": "settings",
   "ai-settings": "settings",
   "retention-report": "management",
+  "archive-cleanup": "archive-cleanup",
 };
 
 function academicPeriodForDate(date = todayISO()) {
@@ -170,6 +178,7 @@ function emptyState() {
     deletedRoomLayoutNames: [],
     seatSettings: {},
     rollCalls: [],
+    dutyChecks: [],
     scoreDrafts: {},
     scoreActivity: null,
     about: defaultAboutSettings(),
@@ -284,11 +293,23 @@ function normalizeState(raw) {
       withdrawn: Boolean(student.withdrawn),
       withdrawnAt: student.withdrawnAt || "",
       parentCode: student.parentCode || generateParentCode(),
+      createdAt: student.createdAt || new Date().toISOString(),
+      updatedAt: student.updatedAt || student.createdAt || new Date().toISOString(),
     })),
     deletedLeaveIds: Array.isArray(raw.deletedLeaveIds) ? raw.deletedLeaveIds : [],
     leaves: normalizeLeaves(raw.leaves || []).filter((record) => !(raw.deletedLeaveIds || []).includes(record.id)),
     deletedLateIds: Array.isArray(raw.deletedLateIds) ? raw.deletedLateIds : [],
-    lateRecords: (raw.lateRecords || []).filter((record) => !(raw.deletedLateIds || []).includes(record.id)),
+    lateRecords: (raw.lateRecords || [])
+      .filter((record) => !(raw.deletedLateIds || []).includes(record.id))
+      .map((record) => ({
+        ...record,
+        id: record.id || crypto.randomUUID(),
+        date: record.date || todayISO(),
+        type: record.type || "臨時晚到",
+        note: record.note || "",
+        createdAt: record.createdAt || new Date().toISOString(),
+        updatedAt: record.updatedAt || record.createdAt || new Date().toISOString(),
+      })),
     schedule: baseSchedule,
     settings: normalizeAcademicSettings(raw.settings),
     deletedExamIds: Array.isArray(raw.deletedExamIds) ? raw.deletedExamIds : [],
@@ -317,6 +338,7 @@ function normalizeState(raw) {
     deletedRoomLayoutNames,
     seatSettings: normalizeSeatSettings(raw.seatSettings || {}),
     rollCalls: normalizeRollCalls(raw.rollCalls || []),
+    dutyChecks: normalizeDutyChecks(raw.dutyChecks || []),
     scoreDrafts: normalizeScoreDrafts(raw.scoreDrafts || {}),
     scoreActivity: raw.scoreActivity || null,
     about: normalizeAboutSettings(raw.about || {}),
@@ -506,6 +528,40 @@ function normalizeRollCalls(records) {
     updatedAt: record.updatedAt || record.createdAt || new Date().toISOString(),
     createdAt: record.createdAt || new Date().toISOString(),
   }));
+}
+
+function normalizeFlagMap(value = {}) {
+  return Object.fromEntries(Object.entries(value || {}).filter((entry) => entry[1]).map(([key]) => [key, true]));
+}
+
+function normalizeDutyChecks(records) {
+  return (records || []).map((record) => {
+    const date = record.date || todayISO();
+    const grade = grades.includes(record.grade) ? record.grade : "國一";
+    const subject = normalizeCourseName(record.subject || "國文");
+    return {
+      id: record.id || dutyKey(date, grade, subject),
+      date,
+      grade,
+      subject,
+      homeworkMissing: normalizeFlagMap(record.homeworkMissing),
+      contactMissing: normalizeFlagMap(record.contactMissing),
+      signatureMissing: normalizeFlagMap(record.signatureMissing),
+      noteMissing: normalizeFlagMap(record.noteMissing),
+      focusMissing: normalizeFlagMap(record.focusMissing),
+      notes: {
+        homeroomTeacher: record.notes?.homeroomTeacher || record.homeroomTeacher || "",
+        teacher: record.notes?.teacher || record.teacher || "",
+        progress: record.notes?.progress || record.progress || "",
+        homework: record.notes?.homework || record.homework || "",
+        test: record.notes?.test || record.test || "",
+        note: record.notes?.note || record.note || "",
+        classStatus: record.notes?.classStatus || record.classStatus || "",
+      },
+      createdAt: record.createdAt || new Date().toISOString(),
+      updatedAt: record.updatedAt || record.createdAt || new Date().toISOString(),
+    };
+  });
 }
 
 function scoreDraftId(date, grade, subject) {
@@ -736,7 +792,7 @@ function normalizeExam(exam) {
     academicYear: String(exam.academicYear || exam.year || inferredPeriod.academicYear),
     semester: ["上學期", "下學期"].includes(exam.semester) ? exam.semester : inferredPeriod.semester,
     grade: grades.includes(exam.grade) ? exam.grade : "國一",
-    subject: courses.includes(normalizeCourseName(exam.subject)) ? normalizeCourseName(exam.subject) : "國文",
+    subject: normalizeCourseName(exam.subject || "國文") || "國文",
     scope: exam.scope || "",
     noExam: Boolean(exam.noExam),
     mockMode: Boolean(exam.mockMode),
@@ -745,6 +801,7 @@ function normalizeExam(exam) {
     scores: exam.scores || {},
     absences: Array.isArray(exam.absences) ? exam.absences : [],
     createdAt: exam.createdAt || new Date().toISOString(),
+    updatedAt: exam.updatedAt || exam.createdAt || new Date().toISOString(),
   };
 }
 
@@ -832,6 +889,19 @@ function renderSyncedState() {
     }
     if ($("#roll-call")?.classList.contains("active")) {
       renderRollCall();
+      return;
+    }
+    if ($("#duty-check")?.classList.contains("active")) {
+      if (!document.activeElement?.closest?.(".duty-note-panel")) renderDutyCheck();
+      renderDutyArchive();
+      return;
+    }
+    if ($("#duty-archive")?.classList.contains("active")) {
+      renderDutyArchive();
+      return;
+    }
+    if ($("#seat-view")?.classList.contains("active")) {
+      renderSeatView();
       return;
     }
     renderAll();
@@ -1138,6 +1208,7 @@ function mergeRemoteStateForSave(localState, remotePayload) {
     deletedPaperAnalysisIds,
     paperAnalyses: mergeByIdWithDeleted(local.paperAnalyses, remoteState.paperAnalyses, deletedPaperAnalysisIds),
     rollCalls: mergeById(local.rollCalls, remoteState.rollCalls),
+    dutyChecks: mergeById(local.dutyChecks, remoteState.dutyChecks),
     archives: mergeById(local.archives, remoteState.archives),
     scoreDrafts: mergeScoreDrafts(local.scoreDrafts, remoteState.scoreDrafts),
     roomLayouts: Object.fromEntries(Object.entries(mergeRoomLayouts(local.roomLayouts, remoteState.roomLayouts)).filter(([name]) => !deletedRoomLayoutNames.includes(name))),
@@ -1521,6 +1592,7 @@ function rollReportText(date, grade, subject, summary = rollSummaryForCourse(dat
 應到：${summary.expected}
 實到：${summary.present}
 請假：${summary.leave}${summary.leaveStudents.length ? `（${summary.leaveStudents.map((student) => student.name).join("、")}）` : ""}
+固定請假：${summary.fixedLeaveStudents.length}${summary.fixedLeaveStudents.length ? `（${summary.fixedLeaveStudents.map((student) => student.name).join("、")}）` : ""}
 未到：${summary.absent}${summary.absentStudents.length ? `（${summary.absentStudents.map((student) => student.name).join("、")}）` : ""}
 晚到：${summary.lateStudents.length ? summary.lateStudents.map((student) => student.name).join("、") : "-"}`;
 }
@@ -1630,6 +1702,10 @@ function seatSettingKey(grade = $("#seatSettingGrade")?.value || "國一", subje
 
 function rollCallKey(date, grade, subject) {
   return `${date}|${grade}|${subject}`;
+}
+
+function dutyKey(date, grade, subject) {
+  return `${date}|${grade}|${normalizeCourseName(subject || "國文")}`;
 }
 
 function seatId(row, col) {
@@ -1926,6 +2002,43 @@ function currentRollRecord() {
   return record;
 }
 
+function dutyRecordFor(date, grade, subject, { create = false } = {}) {
+  const normalizedSubject = normalizeCourseName(subject || "國文");
+  const key = dutyKey(date, grade, normalizedSubject);
+  let record = state.dutyChecks?.find((item) => item.id === key);
+  if (!record && create) {
+    record = normalizeDutyChecks([{ id: key, date, grade, subject: normalizedSubject }])[0];
+    if (!state.dutyChecks) state.dutyChecks = [];
+    state.dutyChecks.push(record);
+  }
+  return record ? normalizeDutyChecks([record])[0] : normalizeDutyChecks([{ id: key, date, grade, subject: normalizedSubject }])[0];
+}
+
+function currentDutyRecord({ create = true } = {}) {
+  const date = $("#dutyCheckDate")?.value || $("#rollDate")?.value || todayISO();
+  const grade = $("#dutyCheckGrade")?.value || dutyCheckGrade;
+  const subject = $("#dutyCheckSubject")?.value || courses[0] || "國文";
+  return dutyRecordFor(date, grade, subject, { create });
+}
+
+function setDutyRecord(record) {
+  const normalized = normalizeDutyChecks([{ ...record, updatedAt: new Date().toISOString() }])[0];
+  state.dutyChecks = (state.dutyChecks || []).filter((item) => item.id !== normalized.id).concat(normalized);
+  return normalized;
+}
+
+function dutyExamForCourse(date, grade, subject) {
+  return state.exams
+    .filter((exam) => !exam.noExam && exam.date === date && exam.grade === grade && exam.subject === subject)
+    .sort((a, b) => recordStamp(b).localeCompare(recordStamp(a)) || b.createdAt.localeCompare(a.createdAt))[0] || null;
+}
+
+function dutyScoresForStudent(studentId, date, grade, subject) {
+  const exam = dutyExamForCourse(date, grade, subject);
+  if (!exam) return [];
+  return scoreValuesForStudent(exam, studentId);
+}
+
 function rollLeaveForStudent(studentId, date) {
   const regular = state.leaves.find((record) => record.studentId === studentId && getLeaveStart(record) <= date && getLeaveEnd(record) >= date);
   if (regular) return regular;
@@ -1993,37 +2106,178 @@ function renderRollCall() {
       <span><b>${summary.expected}</b>應到</span>
       <span><b>${summary.present}</b>實到</span>
       <span><b>${summary.leave}</b>請假</span>
+      <span><b>${summary.fixedLeaveStudents.length}</b>固定請假</span>
       <span><b>${summary.absent}</b>未到</span>
     </div>
     <div class="roll-summary-lines">
       <p><b>未到：</b>${summary.absentStudents.map((student) => student.name).join("、") || "-"}</p>
       <p><b>晚到：</b>${summary.lateStudents.map((student) => student.name).join("、") || "-"}</p>
       <p><b>請假：</b>${summary.leaveStudents.map((student) => student.name).join("、") || "-"}</p>
+      <p><b>固定請假：</b>${summary.fixedLeaveStudents.map((student) => student.name).join("、") || "-"}</p>
     </div>
     <textarea class="copy-box" readonly>${escapeHtml(rollReportText(date, grade, subject, summary))}</textarea>
     <button class="ghost" type="button" data-copy-roll-report>複製回報</button>
   </div>`;
 }
 
-function printRollCallPdf() {
-  const date = $("#rollDate")?.value || todayISO();
-  const grade = $("#rollGrade")?.value || rollCallGrade;
-  const subject = $("#rollSubject")?.value || courses[0] || "國文";
+function dutySubjectsForGradeDate(grade, date) {
+  const scheduled = scheduledSubjectsForGradeDate(grade, date);
+  return scheduled.length ? scheduled : courses.filter((course) => state.students.some((student) => student.grade === grade && studentTakesSubject(student, course)));
+}
+
+function renderDutySubjectOptions(prefix, grade, date) {
+  const target = $(`#${prefix}Subject`);
+  if (!target) return;
+  const previous = target.value;
+  const subjects = dutySubjectsForGradeDate(grade, date);
+  target.innerHTML = subjects.map((subject) => `<option value="${escapeHtml(subject)}">${escapeHtml(subject)}</option>`).join("");
+  target.value = previous && subjects.includes(previous) ? previous : subjects[0] || courses[0] || "國文";
+}
+
+function dutyFlagLabel(key) {
+  return {
+    homeworkMissing: "作業未完成",
+    contactMissing: "聯絡本未繳",
+    signatureMissing: "聯絡本未簽名",
+    noteMissing: "筆記不足",
+    focusMissing: "專注提醒",
+  }[key] || key;
+}
+
+function dutyRecordText(date, grade, subject, record = dutyRecordFor(date, grade, subject)) {
+  const namesFor = (field) => Object.keys(record[field] || {})
+    .map((id) => getStudent(id)?.name)
+    .filter(Boolean)
+    .join("、") || "-";
+  return `${dateLabel(date)} ${grade} ${subject}
+作業未完成：${namesFor("homeworkMissing")}
+聯絡本未繳：${namesFor("contactMissing")}
+聯絡本未簽名：${namesFor("signatureMissing")}
+筆記不足：${namesFor("noteMissing")}
+專注提醒：${namesFor("focusMissing")}
+進度：${record.notes?.progress || "-"}
+作業：${record.notes?.homework || "-"}
+考試：${record.notes?.test || "-"}`;
+}
+
+function renderDutyCheck() {
+  const panel = $("#dutyCheckPanel");
+  if (!panel || panel.hidden || !$("#duty-check")?.classList.contains("active")) return;
+  const date = $("#dutyCheckDate")?.value || todayISO();
+  const grade = $("#dutyCheckGrade")?.value || dutyCheckGrade;
+  renderDutySubjectOptions("dutyCheck", grade, date);
+  const subject = $("#dutyCheckSubject")?.value || courses[0] || "國文";
+  const setting = state.seatSettings[seatSettingKey(grade, subject)] || { grade, subject, room: defaultRoomName(), seats: {} };
+  const layoutSeats = roomLayoutSeats(setting.room);
+  const gridTemplate = seatGridTemplate(layoutSeats);
+  const maxRow = seatMaxRow(layoutSeats);
+  const record = dutyRecordFor(date, grade, subject);
+  ["homeroomTeacher", "teacher", "progress", "homework", "test", "note", "classStatus"].forEach((field) => {
+    const input = $(`#dutyNote${field[0].toUpperCase()}${field.slice(1)}`);
+    if (input && document.activeElement !== input) input.value = record.notes?.[field] || "";
+  });
+  $$("#dutyCheckModeButtons [data-duty-check-mode]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.dutyCheckMode === dutyCheckMode);
+  });
+  if ($("#dutyCheckTitle")) $("#dutyCheckTitle").textContent = `${dateLabel(date)} ${grade} ${subject} 檢核`;
+  const target = $("#dutyCheckBoard");
+  if (!target) return;
+  target.innerHTML = `<div class="podium-strip">講台</div><div class="seat-board roll-board duty-check-board" style="grid-template-columns:${gridTemplate};">
+    ${layoutSeats.map((id) => {
+      const pos = seatPositionFromId(id);
+      if (!pos) return "";
+      if (pos.type === "aisle") return `<div class="seat-cell aisle-cell" style="grid-row:1 / span ${maxRow};grid-column:${pos.col};"><strong>走道</strong></div>`;
+      const student = getStudent(setting.seats?.[id]);
+      const flags = student ? ["homeworkMissing", "contactMissing", "signatureMissing", "noteMissing", "focusMissing"].filter((field) => record[field]?.[student.id]) : [];
+      const leave = student ? rollLeaveForStudent(student.id, date) : null;
+      const className = !student ? "empty-seat" : flags.length ? "duty-flag-seat" : leave && leave.type !== "提早離班" ? "leave-seat" : "";
+      return `<button type="button" class="seat-cell ${className}" style="grid-row:${pos.row};grid-column:${pos.col};" data-duty-seat="${student?.id || ""}">
+        <span>${pos.row}-${pos.col}</span><strong>${escapeHtml(student?.name || "空位")}</strong>
+        <small>${leave && leave.type !== "提早離班" ? "請假 " : ""}${flags.map(dutyFlagLabel).join("、")}</small>
+      </button>`;
+    }).join("")}
+  </div>
+  <div class="roll-summary duty-summary">
+    <textarea class="copy-box" readonly>${escapeHtml(dutyRecordText(date, grade, subject, record))}</textarea>
+    <button class="ghost" type="button" data-copy-duty-report>複製檢核回報</button>
+  </div>`;
+}
+
+function renderDutyArchive() {
+  const panel = $("#dutyArchivePanel");
+  if (!panel || panel.hidden || !$("#duty-archive")?.classList.contains("active")) return;
+  const date = $("#dutyArchiveDate")?.value || todayISO();
+  const grade = $("#dutyArchiveGrade")?.value || dutyArchiveGrade;
+  renderDutySubjectOptions("dutyArchive", grade, date);
+  const subject = $("#dutyArchiveSubject")?.value || courses[0] || "國文";
+  const summary = rollSummaryForCourse(date, grade, subject);
+  const record = dutyRecordFor(date, grade, subject);
+  const target = $("#dutyArchiveBody");
+  if (!target) return;
+  target.innerHTML = `
+    <div class="status-grid">
+      <article class="metric"><span>日期</span><strong>${escapeHtml(dateLabel(date))}</strong></article>
+      <article class="metric"><span>班級科目</span><strong>${escapeHtml(grade)} ${escapeHtml(subject)}</strong></article>
+      <article class="metric"><span>應到</span><strong>${summary.expected}</strong></article>
+      <article class="metric"><span>實到 / 請假 / 未到</span><strong>${summary.present} / ${summary.leave} / ${summary.absent}</strong></article>
+    </div>
+    <div class="record-list compact-record-list">
+      <article class="record-card"><strong>請假</strong><p>${summary.leaveStudents.map((student) => student.name).join("、") || "-"}</p></article>
+      <article class="record-card"><strong>未到</strong><p>${summary.absentStudents.map((student) => student.name).join("、") || "-"}</p></article>
+      <article class="record-card"><strong>檢核回報</strong><textarea class="copy-box" readonly>${escapeHtml(dutyRecordText(date, grade, subject, record))}</textarea></article>
+    </div>`;
+}
+
+function renderSeatView() {
+  const panel = $("#seatViewPanel");
+  if (!panel || panel.hidden || !$("#seat-view")?.classList.contains("active")) return;
+  const grade = $("#seatViewGrade")?.value || seatViewGrade;
+  renderDutySubjectOptions("seatView", grade, todayISO());
+  const subject = $("#seatViewSubject")?.value || courses[0] || "國文";
+  const setting = state.seatSettings[seatSettingKey(grade, subject)] || { grade, subject, room: defaultRoomName(), seats: {} };
+  const layoutSeats = roomLayoutSeats(setting.room);
+  const gridTemplate = seatGridTemplate(layoutSeats);
+  const maxRow = seatMaxRow(layoutSeats);
+  const target = $("#seatViewBoard");
+  if (!target) return;
+  target.innerHTML = `<div class="podium-strip">講台</div><div class="seat-board roll-board readonly-seat-board" style="grid-template-columns:${gridTemplate};">
+    ${layoutSeats.map((id) => {
+      const pos = seatPositionFromId(id);
+      if (!pos) return "";
+      if (pos.type === "aisle") return `<div class="seat-cell aisle-cell" style="grid-row:1 / span ${maxRow};grid-column:${pos.col};"><strong>走道</strong></div>`;
+      const student = getStudent(setting.seats?.[id]);
+      return `<div class="seat-cell" style="grid-row:${pos.row};grid-column:${pos.col};"><span>${pos.row}-${pos.col}</span><strong>${escapeHtml(student?.name || "空位")}</strong></div>`;
+    }).join("")}
+  </div>`;
+}
+
+function printRollCallPdf(options = {}) {
+  const date = options.date || $("#rollDate")?.value || $("#dutyArchiveDate")?.value || todayISO();
+  const grade = options.grade || $("#rollGrade")?.value || $("#dutyArchiveGrade")?.value || rollCallGrade;
+  const subject = options.subject || $("#rollSubject")?.value || $("#dutyArchiveSubject")?.value || courses[0] || "國文";
+  const blank = Boolean(options.blank);
   const setting = state.seatSettings[seatSettingKey(grade, subject)] || { room: defaultRoomName(), seats: {} };
   const layoutSeats = roomLayoutSeats(setting.room);
   const gridTemplate = seatGridTemplate(layoutSeats);
   const maxRow = seatMaxRow(layoutSeats);
   const summary = rollSummaryForCourse(date, grade, subject);
+  const duty = dutyRecordFor(date, grade, subject);
   const { record, students } = summary;
   const compactPrint = students.length > 34;
   const rowHtml = (student, index) => {
     const leave = rollLeaveForStudent(student.id, date);
     const late = rollLateForStudent(student.id, date);
-    const present = record.statuses?.[student.id] === "present";
-    const mark = present ? "✓" : leave && leave.type !== "提早離班" ? "假" : "";
-    return `<tr><td>${index + 1}</td><td>${escapeHtml(student.name)}</td><td class="${mark === "假" ? "leave" : ""}">${mark}</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td>${late ? "晚到" : ""}${leave?.type === "提早離班" ? "提早離班" : ""}</td></tr>`;
+    const present = !blank && record.statuses?.[student.id] === "present";
+    const mark = blank ? "" : present ? "✓" : leave && leave.type !== "提早離班" ? "假" : "";
+    const scores = blank ? [] : dutyScoresForStudent(student.id, date, grade, subject).map(scoreDisplay);
+    const homeworkMark = !blank && duty.homeworkMissing?.[student.id] ? "X" : "";
+    const contactMark = !blank && duty.contactMissing?.[student.id] ? "X" : "";
+    const signatureMark = !blank && duty.signatureMissing?.[student.id] ? "X" : "";
+    const noteMark = !blank && duty.noteMissing?.[student.id] ? "X" : "";
+    const focusMark = !blank && duty.focusMissing?.[student.id] ? "X" : "";
+    return `<tr><td>${index + 1}</td><td>${escapeHtml(student.name)}</td><td class="${mark === "假" ? "leave" : ""}">${mark}</td><td>${escapeHtml(scores[0] || "")}</td><td>${escapeHtml(scores[1] || "")}</td><td>${homeworkMark}</td><td>${contactMark}</td><td>${signatureMark}</td><td>${noteMark}</td><td>${focusMark}</td><td>${blank ? "" : `${late ? "晚到" : ""}${leave?.type === "提早離班" ? "提早離班" : ""}`}</td></tr>`;
   };
-  const totalPrintRows = Math.max(50, students.length + 5);
+  const totalPrintRows = Math.max(10, students.length + 5);
   const allRows = Array.from({ length: totalPrintRows }, (_item, index) => {
     const student = students[index];
     return student
@@ -2034,8 +2288,9 @@ function printRollCallPdf() {
   const tableHead = `${tableCols}<thead><tr><th rowspan="2">序號</th><th rowspan="2">名字</th><th rowspan="2">到班</th><th colspan="2">成績</th><th rowspan="2">作業</th><th colspan="2">聯絡本</th><th colspan="2">上課狀況</th><th rowspan="2">備註</th></tr><tr><th>1</th><th>2</th><th>繳交</th><th>未簽名</th><th>筆記</th><th>專注</th></tr></thead>`;
   const leftRows = allRows.slice(0, 40).join("");
   const rightRows = allRows.slice(40).join("");
-  const summaryHtml = `<div class="summary-counts"><b>應到</b><span>${summary.expected}</span><b>實到</b><span>${summary.present}</span><b>請假</b><span>${summary.leave}</span><b>未到</b><span>${summary.absent}</span></div><div class="summary-list"><b>未到：</b>${summary.absentStudents.map((student) => student.name).join("、") || "-"}<br><b>晚到：</b>${summary.lateStudents.map((student) => student.name).join("、") || "-"}</div><div class="leave-follow-grid"><b>請假同學</b><span>${summary.leaveStudents.map((student) => student.name).join("、") || "-"}</span><b>補課日期</b><span></span><b>補課檢核</b><span></span><b>補考</b><span></span></div><div class="sign-grid"><b>班導師簽核</b><span></span><b>主管簽核</b><span></span></div>`;
-  const focusHtml = `<div class="focus-title">本日重點事項</div><div class="focus-grid"><b>帶班導師</b><span></span><b>授課師</b><span></span><b>進度</b><span class="wide"></span><b>作業</b><span class="wide"></span><b>考試</b><span class="wide"></span><b>備註</b><span class="wide tall"></span><b>上課狀況</b><span class="wide extra-tall"></span></div>`;
+  const summaryHtml = `<div class="summary-counts"><b>應到</b><span>${summary.expected}</span><b>實到</b><span>${blank ? "" : summary.present}</span><b>請假</b><span>${blank ? "" : summary.leave}</span><b>未到</b><span>${blank ? "" : summary.absent}</span></div><div class="summary-list"><b>固定請假：</b>${blank ? "-" : summary.fixedLeaveStudents.map((student) => student.name).join("、") || "-"}<br><b>未到：</b>${blank ? "-" : summary.absentStudents.map((student) => student.name).join("、") || "-"}<br><b>晚到：</b>${blank ? "-" : summary.lateStudents.map((student) => student.name).join("、") || "-"}</div><div class="leave-follow-grid"><b>請假同學</b><span>${blank ? "" : summary.leaveStudents.map((student) => student.name).join("、") || "-"}</span><b>補課日期</b><span></span><b>補課檢核</b><span></span><b>補考</b><span></span></div><div class="sign-grid"><b>班導師簽核</b><span></span><b>主管簽核</b><span></span></div>`;
+  const notes = blank ? {} : duty.notes || {};
+  const focusHtml = `<div class="focus-title">本日重點事項</div><div class="focus-grid"><b>帶班導師</b><span>${escapeHtml(notes.homeroomTeacher || "")}</span><b>授課師</b><span>${escapeHtml(notes.teacher || "")}</span><b>進度</b><span class="wide">${escapeHtml(notes.progress || "")}</span><b>作業</b><span class="wide">${escapeHtml(notes.homework || "")}</span><b>考試</b><span class="wide">${escapeHtml(notes.test || "")}</span><b>備註</b><span class="wide tall">${escapeHtml(notes.note || "")}</span><b>上課狀況</b><span class="wide extra-tall">${escapeHtml(notes.classStatus || "")}</span></div>`;
   const seatHtml = layoutSeats.map((id) => {
     const pos = seatPositionFromId(id);
     if (!pos) return "";
@@ -2043,7 +2298,7 @@ function printRollCallPdf() {
     const student = getStudent(setting.seats?.[id]);
     const leave = student ? rollLeaveForStudent(student.id, date) : null;
     const present = student ? record.statuses?.[student.id] === "present" : false;
-    const leaveClass = student && !present && leave?.type !== "提早離班" ? " seat-leave" : "";
+    const leaveClass = !blank && student && !present && leave?.type !== "提早離班" ? " seat-leave" : "";
     return `<div class="seat${leaveClass}" style="grid-row:${pos.row};grid-column:${pos.col};">${pos.row}-${pos.col}<br><b>${escapeHtml(student?.name || "")}</b></div>`;
   }).join("");
   const html = `<!doctype html><html><head><meta charset="utf-8"><title>點名表</title><style>
@@ -2075,16 +2330,16 @@ function printRollCallPdf() {
     .col-check { width: 4.5%; }
     .col-remark { width: 45.5%; }
     .leave { color: #d90000; font-weight: 900; }
-    .front-footer { display: grid; grid-template-columns: 1fr 30%; gap: 6px; min-height: 0; }
+    .front-footer { display: grid; grid-template-columns: minmax(0, 1fr) 32%; gap: 6px; min-height: 0; }
     .focus-panel { display: flex; flex-direction: column; height: 100%; min-height: 0; padding: 7px 9px; border: 2px solid #303030; border-radius: 10px; background: #fffdf7; font-size: 11px; overflow: hidden; }
     .focus-title { font-weight: 900; text-align: center; margin-bottom: 5px; color: #7a5a21; }
-    .focus-grid { flex: 1; min-height: 0; display: grid; grid-template-columns: 68px 1fr 68px 1fr; grid-template-rows: 24px 28px 28px 28px 42px minmax(90px, 1fr); border-top: 1px solid #303030; border-left: 1px solid #303030; }
+    .focus-grid { flex: 1; min-height: 0; display: grid; grid-template-columns: 68px 1fr 68px 1fr; grid-template-rows: 24px 30px 30px 30px minmax(70px, .7fr) minmax(130px, 1.3fr); border-top: 1px solid #303030; border-left: 1px solid #303030; }
     .focus-grid b, .focus-grid span { min-height: 0; padding: 3px 5px; border-right: 1px solid #303030; border-bottom: 1px solid #303030; }
     .focus-grid b { display: grid; place-items: center; background: #f2ead9; }
     .focus-grid .wide { grid-column: span 3; }
     .focus-grid .tall { min-height: 0; }
     .focus-grid .extra-tall { min-height: 0; }
-    .summary { padding: 7px 9px; border: 2px solid #b88a31; border-radius: 12px; background: rgba(255,248,232,.96); font-size: 10.8px; line-height: 1.35; box-shadow: 0 8px 20px rgba(60,43,12,.12); overflow: hidden; }
+    .summary { padding: 7px 9px; border: 2px solid #b88a31; border-radius: 12px; background: rgba(255,248,232,.96); font-size: 10.2px; line-height: 1.32; box-shadow: 0 8px 20px rgba(60,43,12,.12); overflow: hidden; }
     .summary b { color: #8b1d12; }
     .summary-counts, .sign-grid, .leave-follow-grid { display: grid; grid-template-columns: 56px 1fr 56px 1fr; border-top: 1px solid #303030; border-left: 1px solid #303030; margin-bottom: 5px; }
     .summary-counts b, .summary-counts span, .sign-grid b, .sign-grid span, .leave-follow-grid b, .leave-follow-grid span { min-height: 18px; padding: 3px 4px; border-right: 1px solid #303030; border-bottom: 1px solid #303030; background: #fff; }
@@ -2093,7 +2348,7 @@ function printRollCallPdf() {
     .leave-follow-grid b, .leave-follow-grid span { min-height: 24px; }
     .summary-list { margin: 4px 0 5px; min-height: 27px; }
     .sign-grid { margin-top: 8px; }
-    .sign-grid span { min-height: 54px; }
+    .sign-grid span { min-height: 62px; }
     .page-break { break-before: page; page-break-before: always; }
     .seat-wrap { display: flex; flex-direction: column; gap: 9px; flex: 1; padding: 10px; border: 2px solid #b88a31; border-radius: 16px; background: radial-gradient(circle at 18% 12%, rgba(184,138,49,.16), transparent 28%), #fffdf7; }
     .podium-print { padding: 10px; border-radius: 13px; text-align: center; font-weight: 900; color: #fff7df; background: linear-gradient(100deg, #111820, #7a5a21); }
@@ -2139,6 +2394,167 @@ function printRollCallPdf() {
   iframe.contentDocument.write(html);
   iframe.contentDocument.close();
   setTimeout(() => iframe.contentWindow?.print(), 400);
+}
+
+function dutyExportContext(options = {}) {
+  const date = options.date || $("#rollDate")?.value || $("#dutyArchiveDate")?.value || todayISO();
+  const grade = options.grade || $("#rollGrade")?.value || $("#dutyArchiveGrade")?.value || rollCallGrade;
+  const subject = options.subject || $("#rollSubject")?.value || $("#dutyArchiveSubject")?.value || courses[0] || "國文";
+  const summary = rollSummaryForCourse(date, grade, subject);
+  const duty = dutyRecordFor(date, grade, subject);
+  const rows = summary.students.map((student, index) => {
+    const leave = rollLeaveForStudent(student.id, date);
+    const late = rollLateForStudent(student.id, date);
+    const present = summary.record?.statuses?.[student.id] === "present";
+    const scores = dutyScoresForStudent(student.id, date, grade, subject).map(scoreDisplay);
+    return {
+      index: index + 1,
+      student,
+      present,
+      leave,
+      late,
+      scores,
+      homeworkMissing: Boolean(duty.homeworkMissing?.[student.id]),
+      contactMissing: Boolean(duty.contactMissing?.[student.id]),
+      signatureMissing: Boolean(duty.signatureMissing?.[student.id]),
+      noteMissing: Boolean(duty.noteMissing?.[student.id]),
+      focusMissing: Boolean(duty.focusMissing?.[student.id]),
+    };
+  });
+  return { date, grade, subject, summary, duty, rows, blank: Boolean(options.blank) };
+}
+
+function downloadRollCallImage(options = {}) {
+  const { date, grade, subject, summary, duty, rows, blank } = dutyExportContext(options);
+  const outputRows = rows.concat(Array.from({ length: 5 }, (_item, index) => ({ index: rows.length + index + 1, student: null })));
+  const scale = 2;
+  const width = 1600;
+  const rightRows = outputRows.slice(40);
+  const height = Math.max(1120, 124 + 28 + Math.max(40, rightRows.length) * 22 + 392);
+  const margin = 34;
+  const canvas = document.createElement("canvas");
+  canvas.width = width * scale;
+  canvas.height = height * scale;
+  const ctx = canvas.getContext("2d");
+  ctx.scale(scale, scale);
+  ctx.fillStyle = "#f7f1e3";
+  ctx.fillRect(0, 0, width, height);
+  const gradient = ctx.createLinearGradient(0, 0, width, 0);
+  gradient.addColorStop(0, "#111820");
+  gradient.addColorStop(.56, "#4d3b1d");
+  gradient.addColorStop(1, "#b88a31");
+  ctx.fillStyle = gradient;
+  drawRoundRect(ctx, margin, 18, width - margin * 2, 86, 14);
+  ctx.fill();
+  ctx.fillStyle = "#fff7df";
+  ctx.font = "bold 28px Microsoft JhengHei, Arial";
+  canvasText(ctx, "金牌躍騰平鎮分校 教務點名表", margin + 22, 56, 520);
+  ctx.font = "bold 17px Microsoft JhengHei, Arial";
+  canvasText(ctx, `${dateLabel(date)}｜${grade}｜${subject}`, margin + 22, 86, 520);
+  canvasText(ctx, `應到 ${summary.expected}　實到 ${blank ? "" : summary.present}　請假 ${blank ? "" : summary.leave}　未到 ${blank ? "" : summary.absent}`, width - margin - 460, 72, 450);
+
+  const headers = ["序", "姓名", "到班", "成績1", "成績2", "作業", "聯絡本", "未簽", "筆記", "專注", "備註"];
+  const colWidths = [44, 110, 54, 62, 62, 58, 64, 58, 58, 58, 216];
+  const tableW = colWidths.reduce((sum, value) => sum + value, 0);
+  const leftX = margin;
+  const rightX = margin + tableW + 20;
+  const tableY = 124;
+  const rowH = 22;
+  const drawTable = (pageRows, x, y, startIndex) => {
+    ctx.fillStyle = "#151b22";
+    ctx.fillRect(x, y, tableW, 28);
+    ctx.fillStyle = "#f7d87d";
+    ctx.font = "bold 12px Microsoft JhengHei, Arial";
+    let cursor = x;
+    headers.forEach((header, index) => {
+      canvasText(ctx, header, cursor + 5, y + 19, colWidths[index] - 8);
+      cursor += colWidths[index];
+    });
+    pageRows.forEach((row, rowIndex) => {
+      const ry = y + 28 + rowIndex * rowH;
+      ctx.fillStyle = rowIndex % 2 ? "#fffaf0" : "#f3ead7";
+      ctx.fillRect(x, ry, tableW, rowH);
+      ctx.strokeStyle = "#514735";
+      ctx.strokeRect(x, ry, tableW, rowH);
+      const mark = !row.student || blank ? "" : row.present ? "✓" : row.leave && row.leave.type !== "提早離班" ? "假" : "";
+      const values = [
+        startIndex + rowIndex + 1,
+        row.student?.name || "",
+        mark,
+        !blank && row.student ? row.scores[0] || "" : "",
+        !blank && row.student ? row.scores[1] || "" : "",
+        !blank && row.homeworkMissing ? "X" : "",
+        !blank && row.contactMissing ? "X" : "",
+        !blank && row.signatureMissing ? "X" : "",
+        !blank && row.noteMissing ? "X" : "",
+        !blank && row.focusMissing ? "X" : "",
+        !blank && row.student ? `${row.late ? "晚到" : ""}${row.leave?.type === "提早離班" ? "提早離班" : ""}` : "",
+      ];
+      cursor = x;
+      values.forEach((value, index) => {
+        ctx.fillStyle = value === "假" || value === "X" ? "#c40000" : "#151515";
+        ctx.font = index === 1 ? "bold 12px Microsoft JhengHei, Arial" : "12px Microsoft JhengHei, Arial";
+        canvasText(ctx, String(value), cursor + 5, ry + 15, colWidths[index] - 8);
+        cursor += colWidths[index];
+      });
+    });
+  };
+  drawTable(outputRows.slice(0, 40), leftX, tableY, 0);
+  drawTable(rightRows, rightX, tableY, 40);
+
+  const infoX = rightX;
+  const infoY = tableY + 28 + Math.max(8, rightRows.length) * rowH + 18;
+  ctx.fillStyle = "#fffdf7";
+  drawRoundRect(ctx, infoX, infoY, tableW, 344, 12);
+  ctx.fill();
+  ctx.strokeStyle = "#b88a31";
+  ctx.stroke();
+  ctx.fillStyle = "#7a551a";
+  ctx.font = "bold 16px Microsoft JhengHei, Arial";
+  canvasText(ctx, "本日重點事項", infoX + 16, infoY + 28, 200);
+  ctx.fillStyle = "#1f252d";
+  ctx.font = "13px Microsoft JhengHei, Arial";
+  const notes = blank ? {} : duty.notes || {};
+  [
+    `帶班導師：${notes.homeroomTeacher || ""}　授課師：${notes.teacher || ""}`,
+    `進度：${notes.progress || ""}`,
+    `作業：${notes.homework || ""}`,
+    `考試：${notes.test || ""}`,
+    `備註：${notes.note || ""}`,
+    `上課狀況：${notes.classStatus || ""}`,
+    `請假同學：${blank ? "" : summary.leaveStudents.map((student) => student.name).join("、")}`,
+    `固定請假：${blank ? "" : summary.fixedLeaveStudents.map((student) => student.name).join("、")}`,
+    "補課日期：　補課檢核：　補考：",
+    "班導師簽核：　　　　　主管簽核：",
+  ].forEach((line, index) => canvasWrappedText(ctx, line, infoX + 16, infoY + 58 + index * 31, tableW - 32, 18, 2));
+
+  canvas.toBlob((blob) => {
+    if (!blob) return alert("圖片生成失敗，請再試一次。");
+    downloadBlob(blob, "image/png", `${date}_${grade}_${subject}_${blank ? "空白" : "教務"}表.png`);
+  }, "image/png");
+}
+
+function downloadRollCallExcel(options = {}) {
+  const { date, grade, subject, summary, duty, rows, blank } = dutyExportContext(options);
+  const outputRows = rows.concat(Array.from({ length: 5 }, (_item, index) => ({ index: rows.length + index + 1, student: null })));
+  const bodyRows = outputRows.map((row) => {
+    const mark = blank ? "" : row.present ? "✓" : row.leave && row.leave.type !== "提早離班" ? "假" : "";
+    return `<tr><td>${row.index}</td><td>${escapeHtml(row.student?.name || "")}</td><td>${row.student ? mark : ""}</td><td>${!blank && row.student ? escapeHtml(row.scores[0] || "") : ""}</td><td>${!blank && row.student ? escapeHtml(row.scores[1] || "") : ""}</td><td>${!blank && row.homeworkMissing ? "X" : ""}</td><td>${!blank && row.contactMissing ? "X" : ""}</td><td>${!blank && row.signatureMissing ? "X" : ""}</td><td>${!blank && row.noteMissing ? "X" : ""}</td><td>${!blank && row.focusMissing ? "X" : ""}</td><td>${!blank && row.student ? `${row.late ? "晚到" : ""}${row.leave?.type === "提早離班" ? "提早離班" : ""}` : ""}</td></tr>`;
+  }).join("");
+  const html = `<!doctype html><html><head><meta charset="utf-8"></head><body>
+    <table border="1">
+      <tr><th colspan="11">金牌躍騰平鎮分校 ${dateLabel(date)} ${grade} ${subject} 教務表</th></tr>
+      <tr><td>應到</td><td>${summary.expected}</td><td>實到</td><td>${blank ? "" : summary.present}</td><td>請假</td><td>${blank ? "" : summary.leave}</td><td>未到</td><td>${blank ? "" : summary.absent}</td><td colspan="3"></td></tr>
+      <tr><th>序號</th><th>姓名</th><th>到班</th><th>成績1</th><th>成績2</th><th>作業</th><th>聯絡本繳交</th><th>未簽名</th><th>筆記</th><th>專注</th><th>備註</th></tr>
+      ${bodyRows}
+      <tr><th colspan="2">進度</th><td colspan="9">${escapeHtml(duty.notes?.progress || "")}</td></tr>
+      <tr><th colspan="2">作業</th><td colspan="9">${escapeHtml(duty.notes?.homework || "")}</td></tr>
+      <tr><th colspan="2">考試</th><td colspan="9">${escapeHtml(duty.notes?.test || "")}</td></tr>
+      <tr><th colspan="2">備註</th><td colspan="9">${escapeHtml(duty.notes?.note || "")}</td></tr>
+      <tr><th colspan="2">上課狀況</th><td colspan="9">${escapeHtml(duty.notes?.classStatus || "")}</td></tr>
+    </table>
+  </body></html>`;
+  downloadBlob(html, "application/vnd.ms-excel", `${date}_${grade}_${subject}_${blank ? "空白" : "教務"}表.xls`);
 }
 
 function printSeatAssignmentPdf() {
@@ -2840,7 +3256,7 @@ function renderScoreEntryList() {
         <span>${student.name}</span>
         <div class="paper-score-grid">
           ${Array.from({ length: paperCount }, (_, index) => `
-            <input type="text" inputmode="${mockMode ? "text" : "decimal"}" data-score-student="${student.id}" data-score-paper="${index}" placeholder="${mockMode ? `卷${index + 1} / A、B、C` : `卷${index + 1} / 分數`}">
+            <input type="text" inputmode="${mockMode ? "text" : "decimal"}" data-score-student="${student.id}" data-score-paper="${index}" placeholder="${mockMode ? `卷${index + 1} / A++、A+、A、B++、B+、B、C` : `卷${index + 1} / 分數`}">
           `).join("")}
           <button class="absent-check" type="button" data-score-absent="${student.id}" aria-pressed="false">缺考</button>
         </div>
@@ -4242,6 +4658,7 @@ function analyzeSubjectPerformance(subject, rows) {
   let level = levelFromScore(combined);
   if (trend >= 8 && latest >= recentAvg) level = shiftLevel(level, 1);
   if (trend <= -8 || (range >= 25 && latest < recentAvg)) level = shiftLevel(level, -1);
+  if ((combined >= 70 || latest >= 70) && level === "C") level = "B";
   const weakRows = recent.filter((row) => row.score < 70);
   const focus = weakRows.map((row) => row.exam.scope || dateLabel(row.exam.date)).slice(-3).join("、");
   const note = [
@@ -5680,15 +6097,17 @@ function downloadClassReportImage() {
   const landscape = paperCount > 2;
   const scale = 2;
   const width = landscape ? 1123 : 794;
-  const height = landscape ? 794 : 1123;
+  let height = landscape ? 794 : 1123;
   const margin = landscape ? 44 : 42;
-  const rowHeight = landscape ? 34 : 39;
+  let rowHeight = landscape ? 34 : 39;
   const headerBandHeight = landscape ? 190 : 232;
   const tableY = landscape ? 226 : 278;
   const footerHeight = 46;
   const tableHeaderHeight = 42;
-  const rowsPerPage = Math.max(1, Math.floor((height - tableY - tableHeaderHeight - footerHeight - 18) / rowHeight));
-  const pages = rows.length ? chunkArray(rows, rowsPerPage) : [[]];
+  if (rows.length > 22 && landscape) rowHeight = 30;
+  if (rows.length > 24 && !landscape) rowHeight = 34;
+  height = Math.max(height, tableY + tableHeaderHeight + Math.max(1, rows.length) * rowHeight + footerHeight + 34);
+  const pages = [rows.length ? rows : []];
   const totalPages = pages.length;
   const baseFileName = classReportFileName(exam, "png").replace(/\.png$/i, "");
   const reportTitle = branchReportTitle();
@@ -6032,6 +6451,22 @@ function setupTabs() {
         $("#retentionGradeMenu") && ($("#retentionGradeMenu").hidden = false);
         $("#retentionReportPanel") && ($("#retentionReportPanel").hidden = true);
       }
+      if (button.dataset.tab === "roll-call") {
+        $("#rollCallGradeMenu") && ($("#rollCallGradeMenu").hidden = false);
+        $("#rollCallPanel") && ($("#rollCallPanel").hidden = true);
+      }
+      if (button.dataset.tab === "duty-check") {
+        $("#dutyCheckGradeMenu") && ($("#dutyCheckGradeMenu").hidden = false);
+        $("#dutyCheckPanel") && ($("#dutyCheckPanel").hidden = true);
+      }
+      if (button.dataset.tab === "duty-archive") {
+        $("#dutyArchiveGradeMenu") && ($("#dutyArchiveGradeMenu").hidden = false);
+        $("#dutyArchivePanel") && ($("#dutyArchivePanel").hidden = true);
+      }
+      if (button.dataset.tab === "seat-view") {
+        $("#seatViewGradeMenu") && ($("#seatViewGradeMenu").hidden = false);
+        $("#seatViewPanel") && ($("#seatViewPanel").hidden = true);
+      }
       if (button.dataset.tab === "scores" && !editingExamId && $("#examDate")) $("#examDate").value = todayISO();
       navigateToTab(button.dataset.tab);
     });
@@ -6046,6 +6481,22 @@ function setupTabs() {
       if (button.dataset.tab === "retention-report") {
         $("#retentionGradeMenu") && ($("#retentionGradeMenu").hidden = false);
         $("#retentionReportPanel") && ($("#retentionReportPanel").hidden = true);
+      }
+      if (button.dataset.tab === "roll-call") {
+        $("#rollCallGradeMenu") && ($("#rollCallGradeMenu").hidden = false);
+        $("#rollCallPanel") && ($("#rollCallPanel").hidden = true);
+      }
+      if (button.dataset.tab === "duty-check") {
+        $("#dutyCheckGradeMenu") && ($("#dutyCheckGradeMenu").hidden = false);
+        $("#dutyCheckPanel") && ($("#dutyCheckPanel").hidden = true);
+      }
+      if (button.dataset.tab === "duty-archive") {
+        $("#dutyArchiveGradeMenu") && ($("#dutyArchiveGradeMenu").hidden = false);
+        $("#dutyArchivePanel") && ($("#dutyArchivePanel").hidden = true);
+      }
+      if (button.dataset.tab === "seat-view") {
+        $("#seatViewGradeMenu") && ($("#seatViewGradeMenu").hidden = false);
+        $("#seatViewPanel") && ($("#seatViewPanel").hidden = true);
       }
       if (button.dataset.tab === "scores" && !editingExamId && $("#examDate")) $("#examDate").value = todayISO();
       navigateToTab(button.dataset.tab);
@@ -6071,6 +6522,56 @@ function setupTabs() {
       $("#rollCallPanel").hidden = false;
       chooseDefaultRollSubject();
       renderRollCall();
+    });
+  });
+  $$("[data-duty-check-grade]").forEach((button) => {
+    button.addEventListener("click", () => {
+      dutyCheckGrade = button.dataset.dutyCheckGrade;
+      $("#dutyCheckGrade").value = dutyCheckGrade;
+      $("#dutyCheckDate").value = $("#dutyCheckDate").value || todayISO();
+      $("#dutyCheckGradeMenu").hidden = true;
+      $("#dutyCheckPanel").hidden = false;
+      renderDutySubjectOptions("dutyCheck", dutyCheckGrade, $("#dutyCheckDate").value || todayISO());
+      renderDutyCheck();
+    });
+  });
+  $$("[data-duty-archive-grade]").forEach((button) => {
+    button.addEventListener("click", () => {
+      dutyArchiveGrade = button.dataset.dutyArchiveGrade;
+      $("#dutyArchiveGrade").value = dutyArchiveGrade;
+      $("#dutyArchiveDate").value = $("#dutyArchiveDate").value || todayISO();
+      $("#dutyArchiveGradeMenu").hidden = true;
+      $("#dutyArchivePanel").hidden = false;
+      renderDutySubjectOptions("dutyArchive", dutyArchiveGrade, $("#dutyArchiveDate").value || todayISO());
+      renderDutyArchive();
+    });
+  });
+  $$("[data-seat-view-grade]").forEach((button) => {
+    button.addEventListener("click", () => {
+      seatViewGrade = button.datasetSeatViewGrade || button.dataset.seatViewGrade;
+      $("#seatViewGrade").value = seatViewGrade;
+      $("#seatViewGradeMenu").hidden = true;
+      $("#seatViewPanel").hidden = false;
+      renderDutySubjectOptions("seatView", seatViewGrade, todayISO());
+      renderSeatView();
+    });
+  });
+  $("[data-duty-check-back]")?.addEventListener("click", () => {
+    $("#dutyCheckGradeMenu").hidden = false;
+    $("#dutyCheckPanel").hidden = true;
+  });
+  $("[data-duty-archive-back]")?.addEventListener("click", () => {
+    $("#dutyArchiveGradeMenu").hidden = false;
+    $("#dutyArchivePanel").hidden = true;
+  });
+  $("[data-seat-view-back]")?.addEventListener("click", () => {
+    $("#seatViewGradeMenu").hidden = false;
+    $("#seatViewPanel").hidden = true;
+  });
+  $$("#dutyCheckModeButtons [data-duty-check-mode]").forEach((button) => {
+    button.addEventListener("click", () => {
+      dutyCheckMode = button.dataset.dutyCheckMode;
+      renderDutyCheck();
     });
   });
   $$("[data-retention-grade]").forEach((button) => {
@@ -6105,7 +6606,63 @@ function setupTabs() {
     chooseDefaultRollSubject();
     renderRollCall();
   });
+  $("#dutyCheckPrevDay")?.addEventListener("click", () => {
+    $("#dutyCheckDate").value = addDays($("#dutyCheckDate").value || todayISO(), -1);
+    renderDutySubjectOptions("dutyCheck", $("#dutyCheckGrade").value || dutyCheckGrade, $("#dutyCheckDate").value || todayISO());
+    renderDutyCheck();
+  });
+  $("#dutyCheckNextDay")?.addEventListener("click", () => {
+    $("#dutyCheckDate").value = addDays($("#dutyCheckDate").value || todayISO(), 1);
+    renderDutySubjectOptions("dutyCheck", $("#dutyCheckGrade").value || dutyCheckGrade, $("#dutyCheckDate").value || todayISO());
+    renderDutyCheck();
+  });
+  $("#dutyArchivePrevDay")?.addEventListener("click", () => {
+    $("#dutyArchiveDate").value = addDays($("#dutyArchiveDate").value || todayISO(), -1);
+    renderDutySubjectOptions("dutyArchive", $("#dutyArchiveGrade").value || dutyArchiveGrade, $("#dutyArchiveDate").value || todayISO());
+    renderDutyArchive();
+  });
+  $("#dutyArchiveNextDay")?.addEventListener("click", () => {
+    $("#dutyArchiveDate").value = addDays($("#dutyArchiveDate").value || todayISO(), 1);
+    renderDutySubjectOptions("dutyArchive", $("#dutyArchiveGrade").value || dutyArchiveGrade, $("#dutyArchiveDate").value || todayISO());
+    renderDutyArchive();
+  });
   $("#exportRollCallPdf")?.addEventListener("click", printRollCallPdf);
+  $("#exportRollCallImage")?.addEventListener("click", () => downloadRollCallImage());
+  $("#exportRollCallExcel")?.addEventListener("click", () => downloadRollCallExcel());
+  $("#exportRollCallBlankPdf")?.addEventListener("click", () => printRollCallPdf({ blank: true }));
+  $("#exportRollCallBlankImage")?.addEventListener("click", () => downloadRollCallImage({ blank: true }));
+  $("#archiveRollCallPdf")?.addEventListener("click", () => printRollCallPdf({
+    date: $("#dutyArchiveDate").value,
+    grade: $("#dutyArchiveGrade").value,
+    subject: $("#dutyArchiveSubject").value,
+  }));
+  $("#archiveRollCallImage")?.addEventListener("click", () => downloadRollCallImage({
+    date: $("#dutyArchiveDate").value,
+    grade: $("#dutyArchiveGrade").value,
+    subject: $("#dutyArchiveSubject").value,
+  }));
+  $("#archiveRollCallExcel")?.addEventListener("click", () => downloadRollCallExcel({
+    date: $("#dutyArchiveDate").value,
+    grade: $("#dutyArchiveGrade").value,
+    subject: $("#dutyArchiveSubject").value,
+  }));
+  $("#archiveRollCallBlankPdf")?.addEventListener("click", () => printRollCallPdf({
+    date: $("#dutyArchiveDate").value,
+    grade: $("#dutyArchiveGrade").value,
+    subject: $("#dutyArchiveSubject").value,
+    blank: true,
+  }));
+  $("#archiveRollCallBlankImage")?.addEventListener("click", () => downloadRollCallImage({
+    date: $("#dutyArchiveDate").value,
+    grade: $("#dutyArchiveGrade").value,
+    subject: $("#dutyArchiveSubject").value,
+    blank: true,
+  }));
+  $("#printSeatView")?.addEventListener("click", () => {
+    if ($("#seatSettingGrade")) $("#seatSettingGrade").value = $("#seatViewGrade")?.value || seatViewGrade;
+    if ($("#seatSettingSubject")) $("#seatSettingSubject").value = $("#seatViewSubject")?.value || courses[0] || "國文";
+    printSeatAssignmentPdf();
+  });
   $("#mobileMenuButton")?.addEventListener("click", () => document.body.classList.toggle("nav-open"));
   $("#mobileScrim")?.addEventListener("click", () => document.body.classList.remove("nav-open"));
 }
@@ -6126,7 +6683,7 @@ function setupDashboardFilter() {
     });
   });
 
-  $$(".mode-button").forEach((button) => {
+  $$(".mode-button[data-mode]").forEach((button) => {
     button.addEventListener("click", () => {
       dashboardMode = button.dataset.mode;
       $$(".mode-button").forEach((item) => item.classList.remove("active"));
@@ -6177,6 +6734,30 @@ function setupForms() {
   ["contactDate", "contactGrade"].forEach((id) => {
     onInputChange(id, renderContactSubjectOptions);
   });
+  ["dutyCheckDate", "dutyCheckSubject"].forEach((id) => {
+    onInputChange(id, () => {
+      if (id === "dutyCheckDate") renderDutySubjectOptions("dutyCheck", $("#dutyCheckGrade")?.value || dutyCheckGrade, $("#dutyCheckDate")?.value || todayISO());
+      renderDutyCheck();
+    });
+  });
+  ["dutyArchiveDate", "dutyArchiveSubject"].forEach((id) => {
+    onInputChange(id, () => {
+      if (id === "dutyArchiveDate") renderDutySubjectOptions("dutyArchive", $("#dutyArchiveGrade")?.value || dutyArchiveGrade, $("#dutyArchiveDate")?.value || todayISO());
+      renderDutyArchive();
+    });
+  });
+  ["seatViewSubject"].forEach((id) => onInputChange(id, renderSeatView));
+  ["dutyNoteHomeroomTeacher", "dutyNoteTeacher", "dutyNoteProgress", "dutyNoteHomework", "dutyNoteTest", "dutyNoteNote", "dutyNoteClassStatus"].forEach((id) => {
+    onInputChange(id, () => {
+      const record = currentDutyRecord();
+      const field = id.replace("dutyNote", "");
+      const key = field.charAt(0).toLowerCase() + field.slice(1);
+      record.notes = { ...(record.notes || {}), [key]: $(`#${id}`)?.value || "" };
+      setDutyRecord(record);
+      saveState();
+      renderDutyArchive();
+    });
+  });
   $("#printClassOpsWeeklyReport")?.addEventListener("click", printClassOpsWeeklyReportPdf);
   $("#generateClassOpsAi")?.addEventListener("click", generateClassOpsAiAnalysis);
 
@@ -6192,12 +6773,14 @@ function setupForms() {
     };
     if (editingStudentId) {
       const student = getStudent(editingStudentId);
-      if (student) Object.assign(student, payload);
+      if (student) Object.assign(student, payload, { updatedAt: new Date().toISOString() });
     } else {
       state.students.push({
         id: crypto.randomUUID(),
         ...payload,
         parentCode: generateUniqueParentCode(),
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
       });
     }
     clearStudentForm();
@@ -6216,7 +6799,18 @@ function setupForms() {
     if (!nextName) return alert("請輸入課程名稱");
     const catalog = normalizeCourseCatalog(state.courseCatalog);
     if (editingCourseName && coreCourses.includes(editingCourseName)) return alert("核心課程不可編輯");
+    if (editingCourseName && editingCourseName !== nextName && catalog.some((item) => item.name === nextName)) return alert("課程已存在");
     if (!editingCourseName && catalog.some((item) => item.name === nextName)) return alert("課程已存在");
+    if (editingCourseName && editingCourseName !== nextName) {
+      state.students.forEach((student) => {
+        if (!student.courses?.includes(editingCourseName)) return;
+        student.courses = [...new Set(student.courses.map((course) => course === editingCourseName ? nextName : course))];
+        student.updatedAt = new Date().toISOString();
+      });
+      grades.forEach((grade) => weekdays.forEach((day) => periods.forEach((period) => {
+        if (state.schedule?.[grade]?.[day]?.[period] === editingCourseName) state.schedule[grade][day][period] = nextName;
+      })));
+    }
     state.courseCatalog = catalog
       .filter((item) => item.name !== editingCourseName)
       .concat({ name: nextName, core: coreCourses.includes(nextName) });
@@ -6296,6 +6890,7 @@ function setupForms() {
       periods,
       note: $("#leaveNote").value.trim(),
       createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     });
 
     saveState();
@@ -6314,6 +6909,7 @@ function setupForms() {
       type: "臨時晚到",
       note: $("#lateNote").value.trim(),
       createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     });
     $("#lateNote").value = "";
     saveState();
@@ -7755,6 +8351,7 @@ async function generateStudentAiAnalysis(studentId, output) {
     const addColumnRight = event.target.dataset.addLayoutColumnRight;
     const deleteSeat = event.target.dataset.deleteLayoutCell;
     const rollSeatStudentId = event.target.closest("[data-roll-seat]")?.dataset.rollSeat;
+    const dutySeatStudentId = event.target.closest("[data-duty-seat]")?.dataset.dutySeat;
     const pickLeaveStudentId = event.target.closest("[data-pick-leave-student]")?.dataset.pickLeaveStudent;
     const pickCareerStudentId = event.target.closest("[data-pick-career-student]")?.dataset.pickCareerStudent;
     const dismissLeaveId = event.target.dataset.dismissLeave;
@@ -7812,7 +8409,7 @@ async function generateStudentAiAnalysis(studentId, output) {
       changeRoomLayout(addColumnRight, "column-right");
       return;
     }
-    if (event.target.closest("[data-copy-roll-report]")) {
+    if (event.target.closest("[data-copy-roll-report], [data-copy-duty-report]")) {
       const text = event.target.closest(".roll-summary")?.querySelector(".copy-box")?.value || "";
       navigator.clipboard?.writeText(text).then(() => flashButton(event.target.closest("button"), "已複製")).catch(() => {
         const box = event.target.closest(".roll-summary")?.querySelector(".copy-box");
@@ -7838,6 +8435,18 @@ async function generateStudentAiAnalysis(studentId, output) {
       scheduleSupabaseRefresh();
       renderRollCall();
       renderTodayClassAttendance();
+    }
+    if (dutySeatStudentId) {
+      const record = currentDutyRecord();
+      const map = { ...(record[dutyCheckMode] || {}) };
+      if (map[dutySeatStudentId]) delete map[dutySeatStudentId];
+      else map[dutySeatStudentId] = true;
+      record[dutyCheckMode] = map;
+      setDutyRecord(record);
+      saveState();
+      scheduleSupabaseRefresh();
+      renderDutyCheck();
+      renderDutyArchive();
     }
     if (printPaperAnalysisId) {
       const record = state.paperAnalyses.find((item) => item.id === printPaperAnalysisId);
@@ -7866,6 +8475,7 @@ async function generateStudentAiAnalysis(studentId, output) {
       if (student) {
         student.withdrawn = !student.withdrawn;
         student.withdrawnAt = student.withdrawn ? new Date().toISOString() : "";
+        student.updatedAt = new Date().toISOString();
       }
     }
     if (editCourseName) {
@@ -7877,6 +8487,14 @@ async function generateStudentAiAnalysis(studentId, output) {
     if (deleteCourseName && !coreCourses.includes(deleteCourseName) && confirm(`確定刪除課程「${deleteCourseName}」？歷史成績不會刪除。`)) {
       state.courseCatalog = normalizeCourseCatalog(state.courseCatalog).filter((item) => item.name !== deleteCourseName);
       state.deletedCourseNames = [...new Set([...(state.deletedCourseNames || []), deleteCourseName])];
+      state.students.forEach((student) => {
+        if (!student.courses?.includes(deleteCourseName)) return;
+        student.courses = student.courses.filter((course) => course !== deleteCourseName);
+        student.updatedAt = new Date().toISOString();
+      });
+      grades.forEach((grade) => weekdays.forEach((day) => periods.forEach((period) => {
+        if (state.schedule?.[grade]?.[day]?.[period] === deleteCourseName) state.schedule[grade][day][period] = "";
+      })));
       applyCourseCatalog(state.courseCatalog);
     }
     if (cleanArchiveYear) {
@@ -7925,7 +8543,10 @@ async function generateStudentAiAnalysis(studentId, output) {
     }
     if (dismissLeaveId) {
       const leave = state.leaves.find((record) => record.id === dismissLeaveId);
-      if (leave) leave.dismissedAt = new Date().toISOString();
+      if (leave) {
+        leave.dismissedAt = new Date().toISOString();
+        leave.updatedAt = new Date().toISOString();
+      }
     }
     if (deleteLeaveId && confirm("確定移除這筆請假？這會從歷史紀錄中刪除。")) {
       state.leaves = state.leaves.filter((record) => record.id !== deleteLeaveId);
@@ -7933,7 +8554,10 @@ async function generateStudentAiAnalysis(studentId, output) {
     }
     if (removeLateId) {
       const late = state.lateRecords.find((record) => record.id === removeLateId);
-      if (late) late.dismissedAt = new Date().toISOString();
+      if (late) {
+        late.dismissedAt = new Date().toISOString();
+        late.updatedAt = new Date().toISOString();
+      }
     }
     if (deleteLateId && confirm("確定刪除這筆晚到紀錄？刪除後不會保留在歷史紀錄。")) {
       state.lateRecords = state.lateRecords.filter((record) => record.id !== deleteLateId);
@@ -8306,6 +8930,33 @@ function renderParentScoreHistory(student) {
   `;
 }
 
+function renderParentDutyChecks(student) {
+  const target = $("#parentDutyCheckList");
+  if (!target || !student) return;
+  const rows = (state.dutyChecks || [])
+    .filter((record) => record.grade === student.grade && studentTakesSubject(student, record.subject))
+    .map((record) => {
+      const issues = [
+        record.homeworkMissing?.[student.id] ? "作業未完成" : "",
+        record.contactMissing?.[student.id] ? "聯絡本未繳" : "",
+        record.signatureMissing?.[student.id] ? "聯絡本未簽名" : "",
+        record.noteMissing?.[student.id] ? "筆記不足" : "",
+        record.focusMissing?.[student.id] ? "專注提醒" : "",
+      ].filter(Boolean);
+      return issues.length ? { record, issues } : null;
+    })
+    .filter(Boolean)
+    .sort((a, b) => b.record.date.localeCompare(a.record.date) || b.record.subject.localeCompare(a.record.subject, "zh-Hant"));
+  target.innerHTML = rows.map(({ record, issues }) => `
+    <article class="record-card duty-parent-card">
+      <strong>${escapeHtml(dateLabel(record.date))} ${escapeHtml(record.subject)}</strong>
+      <div class="meta">${issues.map((issue) => `<span class="badge danger-badge">${escapeHtml(issue)}</span>`).join("")}</div>
+      ${record.notes?.homework ? `<p>作業：${escapeHtml(record.notes.homework)}</p>` : ""}
+      ${record.notes?.test ? `<p>考試：${escapeHtml(record.notes.test)}</p>` : ""}
+    </article>
+  `).join("") || `<div class="empty">目前沒有作業未完成或聯絡本未簽名紀錄。</div>`;
+}
+
 function renderParentPortal() {
   const student = getStudent(parentStudentId);
   if (!student) return;
@@ -8331,7 +8982,9 @@ function renderParentPortal() {
     ))
       .map((record) => renderContactBookCard(record, false, student))
       .join("") || `<div class="empty">本週沒有符合科目的聯絡本。</div>`;
-  }  if ($("#parentAboutContent")) $("#parentAboutContent").innerHTML = aboutHtml(normalizeAboutSettings(state.about || {}));
+  }
+  renderParentDutyChecks(student);
+  if ($("#parentAboutContent")) $("#parentAboutContent").innerHTML = aboutHtml(normalizeAboutSettings(state.about || {}));
   $("#parentLeaveList").innerHTML = state.leaves
     .filter((record) => record.studentId === student.id)
     .sort((a, b) => getLeaveStart(b).localeCompare(getLeaveStart(a)))
@@ -8434,6 +9087,9 @@ function renderAll() {
   renderCourseAdmin();
   renderSeatSettingBoard();
   renderRollCall();
+  renderDutyCheck();
+  renderDutyArchive();
+  renderSeatView();
   renderPaperTopicInputs(paperTopicValues());
   renderScoreEntryList();
   renderScoreLiveStatus();
@@ -8472,6 +9128,8 @@ function boot() {
   $("#careerQueryDate").value = todayISO();
   $("#classOpsWeekDate").value = todayISO();
   if ($("#rollDate")) $("#rollDate").value = todayISO();
+  if ($("#dutyCheckDate")) $("#dutyCheckDate").value = todayISO();
+  if ($("#dutyArchiveDate")) $("#dutyArchiveDate").value = todayISO();
   $("#parentScoreDate").value = todayISO();
   if ($("#parentContactWeekDate")) $("#parentContactWeekDate").value = todayISO();
   parentContactWeekDate = todayISO();

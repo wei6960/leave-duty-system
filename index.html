@@ -67,6 +67,7 @@
         <button type="button" data-parent-section="parentReportSection">報告區</button>
         <button type="button" data-parent-section="parentEventSection">重大公告</button>
         <button type="button" data-parent-section="parentContactSection">聯絡本</button>
+        <button type="button" data-parent-section="parentDutyCheckSection">作業檢核紀錄</button>
         <button type="button" data-parent-section="parentLeaveSection">請假紀錄</button>
         <button type="button" data-parent-section="parentCodeSection">家長代碼更新</button>
       </nav>
@@ -104,6 +105,10 @@
           <button type="button" data-parent-section="parentContactSection">
             <strong>聯絡本</strong>
             <span>今日與歷史課程、考試、作業</span>
+          </button>
+          <button type="button" data-parent-section="parentDutyCheckSection">
+            <strong>作業檢核紀錄</strong>
+            <span>查看作業未完成與聯絡本未簽名紀錄</span>
           </button>
           <button type="button" data-parent-section="parentLeaveSection">
             <strong>請假紀錄</strong>
@@ -156,6 +161,13 @@
             <span>依週調閱聯絡本</span>
           </div>
           <div id="parentContactBookList" class="record-list"></div>
+        </section>
+        <section class="panel parent-side-panel parent-page-section" id="parentDutyCheckSection">
+          <div class="panel-title">
+            <h2>作業與聯絡本檢核紀錄</h2>
+            <span>老師檢核後即時同步</span>
+          </div>
+          <div id="parentDutyCheckList" class="record-list"></div>
         </section>
         <section class="panel parent-side-panel parent-page-section" id="parentAboutSection" hidden>
           <div class="panel-title">
@@ -460,6 +472,14 @@
             <strong>點名系統</strong>
             <span>依年級進入座位點名與教務表輸出</span>
           </button>
+          <button class="portal-tile" type="button" data-tab="duty-check">
+            <strong>作業與聯絡本檢核</strong>
+            <span>依座位表點選未完成、未簽名與本日重點</span>
+          </button>
+          <button class="portal-tile" type="button" data-tab="duty-archive">
+            <strong>教務表存放區</strong>
+            <span>依日期調閱並輸出 PDF、圖片與 Excel</span>
+          </button>
         </div>
       </section>
 
@@ -479,6 +499,10 @@
           <button class="portal-tile" type="button" data-tab="seat-settings">
             <strong>年級座位表設定</strong>
             <span>設定年級、科目與教室座位</span>
+          </button>
+          <button class="portal-tile" type="button" data-tab="seat-view">
+            <strong>顯示各年級座位表</strong>
+            <span>只讀查看與列印座位，不可變更安排</span>
           </button>
           <button class="portal-tile" type="button" data-tab="schedule">
             <strong>課表設定</strong>
@@ -603,6 +627,10 @@
               <select id="rollSubject"></select>
             </label>
             <button class="ghost" id="exportRollCallPdf" type="button">輸出 B4 PDF</button>
+            <button class="ghost" id="exportRollCallImage" type="button">圖片</button>
+            <button class="ghost" id="exportRollCallExcel" type="button">Excel</button>
+            <button class="ghost" id="exportRollCallBlankPdf" type="button">空白教務表</button>
+            <button class="ghost" id="exportRollCallBlankImage" type="button">空白圖片</button>
           </section>
           <section class="panel">
             <div class="panel-title">
@@ -610,6 +638,167 @@
               <span id="rollCallStats"></span>
             </div>
             <div id="rollCallBoard"></div>
+          </section>
+        </div>
+      </section>
+
+      <section class="page" id="duty-check">
+        <header class="section-head">
+          <div>
+            <p class="eyebrow">班務管理</p>
+            <h1>作業與聯絡本檢核</h1>
+          </div>
+          <button class="ghost back-button" type="button" data-back-tab="management">返回班務管理</button>
+        </header>
+        <div class="portal-grid compact-portal-grid layer-panel" id="dutyCheckGradeMenu">
+          <button class="portal-tile grade-entry-tile" type="button" data-duty-check-grade="國一">
+            <strong>國一</strong>
+            <span>進入國一檢核</span>
+          </button>
+          <button class="portal-tile grade-entry-tile" type="button" data-duty-check-grade="國二">
+            <strong>國二</strong>
+            <span>進入國二檢核</span>
+          </button>
+          <button class="portal-tile grade-entry-tile" type="button" data-duty-check-grade="國三">
+            <strong>國三</strong>
+            <span>進入國三檢核</span>
+          </button>
+        </div>
+        <div id="dutyCheckPanel" hidden>
+          <section class="panel class-ops-toolbar">
+            <button class="ghost" id="dutyCheckPrevDay" type="button">前一天</button>
+            <label>日期
+              <input id="dutyCheckDate" type="date">
+            </label>
+            <button class="ghost" id="dutyCheckNextDay" type="button">後一天</button>
+            <select id="dutyCheckGrade" hidden>
+              <option value="國一">國一</option>
+              <option value="國二">國二</option>
+              <option value="國三">國三</option>
+            </select>
+            <label>課程
+              <select id="dutyCheckSubject"></select>
+            </label>
+            <button class="ghost" type="button" data-duty-check-back>返回年級選擇</button>
+          </section>
+          <section class="panel duty-note-panel">
+            <div class="panel-title">
+              <h2>本日重點事項</h2>
+              <span>會連動教務表 PDF、圖片與 Excel</span>
+            </div>
+            <div class="form-grid compact-form">
+              <label>帶班導師<input id="dutyNoteHomeroomTeacher"></label>
+              <label>授課師<input id="dutyNoteTeacher"></label>
+              <label class="wide-field">進度<input id="dutyNoteProgress"></label>
+              <label class="wide-field">作業<input id="dutyNoteHomework"></label>
+              <label class="wide-field">考試<input id="dutyNoteTest"></label>
+              <label class="wide-field">備註<textarea id="dutyNoteNote" rows="2"></textarea></label>
+              <label class="wide-field">上課狀況<textarea id="dutyNoteClassStatus" rows="3"></textarea></label>
+            </div>
+          </section>
+          <section class="panel">
+            <div class="panel-title">
+              <h2 id="dutyCheckTitle">檢核座位表</h2>
+              <span>先選模式，再點座位；反黑代表需回報</span>
+            </div>
+            <div class="mode-switch duty-mode-switch" id="dutyCheckModeButtons">
+              <button class="mode-button active" data-duty-check-mode="homeworkMissing" type="button">作業未完成</button>
+              <button class="mode-button" data-duty-check-mode="contactMissing" type="button">聯絡本未繳</button>
+              <button class="mode-button" data-duty-check-mode="signatureMissing" type="button">未簽名</button>
+              <button class="mode-button" data-duty-check-mode="noteMissing" type="button">筆記不足</button>
+              <button class="mode-button" data-duty-check-mode="focusMissing" type="button">專注提醒</button>
+            </div>
+            <div id="dutyCheckBoard"></div>
+          </section>
+        </div>
+      </section>
+
+      <section class="page" id="duty-archive">
+        <header class="section-head">
+          <div>
+            <p class="eyebrow">班務管理</p>
+            <h1>教務表存放區</h1>
+          </div>
+          <button class="ghost back-button" type="button" data-back-tab="management">返回班務管理</button>
+        </header>
+        <div class="portal-grid compact-portal-grid layer-panel" id="dutyArchiveGradeMenu">
+          <button class="portal-tile grade-entry-tile" type="button" data-duty-archive-grade="國一">
+            <strong>國一</strong>
+            <span>調閱國一教務表</span>
+          </button>
+          <button class="portal-tile grade-entry-tile" type="button" data-duty-archive-grade="國二">
+            <strong>國二</strong>
+            <span>調閱國二教務表</span>
+          </button>
+          <button class="portal-tile grade-entry-tile" type="button" data-duty-archive-grade="國三">
+            <strong>國三</strong>
+            <span>調閱國三教務表</span>
+          </button>
+        </div>
+        <div id="dutyArchivePanel" hidden>
+          <section class="panel class-ops-toolbar">
+            <button class="ghost" id="dutyArchivePrevDay" type="button">前一天</button>
+            <label>日期
+              <input id="dutyArchiveDate" type="date">
+            </label>
+            <button class="ghost" id="dutyArchiveNextDay" type="button">後一天</button>
+            <select id="dutyArchiveGrade" hidden>
+              <option value="國一">國一</option>
+              <option value="國二">國二</option>
+              <option value="國三">國三</option>
+            </select>
+            <label>課程
+              <select id="dutyArchiveSubject"></select>
+            </label>
+            <button class="ghost" id="archiveRollCallPdf" type="button">PDF</button>
+            <button class="ghost" id="archiveRollCallImage" type="button">圖片</button>
+            <button class="ghost" id="archiveRollCallExcel" type="button">Excel</button>
+            <button class="ghost" id="archiveRollCallBlankPdf" type="button">空白教務表</button>
+            <button class="ghost" id="archiveRollCallBlankImage" type="button">空白圖片</button>
+            <button class="ghost" type="button" data-duty-archive-back>返回年級選擇</button>
+          </section>
+          <section class="panel list-panel">
+            <div class="panel-title">
+              <h2>教務表摘要</h2>
+              <span>輸出會抓同一天點名、成績、檢核與本日重點</span>
+            </div>
+            <div id="dutyArchiveBody"></div>
+          </section>
+        </div>
+      </section>
+
+      <section class="page" id="seat-view">
+        <header class="section-head">
+          <div>
+            <p class="eyebrow">設定</p>
+            <h1>顯示各年級座位表</h1>
+          </div>
+          <button class="ghost back-button" type="button" data-back-tab="settings">返回設定</button>
+        </header>
+        <div class="portal-grid compact-portal-grid layer-panel" id="seatViewGradeMenu">
+          <button class="portal-tile grade-entry-tile" type="button" data-seat-view-grade="國一"><strong>國一</strong><span>查看國一座位</span></button>
+          <button class="portal-tile grade-entry-tile" type="button" data-seat-view-grade="國二"><strong>國二</strong><span>查看國二座位</span></button>
+          <button class="portal-tile grade-entry-tile" type="button" data-seat-view-grade="國三"><strong>國三</strong><span>查看國三座位</span></button>
+        </div>
+        <div id="seatViewPanel" hidden>
+          <section class="panel class-ops-toolbar">
+            <select id="seatViewGrade" hidden>
+              <option value="國一">國一</option>
+              <option value="國二">國二</option>
+              <option value="國三">國三</option>
+            </select>
+            <label>科目
+              <select id="seatViewSubject"></select>
+            </label>
+            <button class="ghost" id="printSeatView" type="button">列印座位表</button>
+            <button class="ghost" type="button" data-seat-view-back>返回年級選擇</button>
+          </section>
+          <section class="panel">
+            <div class="panel-title">
+              <h2>只讀座位表</h2>
+              <span>這裡只能查看與列印，不會更動座位</span>
+            </div>
+            <div id="seatViewBoard"></div>
           </section>
         </div>
       </section>

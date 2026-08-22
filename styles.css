@@ -3131,7 +3131,9 @@ tbody tr:hover {
 }
 
 #seatSettingBoard,
-#rollCallBoard {
+#rollCallBoard,
+#dutyCheckBoard,
+#seatViewBoard {
   width: 100%;
   overflow-x: auto;
   padding-bottom: .35rem;
@@ -3192,6 +3194,31 @@ tbody tr:hover {
   background: linear-gradient(145deg, rgba(223, 93, 84, .25), rgba(255,255,255,.04));
 }
 
+.duty-flag-seat {
+  border-color: rgba(241, 211, 124, .78);
+  background:
+    linear-gradient(145deg, rgba(0, 0, 0, .62), rgba(69, 47, 13, .68)),
+    rgba(0, 0, 0, .48);
+  box-shadow: inset 0 0 0 1px rgba(255, 231, 162, .18);
+}
+
+.duty-flag-seat strong,
+.duty-flag-seat small {
+  color: #fff1b8;
+}
+
+.duty-note-panel textarea {
+  min-height: 5rem;
+}
+
+.duty-mode-switch {
+  overflow-x: auto;
+}
+
+.duty-summary {
+  background: rgba(0, 0, 0, .12);
+}
+
 .aisle-cell {
   position: relative;
   place-items: center;
@@ -3242,7 +3269,7 @@ tbody tr:hover {
 
 .roll-summary-metrics {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr));
   gap: .5rem;
 }
 
@@ -3387,6 +3414,12 @@ tbody tr:hover {
   color: #ffe7a2;
   background: rgba(198, 151, 53, .16);
   border-color: rgba(198, 151, 53, .28);
+}
+
+.danger-badge {
+  color: #ffd4cf;
+  background: rgba(223, 93, 84, .16);
+  border-color: rgba(223, 93, 84, .32);
 }
 
 .empty {
@@ -3737,15 +3770,15 @@ tbody tr:hover {
   }
 
   .seat-board {
-    --seat-cell-min: 3.35rem;
-    --aisle-width: 1.15rem;
-    gap: .38rem;
+    --seat-cell-min: 7.2rem;
+    --aisle-width: .95rem;
+    gap: .45rem;
   }
 
   .seat-cell {
-    min-height: 4.35rem;
-    padding: .42rem;
-    font-size: .88rem;
+    min-height: 5rem;
+    padding: .5rem;
+    font-size: .98rem;
   }
 
   .custom-seat-cell {
@@ -3756,7 +3789,7 @@ tbody tr:hover {
   .seat-cell input {
     min-width: 0;
     width: 100%;
-    font-size: .82rem;
+    font-size: .95rem;
   }
 
   .aisle-cell {
