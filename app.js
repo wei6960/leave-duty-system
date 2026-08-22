@@ -522,16 +522,44 @@ function normalizeSeatSettings(raw = {}) {
   ]));
 }
 
+function normalizeSeatSnapshot(snapshot, fallbackGrade = "國一", fallbackSubject = "國文") {
+  if (!snapshot || typeof snapshot !== "object") return null;
+  const grade = grades.includes(snapshot.grade) ? snapshot.grade : fallbackGrade;
+  const subject = normalizeCourseName(snapshot.subject || fallbackSubject);
+  const room = snapshot.room || defaultRoomName();
+  const seats = snapshot.seats && typeof snapshot.seats === "object" ? snapshot.seats : {};
+  const layoutSeats = normalizeLayoutSeats(snapshot.layoutSeats, room, seats);
+  const studentIds = Array.isArray(snapshot.studentIds)
+    ? [...new Set(snapshot.studentIds.filter(Boolean))]
+    : [...new Set(Object.values(seats).filter(Boolean))];
+  return {
+    grade,
+    subject,
+    room,
+    layoutSeats,
+    seats,
+    studentIds,
+    capturedAt: snapshot.capturedAt || snapshot.updatedAt || new Date().toISOString(),
+    seatSettingUpdatedAt: snapshot.seatSettingUpdatedAt || "",
+  };
+}
+
 function normalizeRollCalls(records) {
-  return (records || []).map((record) => ({
-    id: record.id || rollCallKey(record.date, record.grade, record.subject),
-    date: record.date || todayISO(),
-    grade: grades.includes(record.grade) ? record.grade : "國一",
-    subject: normalizeCourseName(record.subject || "國文"),
-    statuses: record.statuses && typeof record.statuses === "object" ? record.statuses : {},
-    updatedAt: record.updatedAt || record.createdAt || new Date().toISOString(),
-    createdAt: record.createdAt || new Date().toISOString(),
-  }));
+  return (records || []).map((record) => {
+    const date = record.date || todayISO();
+    const grade = grades.includes(record.grade) ? record.grade : "國一";
+    const subject = normalizeCourseName(record.subject || "國文");
+    return {
+      id: record.id || rollCallKey(date, grade, subject),
+      date,
+      grade,
+      subject,
+      statuses: record.statuses && typeof record.statuses === "object" ? record.statuses : {},
+      seatSnapshot: normalizeSeatSnapshot(record.seatSnapshot, grade, subject),
+      updatedAt: record.updatedAt || record.createdAt || new Date().toISOString(),
+      createdAt: record.createdAt || new Date().toISOString(),
+    };
+  });
 }
 
 function normalizeFlagMap(value = {}) {
@@ -1565,8 +1593,14 @@ function todaySubjectsForGrade(grade) {
 }
 
 function rollSummaryForCourse(date, grade, subject) {
-  const students = studentsForGradeAndSubject(grade, subject);
-  const record = state.rollCalls.find((item) => item.id === rollCallKey(date, grade, subject));
+  const normalizedSubject = normalizeCourseName(subject || "國文");
+  const record = rollRecordFor(date, grade, normalizedSubject);
+  const snapshotIds = [
+    ...(record?.seatSnapshot?.studentIds || []),
+    ...Object.values(record?.seatSnapshot?.seats || {}).filter(Boolean),
+  ];
+  const snapshotStudents = [...new Set(snapshotIds)].map(getStudent).filter(Boolean);
+  const students = snapshotStudents.length ? snapshotStudents : studentsForGradeAndSubject(grade, normalizedSubject);
   const presentIds = new Set(Object.entries(record?.statuses || {}).filter((entry) => entry[1] === "present").map(([id]) => id));
   const leaveStudents = students.filter((student) => !presentIds.has(student.id) && rollLeaveForStudent(student.id, date)?.type !== "提早離班" && rollLeaveForStudent(student.id, date));
   const leaveIds = new Set(leaveStudents.map((student) => student.id));
@@ -1732,6 +1766,67 @@ function currentSeatSetting() {
     seats: setting.seats || {},
     layoutSeats: roomLayoutSeats(room),
   };
+}
+
+function liveSeatSettingFor(grade = "國一", subject = "國文") {
+  const normalizedSubject = normalizeCourseName(subject || "國文");
+  const setting = state.seatSettings[seatSettingKey(grade, normalizedSubject)] || { grade, subject: normalizedSubject, room: defaultRoomName(), seats: {} };
+  const room = setting.room || defaultRoomName();
+  return {
+    ...setting,
+    grade,
+    subject: normalizedSubject,
+    room,
+    seats: setting.seats || {},
+    layoutSeats: roomLayoutSeats(room),
+  };
+}
+
+function currentSeatSnapshotFor(grade = "國一", subject = "國文") {
+  const setting = liveSeatSettingFor(grade, subject);
+  const layoutSeats = [...(setting.layoutSeats || [])];
+  const layoutSeatSet = new Set(layoutSeats);
+  const seats = Object.fromEntries(Object.entries(setting.seats || {}).filter(([seat, studentId]) => layoutSeatSet.has(seat) && studentId));
+  const studentIds = [...new Set([...studentsForGradeAndSubject(grade, setting.subject).map((student) => student.id), ...Object.values(seats).filter(Boolean)])];
+  return normalizeSeatSnapshot({
+    grade,
+    subject: setting.subject,
+    room: setting.room,
+    layoutSeats,
+    seats,
+    studentIds,
+    capturedAt: new Date().toISOString(),
+    seatSettingUpdatedAt: setting.updatedAt || "",
+  }, grade, setting.subject);
+}
+
+function rollRecordFor(date, grade, subject) {
+  return state.rollCalls.find((item) => item.id === rollCallKey(date, grade, normalizeCourseName(subject || "國文")));
+}
+
+function ensureRollSeatSnapshot(record) {
+  if (!record) return null;
+  if (!record.seatSnapshot) record.seatSnapshot = currentSeatSnapshotFor(record.grade, record.subject);
+  return record;
+}
+
+function seatSettingForRoll(date, grade, subject, { blank = false } = {}) {
+  const normalizedSubject = normalizeCourseName(subject || "國文");
+  const record = blank ? null : rollRecordFor(date, grade, normalizedSubject);
+  if (record && !record.seatSnapshot) ensureRollSeatSnapshot(record);
+  const snapshot = normalizeSeatSnapshot(record?.seatSnapshot, grade, normalizedSubject);
+  if (snapshot) {
+    return {
+      grade,
+      subject: normalizedSubject,
+      room: snapshot.room,
+      seats: snapshot.seats || {},
+      layoutSeats: snapshot.layoutSeats || [],
+      studentIds: snapshot.studentIds || [],
+      fromSnapshot: true,
+    };
+  }
+  return { ...liveSeatSettingFor(grade, normalizedSubject), fromSnapshot: false };
 }
 
 function renderSeatSubjectOptions() {
@@ -1996,14 +2091,14 @@ function deleteRoomLayoutCell(cellId) {
 function currentRollRecord() {
   const date = $("#rollDate")?.value || todayISO();
   const grade = $("#rollGrade")?.value || rollCallGrade;
-  const subject = $("#rollSubject")?.value || courses[0] || "國文";
+  const subject = normalizeCourseName($("#rollSubject")?.value || courses[0] || "國文");
   const key = rollCallKey(date, grade, subject);
   let record = state.rollCalls.find((item) => item.id === key);
   if (!record) {
-    record = normalizeRollCalls([{ id: key, date, grade, subject, statuses: {} }])[0];
+    record = normalizeRollCalls([{ id: key, date, grade, subject, statuses: {}, seatSnapshot: currentSeatSnapshotFor(grade, subject) }])[0];
     state.rollCalls.push(record);
   }
-  return record;
+  return ensureRollSeatSnapshot(record);
 }
 
 function dutyRecordFor(date, grade, subject, { create = false } = {}) {
@@ -2078,8 +2173,8 @@ function renderRollCall() {
   const grade = $("#rollGrade")?.value || rollCallGrade;
   const subject = $("#rollSubject")?.value || courses[0] || "國文";
   const date = $("#rollDate")?.value || todayISO();
-  const setting = state.seatSettings[seatSettingKey(grade, subject)] || { grade, subject, room: defaultRoomName(), seats: {} };
-  const layoutSeats = roomLayoutSeats(setting.room);
+  const setting = seatSettingForRoll(date, grade, subject);
+  const layoutSeats = setting.layoutSeats?.length ? setting.layoutSeats : roomLayoutSeats(setting.room);
   const gridTemplate = seatGridTemplate(layoutSeats);
   const maxRow = seatMaxRow(layoutSeats);
   const summary = rollSummaryForCourse(date, grade, subject);
@@ -2192,8 +2287,8 @@ function renderDutyCheck() {
   const grade = $("#dutyCheckGrade")?.value || dutyCheckGrade;
   renderDutySubjectOptions("dutyCheck", grade, date);
   const subject = $("#dutyCheckSubject")?.value || courses[0] || "國文";
-  const setting = state.seatSettings[seatSettingKey(grade, subject)] || { grade, subject, room: defaultRoomName(), seats: {} };
-  const layoutSeats = roomLayoutSeats(setting.room);
+  const setting = seatSettingForRoll(date, grade, subject);
+  const layoutSeats = setting.layoutSeats?.length ? setting.layoutSeats : roomLayoutSeats(setting.room);
   const gridTemplate = seatGridTemplate(layoutSeats);
   const maxRow = seatMaxRow(layoutSeats);
   const record = dutyRecordFor(date, grade, subject);
@@ -2286,8 +2381,8 @@ function printRollCallPdf(options = {}) {
   const grade = options.grade || $("#rollGrade")?.value || $("#dutyArchiveGrade")?.value || rollCallGrade;
   const subject = options.subject || $("#rollSubject")?.value || $("#dutyArchiveSubject")?.value || courses[0] || "國文";
   const blank = Boolean(options.blank);
-  const setting = state.seatSettings[seatSettingKey(grade, subject)] || { room: defaultRoomName(), seats: {} };
-  const layoutSeats = roomLayoutSeats(setting.room);
+  const setting = seatSettingForRoll(date, grade, subject, { blank });
+  const layoutSeats = setting.layoutSeats?.length ? setting.layoutSeats : roomLayoutSeats(setting.room);
   const gridTemplate = seatGridTemplate(layoutSeats);
   const maxRow = seatMaxRow(layoutSeats);
   const summary = rollSummaryForCourse(date, grade, subject);
@@ -2297,7 +2392,7 @@ function printRollCallPdf(options = {}) {
   const rowHtml = (student, index) => {
     const leave = rollLeaveForStudent(student.id, date);
     const late = rollLateForStudent(student.id, date);
-    const present = !blank && record.statuses?.[student.id] === "present";
+    const present = !blank && record?.statuses?.[student.id] === "present";
     const mark = blank ? "" : present ? "✓" : leave && leave.type !== "提早離班" ? "假" : "";
     const scores = blank ? [] : dutyScoresForStudent(student.id, date, grade, subject);
     const homeworkMark = !blank && duty.homeworkMissing?.[student.id] ? "X" : "";
@@ -2337,7 +2432,7 @@ function printRollCallPdf(options = {}) {
     if (pos.type === "aisle") return `<div class="seat aisle-print" style="grid-row:1 / span ${maxRow};grid-column:${pos.col};"><b>走道</b></div>`;
     const student = getStudent(setting.seats?.[id]);
     const leave = student ? rollLeaveForStudent(student.id, date) : null;
-    const present = student ? record.statuses?.[student.id] === "present" : false;
+    const present = student ? record?.statuses?.[student.id] === "present" : false;
     const leaveClass = !blank && student && !present && leave?.type !== "提早離班" ? " seat-leave" : "";
     return `<div class="seat${leaveClass}" style="grid-row:${pos.row};grid-column:${pos.col};">${pos.row}-${pos.col}<br><b>${escapeHtml(student?.name || "")}</b></div>`;
   }).join("");
@@ -2467,7 +2562,8 @@ function dutyExportContext(options = {}) {
       focusMissing: Boolean(duty.focusMissing?.[student.id]),
     };
   });
-  return { date, grade, subject, summary, duty, rows, blank: Boolean(options.blank) };
+  const setting = seatSettingForRoll(date, grade, subject, { blank: Boolean(options.blank) });
+  return { date, grade, subject, summary, duty, rows, setting, blank: Boolean(options.blank) };
 }
 
 function downloadRollCallImage(options = {}) {
