@@ -2139,8 +2139,8 @@ function dutyFlagLabel(key) {
     homeworkMissing: "作業未完成",
     contactMissing: "聯絡本未繳",
     signatureMissing: "聯絡本未簽名",
-    noteMissing: "筆記不足",
-    focusMissing: "專注提醒",
+    noteMissing: "筆記未過",
+    focusMissing: "專注欠佳",
   }[key] || key;
 }
 
@@ -2153,11 +2153,8 @@ function dutyRecordText(date, grade, subject, record = dutyRecordFor(date, grade
 作業未完成：${namesFor("homeworkMissing")}
 聯絡本未繳：${namesFor("contactMissing")}
 聯絡本未簽名：${namesFor("signatureMissing")}
-筆記不足：${namesFor("noteMissing")}
-專注提醒：${namesFor("focusMissing")}
-進度：${record.notes?.progress || "-"}
-作業：${record.notes?.homework || "-"}
-考試：${record.notes?.test || "-"}`;
+筆記未過：${namesFor("noteMissing")}
+專注欠佳：${namesFor("focusMissing")}`;
 }
 
 function renderDutyCheck() {
@@ -2293,7 +2290,12 @@ function printRollCallPdf(options = {}) {
   const leftRowHeightMm = leftRowLimit > 32 ? 4.35 : 4.75;
   const rightRowHeightMm = rightRowCount > 22 ? 3.35 : rightRowCount > 14 ? 3.85 : 4.35;
   const rightRosterHeightMm = rightRowCount ? Math.min(96, Math.max(18, 12 + rightRowCount * rightRowHeightMm)) : 0;
-  const summaryHtml = `<div class="summary-counts"><b>應到</b><span>${summary.expected}</span><b>實到</b><span>${blank ? "" : summary.present}</span><b>請假</b><span>${blank ? "" : summary.leave}</span><b>未到</b><span>${blank ? "" : summary.absent}</span></div><div class="summary-list"><b>固定請假：</b>${blank ? "-" : summary.fixedLeaveStudents.map((student) => student.name).join("、") || "-"}<br><b>未到：</b>${blank ? "-" : summary.absentStudents.map((student) => student.name).join("、") || "-"}<br><b>晚到：</b>${blank ? "-" : summary.lateStudents.map((student) => student.name).join("、") || "-"}</div><div class="leave-follow-grid"><b>請假同學</b><span>${blank ? "" : summary.leaveStudents.map((student) => student.name).join("、") || "-"}</span><b>補課日期</b><span></span><b>補課檢核</b><span></span><b>補考</b><span></span></div><div class="sign-grid"><b>班導師簽核</b><span></span><b>主管簽核</b><span></span></div>`;
+  const leaveMakeupStudents = blank ? [] : summary.leaveStudents;
+  const leaveMakeupRows = Array.from({ length: Math.max(5, leaveMakeupStudents.length) }, (_item, index) => {
+    const student = leaveMakeupStudents[index];
+    return `<tr><td>${escapeHtml(student?.name || "")}</td><td></td><td></td></tr>`;
+  }).join("");
+  const summaryHtml = `<div class="summary-counts"><b>應到</b><span>${summary.expected}</span><b>實到</b><span>${blank ? "" : summary.present}</span><b>請假</b><span>${blank ? "" : summary.leave}</span><b>未到</b><span>${blank ? "" : summary.absent}</span></div><table class="leave-makeup-table"><thead><tr><th>請假</th><th>補課日期</th><th>補考</th></tr></thead><tbody>${leaveMakeupRows}</tbody></table><div class="sign-grid"><b>班導師簽核</b><span></span><b>主管簽核</b><span></span></div>`;
   const notes = blank ? {} : duty.notes || {};
   const focusHtml = `<div class="focus-title">本日重點事項</div><div class="focus-grid"><b>帶班導師</b><span>${escapeHtml(notes.homeroomTeacher || "")}</span><b>授課師</b><span>${escapeHtml(notes.teacher || "")}</span><b>進度</b><span class="wide">${escapeHtml(notes.progress || "")}</span><b>作業</b><span class="wide">${escapeHtml(notes.homework || "")}</span><b>考試</b><span class="wide">${escapeHtml(notes.test || "")}</span><b>備註</b><span class="wide tall">${escapeHtml(notes.note || "")}</span><b>上課狀況</b><span class="wide extra-tall">${escapeHtml(notes.classStatus || "")}</span></div>`;
   const seatHtml = layoutSeats.map((id) => {
@@ -2349,16 +2351,17 @@ function printRollCallPdf(options = {}) {
     .focus-grid .wide { grid-column: span 3; }
     .focus-grid .tall { min-height: 0; }
     .focus-grid .extra-tall { min-height: 0; }
-    .summary { padding: 7px 9px; border: 2px solid #b88a31; border-radius: 12px; background: rgba(255,248,232,.96); font-size: 10.2px; line-height: 1.32; box-shadow: 0 8px 20px rgba(60,43,12,.12); overflow: hidden; }
+    .summary { padding: 6px 7px; border: 2px solid #b88a31; border-radius: 12px; background: rgba(255,248,232,.96); font-size: 10.2px; line-height: 1.28; box-shadow: 0 8px 20px rgba(60,43,12,.12); overflow: hidden; }
     .summary b { color: #8b1d12; }
-    .summary-counts, .sign-grid, .leave-follow-grid { display: grid; grid-template-columns: 56px 1fr 56px 1fr; border-top: 1px solid #303030; border-left: 1px solid #303030; margin-bottom: 5px; }
-    .summary-counts b, .summary-counts span, .sign-grid b, .sign-grid span, .leave-follow-grid b, .leave-follow-grid span { min-height: 18px; padding: 3px 4px; border-right: 1px solid #303030; border-bottom: 1px solid #303030; background: #fff; }
-    .summary-counts b, .sign-grid b, .leave-follow-grid b { display: grid; place-items: center; background: #f2ead9; }
-    .leave-follow-grid { grid-template-columns: 64px 1fr; }
-    .leave-follow-grid b, .leave-follow-grid span { min-height: 24px; }
-    .summary-list { margin: 4px 0 5px; min-height: 27px; }
-    .sign-grid { margin-top: 8px; }
-    .sign-grid span { min-height: 62px; }
+    .summary-counts, .sign-grid { display: grid; grid-template-columns: 42px 1fr 42px 1fr; border-top: 1px solid #303030; border-left: 1px solid #303030; margin-bottom: 5px; }
+    .summary-counts b, .summary-counts span, .sign-grid b, .sign-grid span { min-height: 18px; padding: 2px 3px; border-right: 1px solid #303030; border-bottom: 1px solid #303030; background: #fff; }
+    .summary-counts b, .sign-grid b { display: grid; place-items: center; background: #f2ead9; }
+    .leave-makeup-table { width: 100%; margin: 4px 0 7px; border-collapse: collapse; table-layout: fixed; font-size: 10.4px; background: #fff; }
+    .leave-makeup-table th, .leave-makeup-table td { height: 20px; padding: 2px 3px; border: 1px solid #303030; text-align: left; }
+    .leave-makeup-table th { text-align: center; background: #f2ead9; color: #151515; font-weight: 900; }
+    .sign-grid { margin-top: 6px; grid-template-columns: 1fr 1fr; }
+    .sign-grid b { min-height: 20px; }
+    .sign-grid span { min-height: 46px; }
     .page-break { break-before: page; page-break-before: always; }
     .seat-wrap { display: flex; flex-direction: column; gap: 9px; flex: 1; padding: 10px; border: 2px solid #b88a31; border-radius: 16px; background: radial-gradient(circle at 18% 12%, rgba(184,138,49,.16), transparent 28%), #fffdf7; }
     .podium-print { padding: 10px; border-radius: 13px; text-align: center; font-weight: 900; color: #fff7df; background: linear-gradient(100deg, #111820, #7a5a21); }
@@ -8950,8 +8953,8 @@ function renderParentDutyChecks(student) {
         record.homeworkMissing?.[student.id] ? "作業未完成" : "",
         record.contactMissing?.[student.id] ? "聯絡本未繳" : "",
         record.signatureMissing?.[student.id] ? "聯絡本未簽名" : "",
-        record.noteMissing?.[student.id] ? "筆記不足" : "",
-        record.focusMissing?.[student.id] ? "專注提醒" : "",
+        record.noteMissing?.[student.id] ? "筆記未過" : "",
+        record.focusMissing?.[student.id] ? "專注欠佳" : "",
       ].filter(Boolean);
       return issues.length ? { record, issues } : null;
     })

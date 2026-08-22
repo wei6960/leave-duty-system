@@ -626,11 +626,9 @@
             <label>課程
               <select id="rollSubject"></select>
             </label>
-            <button class="ghost" id="exportRollCallPdf" type="button">輸出 B4 PDF</button>
-            <button class="ghost" id="exportRollCallImage" type="button">圖片</button>
-            <button class="ghost" id="exportRollCallExcel" type="button">Excel</button>
+            <button class="ghost" id="exportRollCallPdf" type="button">PDF</button>
             <button class="ghost" id="exportRollCallBlankPdf" type="button">空白教務表</button>
-            <button class="ghost" id="exportRollCallBlankImage" type="button">空白圖片</button>
+            <button class="ghost" id="exportRollCallExcel" type="button">Excel</button>
           </section>
           <section class="panel">
             <div class="panel-title">
@@ -684,9 +682,9 @@
           <section class="panel duty-note-panel">
             <div class="panel-title">
               <h2>本日重點事項</h2>
-              <span>會連動教務表 PDF、圖片與 Excel</span>
+              <span>會連動教務表 PDF 與 Excel</span>
             </div>
-            <div class="form-grid compact-form">
+            <div class="form-grid compact-form duty-note-grid">
               <label>帶班導師<input id="dutyNoteHomeroomTeacher"></label>
               <label>授課師<input id="dutyNoteTeacher"></label>
               <label class="wide-field">進度<input id="dutyNoteProgress"></label>
@@ -704,9 +702,9 @@
             <div class="mode-switch duty-mode-switch" id="dutyCheckModeButtons">
               <button class="mode-button active" data-duty-check-mode="homeworkMissing" type="button">作業未完成</button>
               <button class="mode-button" data-duty-check-mode="contactMissing" type="button">聯絡本未繳</button>
-              <button class="mode-button" data-duty-check-mode="signatureMissing" type="button">未簽名</button>
-              <button class="mode-button" data-duty-check-mode="noteMissing" type="button">筆記不足</button>
-              <button class="mode-button" data-duty-check-mode="focusMissing" type="button">專注提醒</button>
+              <button class="mode-button" data-duty-check-mode="signatureMissing" type="button">聯絡本未簽名</button>
+              <button class="mode-button" data-duty-check-mode="noteMissing" type="button">筆記未過</button>
+              <button class="mode-button" data-duty-check-mode="focusMissing" type="button">專注欠佳</button>
             </div>
             <div id="dutyCheckBoard"></div>
           </section>
@@ -751,10 +749,8 @@
               <select id="dutyArchiveSubject"></select>
             </label>
             <button class="ghost" id="archiveRollCallPdf" type="button">PDF</button>
-            <button class="ghost" id="archiveRollCallImage" type="button">圖片</button>
-            <button class="ghost" id="archiveRollCallExcel" type="button">Excel</button>
             <button class="ghost" id="archiveRollCallBlankPdf" type="button">空白教務表</button>
-            <button class="ghost" id="archiveRollCallBlankImage" type="button">空白圖片</button>
+            <button class="ghost" id="archiveRollCallExcel" type="button">Excel</button>
             <button class="ghost" type="button" data-duty-archive-back>返回年級選擇</button>
           </section>
           <section class="panel list-panel">
