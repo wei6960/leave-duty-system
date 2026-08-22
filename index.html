@@ -108,7 +108,7 @@
           </button>
           <button type="button" data-parent-section="parentDutyCheckSection">
             <strong>作業檢核紀錄</strong>
-            <span>查看作業未完成與聯絡本未簽名紀錄</span>
+            <span>查看作業未完成與聯絡本未帶/未簽名紀錄</span>
           </button>
           <button type="button" data-parent-section="parentLeaveSection">
             <strong>請假紀錄</strong>
@@ -720,10 +720,12 @@
             </div>
             <div class="mode-switch duty-mode-switch" id="dutyCheckModeButtons">
               <button class="mode-button active" data-duty-check-mode="homeworkMissing" type="button">作業未完成</button>
-              <button class="mode-button" data-duty-check-mode="contactMissing" type="button">聯絡本未繳</button>
-              <button class="mode-button" data-duty-check-mode="signatureMissing" type="button">聯絡本未簽名</button>
+              <button class="mode-button" data-duty-check-mode="contactMissing" type="button">聯絡本未帶/未簽名</button>
               <button class="mode-button" data-duty-check-mode="noteMissing" type="button">筆記未過</button>
               <button class="mode-button" data-duty-check-mode="focusMissing" type="button">專注欠佳</button>
+            </div>
+            <div class="duty-check-actions">
+              <button class="ghost duty-clear-button" id="clearDutyFocus" type="button" hidden>清除專注欠佳</button>
             </div>
             <div id="dutyCheckBoard"></div>
           </section>

@@ -3354,6 +3354,23 @@ tbody tr:hover {
   overflow: visible;
 }
 
+.duty-check-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin: -.35rem 0 .75rem;
+}
+
+.duty-clear-button {
+  min-width: 10rem;
+  border-color: rgba(223, 93, 84, .45);
+  color: #ffd0ca;
+}
+
+.duty-clear-button:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+}
+
 .duty-summary {
   background: rgba(0, 0, 0, .12);
 }

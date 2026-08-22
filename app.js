@@ -2144,22 +2144,43 @@ function renderDutySubjectOptions(prefix, grade, date) {
 function dutyFlagLabel(key) {
   return {
     homeworkMissing: "作業未完成",
-    contactMissing: "聯絡本未繳",
-    signatureMissing: "聯絡本未簽名",
+    contactBookIssue: "聯絡本未帶/未簽名",
+    contactMissing: "聯絡本未帶/未簽名",
+    signatureMissing: "聯絡本未帶/未簽名",
     noteMissing: "筆記未過",
     focusMissing: "專注欠佳",
   }[key] || key;
 }
 
+function dutyHasContactBookIssue(record, studentId) {
+  return Boolean(record?.contactMissing?.[studentId] || record?.signatureMissing?.[studentId]);
+}
+
+function dutyContactBookIssueIds(record = {}) {
+  return [...new Set([
+    ...Object.keys(record.contactMissing || {}),
+    ...Object.keys(record.signatureMissing || {}),
+  ])];
+}
+
+function dutyFlagsForStudent(record, studentId) {
+  if (!studentId) return [];
+  return [
+    record.homeworkMissing?.[studentId] ? "homeworkMissing" : "",
+    dutyHasContactBookIssue(record, studentId) ? "contactBookIssue" : "",
+    record.noteMissing?.[studentId] ? "noteMissing" : "",
+    record.focusMissing?.[studentId] ? "focusMissing" : "",
+  ].filter(Boolean);
+}
+
 function dutyRecordText(date, grade, subject, record = dutyRecordFor(date, grade, subject)) {
-  const namesFor = (field) => Object.keys(record[field] || {})
+  const namesFor = (field) => (field === "contactBookIssue" ? dutyContactBookIssueIds(record) : Object.keys(record[field] || {}))
     .map((id) => getStudent(id)?.name)
     .filter(Boolean)
     .join("、") || "-";
   return `${dateLabel(date)} ${grade} ${subject}
 作業未完成：${namesFor("homeworkMissing")}
-聯絡本未繳：${namesFor("contactMissing")}
-聯絡本未簽名：${namesFor("signatureMissing")}
+聯絡本未帶/未簽名：${namesFor("contactBookIssue")}
 筆記未過：${namesFor("noteMissing")}
 專注欠佳：${namesFor("focusMissing")}`;
 }
@@ -2183,6 +2204,11 @@ function renderDutyCheck() {
   $$("#dutyCheckModeButtons [data-duty-check-mode]").forEach((button) => {
     button.classList.toggle("active", button.dataset.dutyCheckMode === dutyCheckMode);
   });
+  const clearFocusButton = $("#clearDutyFocus");
+  if (clearFocusButton) {
+    clearFocusButton.hidden = dutyCheckMode !== "focusMissing";
+    clearFocusButton.disabled = !Object.keys(record.focusMissing || {}).length;
+  }
   if ($("#dutyCheckTitle")) $("#dutyCheckTitle").textContent = `${dateLabel(date)} ${grade} ${subject} 檢核`;
   const target = $("#dutyCheckBoard");
   if (!target) return;
@@ -2192,7 +2218,7 @@ function renderDutyCheck() {
       if (!pos) return "";
       if (pos.type === "aisle") return `<div class="seat-cell aisle-cell" style="grid-row:1 / span ${maxRow};grid-column:${pos.col};"><strong>走道</strong></div>`;
       const student = getStudent(setting.seats?.[id]);
-      const flags = student ? ["homeworkMissing", "contactMissing", "signatureMissing", "noteMissing", "focusMissing"].filter((field) => record[field]?.[student.id]) : [];
+      const flags = student ? dutyFlagsForStudent(record, student.id) : [];
       const leave = student ? rollLeaveForStudent(student.id, date) : null;
       const className = !student ? "empty-seat" : flags.length ? "duty-flag-seat" : leave && leave.type !== "提早離班" ? "leave-seat" : "";
       return `<button type="button" class="seat-cell ${className}" style="grid-row:${pos.row};grid-column:${pos.col};" data-duty-seat="${student?.id || ""}">
@@ -2275,8 +2301,8 @@ function printRollCallPdf(options = {}) {
     const mark = blank ? "" : present ? "✓" : leave && leave.type !== "提早離班" ? "假" : "";
     const scores = blank ? [] : dutyScoresForStudent(student.id, date, grade, subject);
     const homeworkMark = !blank && duty.homeworkMissing?.[student.id] ? "X" : "";
-    const contactMark = !blank && duty.contactMissing?.[student.id] ? "X" : "";
-    const signatureMark = !blank && duty.signatureMissing?.[student.id] ? "X" : "";
+    const contactMark = !blank && dutyHasContactBookIssue(duty, student.id) ? "X" : "";
+    const signatureMark = "";
     const noteMark = !blank && duty.noteMissing?.[student.id] ? "X" : "";
     const focusMark = !blank && duty.focusMissing?.[student.id] ? "X" : "";
     return `<tr><td>${index + 1}</td><td>${escapeHtml(student.name)}</td><td class="${mark === "假" ? "leave" : ""}">${mark}</td><td>${escapeHtml(scores[0] || "")}</td><td>${escapeHtml(scores[1] || "")}</td><td>${homeworkMark}</td><td>${contactMark}</td><td>${signatureMark}</td><td>${noteMark}</td><td>${focusMark}</td><td>${blank ? "" : `${late ? "晚到" : ""}${leave?.type === "提早離班" ? "提早離班" : ""}`}</td></tr>`;
@@ -2289,7 +2315,7 @@ function printRollCallPdf(options = {}) {
       : `<tr><td>${index + 1}</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>`;
   });
   const tableCols = `<colgroup><col class="col-no"><col class="col-name"><col class="col-roll"><col class="col-score"><col class="col-score"><col class="col-homework"><col class="col-check"><col class="col-check"><col class="col-check"><col class="col-check"><col class="col-remark"></colgroup>`;
-  const tableHead = `${tableCols}<thead><tr><th rowspan="2">序號</th><th rowspan="2">名字</th><th rowspan="2">到班</th><th colspan="2">成績</th><th rowspan="2">作業</th><th colspan="2">聯絡本</th><th colspan="2">上課狀況</th><th rowspan="2">備註</th></tr><tr><th>1</th><th>2</th><th>繳交</th><th>未簽名</th><th>筆記</th><th>專注</th></tr></thead>`;
+  const tableHead = `${tableCols}<thead><tr><th rowspan="2">序號</th><th rowspan="2">名字</th><th rowspan="2">到班</th><th colspan="2">成績</th><th rowspan="2">作業</th><th colspan="2">聯絡本</th><th colspan="2">上課狀況</th><th rowspan="2">備註</th></tr><tr><th>1</th><th>2</th><th>未帶/未簽</th><th>備註</th><th>筆記</th><th>專注</th></tr></thead>`;
   const leftRowLimit = allRows.length > 34 ? 34 : allRows.length;
   const rightRowCount = Math.max(0, allRows.length - leftRowLimit);
   const leftRows = allRows.slice(0, leftRowLimit).join("");
@@ -2435,8 +2461,8 @@ function dutyExportContext(options = {}) {
       late,
       scores,
       homeworkMissing: Boolean(duty.homeworkMissing?.[student.id]),
-      contactMissing: Boolean(duty.contactMissing?.[student.id]),
-      signatureMissing: Boolean(duty.signatureMissing?.[student.id]),
+      contactMissing: dutyHasContactBookIssue(duty, student.id),
+      signatureMissing: false,
       noteMissing: Boolean(duty.noteMissing?.[student.id]),
       focusMissing: Boolean(duty.focusMissing?.[student.id]),
     };
@@ -2473,7 +2499,7 @@ function downloadRollCallImage(options = {}) {
   canvasText(ctx, `${dateLabel(date)}｜${grade}｜${subject}`, margin + 22, 86, 520);
   canvasText(ctx, `應到 ${summary.expected}　實到 ${blank ? "" : summary.present}　請假 ${blank ? "" : summary.leave}　未到 ${blank ? "" : summary.absent}`, width - margin - 460, 72, 450);
 
-  const headers = ["序", "姓名", "到班", "成績1", "成績2", "作業", "聯絡本", "未簽", "筆記", "專注", "備註"];
+  const headers = ["序", "姓名", "到班", "成績1", "成績2", "作業", "聯絡本", "聯絡備註", "筆記", "專注", "備註"];
   const colWidths = [44, 110, 54, 62, 62, 58, 64, 58, 58, 58, 216];
   const tableW = colWidths.reduce((sum, value) => sum + value, 0);
   const leftX = margin;
@@ -2565,7 +2591,7 @@ function downloadRollCallExcel(options = {}) {
     <table border="1">
       <tr><th colspan="11">金牌躍騰平鎮分校 ${dateLabel(date)} ${grade} ${subject} 教務表</th></tr>
       <tr><td>應到</td><td>${summary.expected}</td><td>實到</td><td>${blank ? "" : summary.present}</td><td>請假</td><td>${blank ? "" : summary.leave}</td><td>未到</td><td>${blank ? "" : summary.absent}</td><td colspan="3"></td></tr>
-      <tr><th>序號</th><th>姓名</th><th>到班</th><th>成績1</th><th>成績2</th><th>作業</th><th>聯絡本繳交</th><th>未簽名</th><th>筆記</th><th>專注</th><th>備註</th></tr>
+      <tr><th>序號</th><th>姓名</th><th>到班</th><th>成績1</th><th>成績2</th><th>作業</th><th>聯絡本未帶/未簽</th><th>聯絡備註</th><th>筆記</th><th>專注</th><th>備註</th></tr>
       ${bodyRows}
       <tr><th colspan="2">進度</th><td colspan="9">${escapeHtml(duty.notes?.progress || "")}</td></tr>
       <tr><th colspan="2">作業</th><td colspan="9">${escapeHtml(duty.notes?.homework || "")}</td></tr>
@@ -6666,6 +6692,16 @@ function setupTabs() {
       renderDutyCheck();
     });
   });
+  $("#clearDutyFocus")?.addEventListener("click", (event) => {
+    const record = currentDutyRecord();
+    record.focusMissing = {};
+    setDutyRecord(record);
+    saveState();
+    scheduleSupabaseRefresh();
+    renderDutyCheck();
+    renderDutyArchive();
+    flashButton(event.currentTarget, "已清除");
+  });
   $$("[data-retention-grade]").forEach((button) => {
     button.addEventListener("click", () => {
       retentionGrade = button.dataset.retentionGrade;
@@ -8530,10 +8566,23 @@ async function generateStudentAiAnalysis(studentId, output) {
     }
     if (dutySeatStudentId) {
       const record = currentDutyRecord();
-      const map = { ...(record[dutyCheckMode] || {}) };
-      if (map[dutySeatStudentId]) delete map[dutySeatStudentId];
-      else map[dutySeatStudentId] = true;
-      record[dutyCheckMode] = map;
+      if (dutyCheckMode === "contactMissing" || dutyCheckMode === "signatureMissing") {
+        const contactMap = { ...(record.contactMissing || {}) };
+        const signatureMap = { ...(record.signatureMissing || {}) };
+        if (contactMap[dutySeatStudentId] || signatureMap[dutySeatStudentId]) {
+          delete contactMap[dutySeatStudentId];
+          delete signatureMap[dutySeatStudentId];
+        } else {
+          contactMap[dutySeatStudentId] = true;
+        }
+        record.contactMissing = contactMap;
+        record.signatureMissing = signatureMap;
+      } else {
+        const map = { ...(record[dutyCheckMode] || {}) };
+        if (map[dutySeatStudentId]) delete map[dutySeatStudentId];
+        else map[dutySeatStudentId] = true;
+        record[dutyCheckMode] = map;
+      }
       setDutyRecord(record);
       saveState();
       scheduleSupabaseRefresh();
@@ -9030,8 +9079,7 @@ function renderParentDutyChecks(student) {
     .map((record) => {
       const issues = [
         record.homeworkMissing?.[student.id] ? "作業未完成" : "",
-        record.contactMissing?.[student.id] ? "聯絡本未繳" : "",
-        record.signatureMissing?.[student.id] ? "聯絡本未簽名" : "",
+        dutyHasContactBookIssue(record, student.id) ? "聯絡本未帶/未簽名" : "",
         record.noteMissing?.[student.id] ? "筆記未過" : "",
         record.focusMissing?.[student.id] ? "專注欠佳" : "",
       ].filter(Boolean);
@@ -9046,7 +9094,7 @@ function renderParentDutyChecks(student) {
       ${record.notes?.homework ? `<p>作業：${escapeHtml(record.notes.homework)}</p>` : ""}
       ${record.notes?.test ? `<p>考試：${escapeHtml(record.notes.test)}</p>` : ""}
     </article>
-  `).join("") || `<div class="empty">目前沒有作業未完成或聯絡本未簽名紀錄。</div>`;
+  `).join("") || `<div class="empty">目前沒有作業未完成或聯絡本未帶/未簽名紀錄。</div>`;
 }
 
 function renderParentPortal() {
