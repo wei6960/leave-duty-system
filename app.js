@@ -22,6 +22,7 @@ const periods = ["上午", "下午", "晚上"];
 const termStages = ["一段", "二段", "三段"];
 const coreCourses = ["國文", "英文", "數A", "數B", "數學", "自然", "總複習"];
 const defaultCourses = ["國文", "英文", "數A", "數B", "數學", "數輔", "自然", "總複習", "素養課", "讀書班"];
+const mockLevelScores = { "A++": 100, "A+": 95, A: 90, "B++": 88, "B+": 84, B: 80, C: 75 };
 let courses = [...defaultCourses];
 const termSubjects = ["國文", "英文", "數學", "自然", "歷史", "地理", "公民"];
 let reportSubjects = [...new Set([...courses, ...termSubjects])];
@@ -104,9 +105,10 @@ const parentTabs = {
   scores: "management",
   term: "management",
   "class-ops": "class-ops",
-  "roll-call": "management",
-  "duty-check": "management",
-  "duty-archive": "management",
+  "duty-work": "duty-work",
+  "roll-call": "duty-work",
+  "duty-check": "duty-work",
+  "duty-archive": "duty-work",
   career: "class-ops",
   events: "contact-book",
   "grade-promotion": "class-ops",
@@ -2036,7 +2038,10 @@ function dutyExamForCourse(date, grade, subject) {
 function dutyScoresForStudent(studentId, date, grade, subject) {
   const exam = dutyExamForCourse(date, grade, subject);
   if (!exam) return [];
-  return scoreValuesForStudent(exam, studentId);
+  const rawValues = rawScoreValuesForStudent(exam, studentId);
+  return rawValues.length
+    ? rawValues.map((value) => scoreDisplayForExam(value, exam))
+    : scoreValuesForStudent(exam, studentId).map((value) => scoreDisplayForExam(value, exam));
 }
 
 function rollLeaveForStudent(studentId, date) {
@@ -2266,7 +2271,7 @@ function printRollCallPdf(options = {}) {
     const late = rollLateForStudent(student.id, date);
     const present = !blank && record.statuses?.[student.id] === "present";
     const mark = blank ? "" : present ? "✓" : leave && leave.type !== "提早離班" ? "假" : "";
-    const scores = blank ? [] : dutyScoresForStudent(student.id, date, grade, subject).map(scoreDisplay);
+    const scores = blank ? [] : dutyScoresForStudent(student.id, date, grade, subject);
     const homeworkMark = !blank && duty.homeworkMissing?.[student.id] ? "X" : "";
     const contactMark = !blank && duty.contactMissing?.[student.id] ? "X" : "";
     const signatureMark = !blank && duty.signatureMissing?.[student.id] ? "X" : "";
@@ -2419,7 +2424,7 @@ function dutyExportContext(options = {}) {
     const leave = rollLeaveForStudent(student.id, date);
     const late = rollLateForStudent(student.id, date);
     const present = summary.record?.statuses?.[student.id] === "present";
-    const scores = dutyScoresForStudent(student.id, date, grade, subject).map(scoreDisplay);
+    const scores = dutyScoresForStudent(student.id, date, grade, subject);
     return {
       index: index + 1,
       student,
@@ -2707,7 +2712,7 @@ function renderRetentionReport() {
             <td>${escapeHtml(row.student.name)}</td>
             <td>${escapeHtml(row.exam.subject)}</td>
             <td>${escapeHtml(row.exam.scope || "-")}</td>
-            <td class="${scoreClass(row.score)}">${scoreDisplay(row.score)}</td>
+            <td class="${scoreClass(row.score)}">${rowAverageDisplay(row)}</td>
             <td>${scoreDisplay(row.decision.baseline)}</td>
             <td>${scoreDisplay(row.decision.reasonable)}</td>
             <td>${row.decision.shouldStay ? "留班" : "-"}</td>
@@ -3322,22 +3327,68 @@ function renderPaperTopicInputs(values = []) {
 }
 
 function scoreValuesForStudent(exam, studentId) {
-  const raw = exam.scores?.[studentId];
-  if (Array.isArray(raw)) return raw.map(Number).filter(Number.isFinite);
-  const value = Number(raw);
-  return Number.isFinite(value) ? [value] : [];
+  return rawScoreValuesForStudent(exam, studentId)
+    .map((value) => scoreNumericValue(value, exam?.mockMode))
+    .filter(Number.isFinite);
 }
 
 function averageScore(values) {
   return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : NaN;
 }
 
+function rawScoreValuesForStudent(exam, studentId) {
+  const raw = exam?.scores?.[studentId];
+  if (Array.isArray(raw)) return raw.filter((value) => value !== "" && value !== null && value !== undefined);
+  return raw !== "" && raw !== null && raw !== undefined ? [raw] : [];
+}
+
+function normalizeMockLevel(value) {
+  const text = String(value ?? "").trim().toUpperCase();
+  return Object.prototype.hasOwnProperty.call(mockLevelScores, text) ? text : "";
+}
+
+function scoreNumericValue(value, mockMode = false) {
+  if (mockMode) {
+    const level = normalizeMockLevel(value);
+    if (level) return mockLevelScores[level];
+  }
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : NaN;
+}
+
+function mockLevelFromScore(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return "-";
+  return Object.entries(mockLevelScores)
+    .sort((a, b) => Math.abs(numeric - a[1]) - Math.abs(numeric - b[1]) || b[1] - a[1])[0]?.[0] || "-";
+}
+
+function scoreDisplayForExam(value, exam = null) {
+  if (exam?.mockMode) {
+    const level = normalizeMockLevel(value);
+    if (level) return level;
+    return mockLevelFromScore(value);
+  }
+  return scoreDisplay(scoreNumericValue(value));
+}
+
+function rowPapersDisplay(row) {
+  if (row?.exam?.mockMode) {
+    const values = row.rawPapers?.length ? row.rawPapers : row.papers || [];
+    return values.map((value) => scoreDisplayForExam(value, row.exam)).join(" / ");
+  }
+  return (row?.papers || []).map(scoreDisplay).join(" / ");
+}
+
+function rowAverageDisplay(row) {
+  return scoreDisplayForExam(row?.score, row?.exam);
+}
+
 function parseScoreInput(value, mockMode = $("#examMockMode")?.checked) {
   const text = String(value ?? "").trim().toUpperCase();
-  const mockLevelMap = { "A++": 100, "A+": 95, A: 90, "B++": 88, "B+": 84, B: 80, C: 75 };
-  if (mockMode) return mockLevelMap[text] ?? NaN;
+  if (mockMode) return normalizeMockLevel(text) || null;
   const numeric = Number(text);
-  return Number.isFinite(numeric) ? numeric : NaN;
+  return Number.isFinite(numeric) ? numeric : null;
 }
 
 function updateExamFormMode() {
@@ -3352,10 +3403,10 @@ function applyEditingExamScores() {
   studentsForGradeAndSubject(exam.grade, exam.subject).forEach((student) => {
     const absentInput = document.querySelector(`[data-score-absent="${student.id}"]`);
     if (absentInput) setScoreAbsentButton(absentInput, (exam.absences || []).includes(student.id));
-    const values = scoreValuesForStudent(exam, student.id);
+    const values = rawScoreValuesForStudent(exam, student.id);
     Array.from({ length: paperCount }, (_, index) => {
       const input = document.querySelector(`[data-score-student="${student.id}"][data-score-paper="${index}"]`);
-      if (input && values[index] !== undefined) input.value = values[index];
+      if (input && values[index] !== undefined) input.value = exam.mockMode ? scoreDisplayForExam(values[index], exam) : values[index];
     });
   });
 }
@@ -3368,8 +3419,9 @@ function currentScoreRows(exam) {
   return students
     .filter((student) => !(exam.absences || []).includes(student.id))
     .map((student) => {
+      const rawPapers = rawScoreValuesForStudent(exam, student.id);
       const papers = scoreValuesForStudent(exam, student.id);
-      return { student, papers, score: averageScore(papers) };
+      return { student, papers, rawPapers, score: averageScore(papers) };
     })
     .filter((row) => Number.isFinite(row.score))
     .sort((a, b) => b.score - a.score)
@@ -3387,9 +3439,10 @@ function scoreClass(value) {
   return Number.isFinite(value) && value < 60 ? "fail-score" : "";
 }
 
-function scoreTableCell(value, absent = false) {
+function scoreTableCell(value, absent = false, exam = null) {
   if (absent) return `<td class="absent-score">缺考</td>`;
-  return `<td class="${scoreClass(value)}">${scoreDisplay(value)}</td>`;
+  const numeric = scoreNumericValue(value, exam?.mockMode);
+  return `<td class="${scoreClass(numeric)}">${scoreDisplayForExam(value, exam)}</td>`;
 }
 
 function chunkArray(items, size) {
@@ -3471,13 +3524,13 @@ function renderClassReport(exam = displayedClassReportExam()) {
   $("#classReportBody").innerHTML = `
     <div class="report-head">
       <strong>${dateLabel(exam.date)} ${exam.grade} ${exam.subject}</strong>
-      <span>班平均 ${scoreDisplay(average)}</span>
+      <span>班平均 ${scoreDisplayForExam(average, exam)}</span>
       <span>${paperCount} 份考卷</span>
       <span>${exam.scope ? `重點：${exam.scope}` : "未填考試重點"}</span>
     </div>
     <table>
       <thead><tr><th>排名</th><th>姓名</th><th>班級</th><th>科目</th>${Array.from({ length: paperCount }, (_, index) => `<th>卷${index + 1}</th>`).join("")}<th>平均</th></tr></thead>
-      <tbody>${reportRows.map(({ student, ranked, absent }) => `<tr><td>${ranked ? ranked.rank : "-"}</td><td>${student.name}</td><td>${student.grade}</td><td>${exam.subject}</td>${Array.from({ length: paperCount }, (_, index) => scoreTableCell(ranked?.papers[index], absent)).join("")}${scoreTableCell(ranked?.score, absent)}</tr>`).join("") || `<tr><td colspan="${5 + paperCount}">尚無成績</td></tr>`}</tbody>
+      <tbody>${reportRows.map(({ student, ranked, absent }) => `<tr><td>${ranked ? ranked.rank : "-"}</td><td>${student.name}</td><td>${student.grade}</td><td>${exam.subject}</td>${Array.from({ length: paperCount }, (_, index) => scoreTableCell(ranked?.rawPapers?.[index] ?? ranked?.papers[index], absent, exam)).join("")}${scoreTableCell(ranked?.score, absent, exam)}</tr>`).join("") || `<tr><td colspan="${5 + paperCount}">尚無成績</td></tr>`}</tbody>
     </table>
   `;
 }
@@ -3546,7 +3599,7 @@ async function saveExam(event) {
       const draftValue = draftScoreValue(scoreDraft, student.id, String(index));
       const value = draftValue !== undefined ? draftValue : input?.value;
       return value !== "" && value !== undefined ? parseScoreInput(value, mockMode) : null;
-    }).filter((value) => value !== null && Number.isFinite(value));
+    }).filter((value) => value !== null);
     if (values.length) scores[student.id] = values;
   });
   const existing = editingExamId ? state.exams.find((item) => item.id === editingExamId) : null;
@@ -3736,7 +3789,10 @@ function studentExamRows(student, period = null) {
   return state.exams
     .filter((exam) => !exam.noExam && exam.scores && exam.scores[student.id] !== undefined)
     .filter((exam) => examMatchesWeeklyPeriod(exam, period))
-    .map((exam) => ({ exam, papers: scoreValuesForStudent(exam, student.id), score: averageScore(scoreValuesForStudent(exam, student.id)) }))
+    .map((exam) => {
+      const papers = scoreValuesForStudent(exam, student.id);
+      return { exam, papers, rawPapers: rawScoreValuesForStudent(exam, student.id), score: averageScore(papers) };
+    })
     .filter((row) => Number.isFinite(row.score))
     .sort((a, b) => a.exam.date.localeCompare(b.exam.date));
 }
@@ -4097,7 +4153,7 @@ function classOpsWeeklyReportRows(meta = classOpsMeta(), date = $("#classOpsWeek
       name: row.student.name,
       subject: row.exam.subject,
       scope: row.exam.scope || "-",
-      papers: row.papers?.map(scoreDisplay).join(" / ") || scoreDisplay(row.score),
+      papers: rowPapersDisplay(row) || rowAverageDisplay(row),
       average: row.score,
     }));
 }
@@ -5051,8 +5107,8 @@ function careerScoreLookupHtml(student, queryDate, selectedSubject, options = {}
               return `<div class="score-result-card">
                 <b>${row.exam.subject}</b>
                 <span>${row.exam.scope || "未填重點"}</span>
-                <strong class="${scoreClass(row.score)}">${scoreDisplay(row.score)}</strong>
-                <small>各卷 ${row.papers.map(scoreDisplay).join(" / ")}</small>
+                <strong class="${scoreClass(row.score)}">${rowAverageDisplay(row)}</strong>
+                <small>各卷 ${rowPapersDisplay(row)}</small>
                 <div class="score-stat-grid">
                   <span>排名 <b>${stats.rank}</b></span>
                   <span>PR <b>${scoreDisplay(stats.pr)}</b></span>
@@ -5079,7 +5135,7 @@ function careerScoreLookupHtml(student, queryDate, selectedSubject, options = {}
           return `<article class="exam-mini-card">
             <div class="mini-card-top">
               <b>${row.exam.subject}</b>
-              <strong class="${scoreClass(row.score)}">${scoreDisplay(row.score)}</strong>
+              <strong class="${scoreClass(row.score)}">${rowAverageDisplay(row)}</strong>
             </div>
             <span>${row.exam.scope || "未填考試單元"}</span>
             <div class="mini-card-meta">
@@ -5104,7 +5160,7 @@ function careerScoreLookupHtml(student, queryDate, selectedSubject, options = {}
         <thead><tr><th>日期</th><th>科目</th><th>重點</th><th>各卷</th><th>平均</th><th>當天統計</th></tr></thead>
         <tbody>${weekRows.map((row) => {
           const stats = examStatsForStudent(row.exam, student.id);
-          return `<tr><td>${dateLabel(row.exam.date)}</td><td>${row.exam.subject}</td><td>${row.exam.scope || "-"}</td><td>${row.papers.map(scoreDisplay).join(" / ")}</td><td class="${scoreClass(row.score)}">${scoreDisplay(row.score)}</td><td>${examStatsInline(stats)}</td></tr>`;
+          return `<tr><td>${dateLabel(row.exam.date)}</td><td>${row.exam.subject}</td><td>${row.exam.scope || "-"}</td><td>${rowPapersDisplay(row)}</td><td class="${scoreClass(row.score)}">${rowAverageDisplay(row)}</td><td>${examStatsInline(stats)}</td></tr>`;
         }).join("") || `<tr><td colspan="6">本週尚無成績</td></tr>`}</tbody>
       </table>
     </div>`}
@@ -5440,7 +5496,7 @@ function termAnalysisReportHtml(student, meta, selectedSubject) {
         <thead><tr><th>日期</th><th>科目</th><th>考試重點 / 單元</th><th>各卷</th><th>平均</th><th>排名</th></tr></thead>
         <tbody>${filteredRows.slice().reverse().map((row) => {
           const rank = currentScoreRows(row.exam).find((item) => item.student.id === student.id)?.rank || "-";
-          return `<tr><td>${dateLabel(row.exam.date)}</td><td>${row.exam.subject}</td><td>${row.exam.scope || "-"}</td><td>${row.papers.map(scoreDisplay).join(" / ")}</td><td class="${scoreClass(row.score)}">${scoreDisplay(row.score)}</td><td>${rank}</td></tr>`;
+          return `<tr><td>${dateLabel(row.exam.date)}</td><td>${row.exam.subject}</td><td>${row.exam.scope || "-"}</td><td>${rowPapersDisplay(row)}</td><td class="${scoreClass(row.score)}">${rowAverageDisplay(row)}</td><td>${rank}</td></tr>`;
         }).join("") || `<tr><td colspan="6">尚無該段週考紀錄</td></tr>`}</tbody>
       </table>
     </div>
@@ -5696,10 +5752,10 @@ function printClassReportPdf() {
       <td>${escapeHtml(exam.subject)}</td>
       ${Array.from({ length: paperCount }, (_, index) => {
         if (absent) return `<td class="absent-score">缺考</td>`;
-        const value = ranked?.papers[index];
-        return `<td class="${scoreClass(value)}">${scoreDisplay(value)}</td>`;
+        const value = ranked?.rawPapers?.[index] ?? ranked?.papers[index];
+        return `<td class="${scoreClass(scoreNumericValue(value, exam.mockMode))}">${scoreDisplayForExam(value, exam)}</td>`;
       }).join("")}
-      <td class="${absent ? "absent-score" : scoreClass(ranked?.score)}">${absent ? "缺考" : scoreDisplay(ranked?.score)}</td>
+      <td class="${absent ? "absent-score" : scoreClass(ranked?.score)}">${absent ? "缺考" : scoreDisplayForExam(ranked?.score, exam)}</td>
     </tr>
   `;
   const pagesHtml = pages.map((pageRows, pageIndex) => `
@@ -5709,7 +5765,7 @@ function printClassReportPdf() {
         <div>列印日期：${escapeHtml(new Date().toLocaleDateString("zh-TW"))}</div>
       </header>
       <div class="meta">
-        <span class="pill">班平均 ${scoreDisplay(average)}</span>
+        <span class="pill">班平均 ${scoreDisplayForExam(average, exam)}</span>
         <span class="pill">${paperCount} 份考卷</span>
         <span class="pill">${scope}</span>
         <span class="pill">各卷：${escapeHtml((exam.paperTopics || []).filter(Boolean).join(" / ") || "未填各卷主題")}</span>
@@ -5813,8 +5869,8 @@ function classReportExportRows(exam) {
     name: student.name,
     grade: student.grade,
     subject: exam.subject,
-    papers: Array.from({ length: paperCount }, (_item, index) => absent ? "缺考" : scoreDisplay(ranked?.papers[index])),
-    average: absent ? "缺考" : scoreDisplay(ranked?.score),
+    papers: Array.from({ length: paperCount }, (_item, index) => absent ? "缺考" : scoreDisplayForExam(ranked?.rawPapers?.[index] ?? ranked?.papers[index], exam)),
+    average: absent ? "缺考" : scoreDisplayForExam(ranked?.score, exam),
     failing: !absent && Number.isFinite(ranked?.score) && ranked.score < 60,
   }));
   return { average, paperCount, rows };
@@ -5840,7 +5896,7 @@ function downloadClassReportExcel() {
   const html = `<!doctype html><html><head><meta charset="utf-8"></head><body>
     <table border="1">
       <tr><th colspan="${headers.length}">金牌躍騰教育集團 班級成績單</th></tr>
-      <tr><td colspan="${headers.length}">${escapeHtml(dateLabel(exam.date))} ${escapeHtml(exam.grade)} ${escapeHtml(exam.subject)}　班平均 ${scoreDisplay(average)}　${escapeHtml(exam.scope || "未填考試重點")}</td></tr>
+      <tr><td colspan="${headers.length}">${escapeHtml(dateLabel(exam.date))} ${escapeHtml(exam.grade)} ${escapeHtml(exam.subject)}　班平均 ${scoreDisplayForExam(average, exam)}　${escapeHtml(exam.scope || "未填考試重點")}</td></tr>
       <tr>${headers.map((header) => `<th>${escapeHtml(header)}</th>`).join("")}</tr>
       ${rows.map((row) => `<tr><td>${row.rank}</td><td>${escapeHtml(row.name)}</td><td>${escapeHtml(row.grade)}</td><td>${escapeHtml(row.subject)}</td>${row.papers.map((value) => `<td>${escapeHtml(value)}</td>`).join("")}<td style="${row.failing ? "color:#e60012;font-weight:bold;" : ""}">${escapeHtml(row.average)}</td></tr>`).join("") || `<tr><td colspan="${headers.length}">${exam.noExam ? "無考試" : "尚無成績"}</td></tr>`}
     </table>
@@ -6089,7 +6145,7 @@ function downloadStudentReportImage(student = getStudent($("#careerStudent")?.va
       pageCtx.fillStyle = "#1f252d";
       pageCtx.font = "13px Microsoft JhengHei, Arial";
       const stats = examStatsForStudent(row.exam, student.id);
-      const values = [dateLabel(row.exam.date), row.exam.subject, row.exam.scope || "-", row.papers.map(scoreDisplay).join(" / "), scoreDisplay(row.score), stats.rank, scoreDisplay(stats.pr), stats.count, scoreDisplay(stats.high), scoreDisplay(stats.low), scoreDisplay(stats.average)];
+      const values = [dateLabel(row.exam.date), row.exam.subject, row.exam.scope || "-", rowPapersDisplay(row), rowAverageDisplay(row), stats.rank, scoreDisplay(stats.pr), stats.count, scoreDisplay(stats.high), scoreDisplay(stats.low), scoreDisplay(stats.average)];
       values.forEach((value, index) => {
         if (index === 4 && row.score < 60) pageCtx.fillStyle = "#e60012";
         canvasText(pageCtx, value, x + 8, ty + 26, cols[index] - 10);
@@ -6154,7 +6210,7 @@ function downloadClassReportImage() {
     ctx.fill();
     ctx.fillStyle = "#fff7df";
     ctx.font = `bold ${landscape ? 17 : 18}px Microsoft JhengHei, Arial`;
-    canvasText(ctx, `班平均 ${scoreDisplay(average)}`, margin + 22, landscape ? 149 : 170, 150);
+    canvasText(ctx, `班平均 ${scoreDisplayForExam(average, exam)}`, margin + 22, landscape ? 149 : 170, 150);
     canvasText(ctx, `${paperCount} 份考卷`, margin + 176, landscape ? 149 : 170, 130);
     canvasText(ctx, `第 ${pageIndex + 1} / ${totalPages} 頁`, width - margin - 126, landscape ? 149 : 170, 120);
     ctx.font = `${landscape ? 15 : 16}px Microsoft JhengHei, Arial`;
@@ -6255,7 +6311,7 @@ async function printStudentReportPdf() {
   const weeklyRows = examRows.slice().reverse().map((row) => {
     const stats = examStatsForStudent(row.exam, student.id);
     const paperTopics = row.papers.map((_value, index) => row.exam.paperTopics?.[index] || `卷${index + 1}`).join(" / ");
-    return `<tr><td>${escapeHtml(dateLabel(row.exam.date))}</td><td>${escapeHtml(row.exam.subject)}</td><td class="left">${escapeHtml(row.exam.scope || "-")}<br><small>${escapeHtml(paperTopics)}</small></td><td>${escapeHtml(row.papers.map(scoreDisplay).join(" / "))}</td><td class="${scoreClass(row.score)}">${scoreDisplay(row.score)}</td><td>${escapeHtml(examStatsInline(stats))}</td></tr>`;
+    return `<tr><td>${escapeHtml(dateLabel(row.exam.date))}</td><td>${escapeHtml(row.exam.subject)}</td><td class="left">${escapeHtml(row.exam.scope || "-")}<br><small>${escapeHtml(paperTopics)}</small></td><td>${escapeHtml(rowPapersDisplay(row))}</td><td class="${scoreClass(row.score)}">${rowAverageDisplay(row)}</td><td>${escapeHtml(examStatsInline(stats))}</td></tr>`;
   }).join("");
   pdfDocument(`${student.name} 生涯分析報告`, `
     <section class="report-cover">
@@ -8249,8 +8305,8 @@ function studentAiPayload(student) {
     subject: row.exam.subject,
     scope: row.exam.scope,
     paperTopics: row.exam.paperTopics || [],
-    score: scoreDisplay(row.score),
-    papers: row.papers.map(scoreDisplay),
+    score: rowAverageDisplay(row),
+    papers: rowPapersDisplay(row).split(" / ").filter(Boolean),
     stats: examStatsForStudent(row.exam, student.id),
   }));
   return {
@@ -8891,7 +8947,7 @@ function renderParentScoreHistory(student) {
     <h3 class="subhead">當日成績</h3>
     <div class="lookup-list">
       ${[
-        ...dayRows.map((row) => `<article class="score-result-card"><b>${row.exam.subject}</b><span>${row.exam.scope || "未填重點"}</span><strong class="${scoreClass(row.score)}">${scoreDisplay(row.score)}</strong><small>${dateLabel(row.exam.date)}｜週考｜各卷 ${row.papers.map(scoreDisplay).join(" / ")}</small></article>`),
+        ...dayRows.map((row) => `<article class="score-result-card"><b>${row.exam.subject}</b><span>${row.exam.scope || "未填重點"}</span><strong class="${scoreClass(row.score)}">${rowAverageDisplay(row)}</strong><small>${dateLabel(row.exam.date)}｜週考｜各卷 ${rowPapersDisplay(row)}</small></article>`),
         ...dayTermRows.map((item) => `<article class="score-result-card"><b>${item.subject}</b><span>${item.term || `${item.year || ""}${item.semester || ""}`} ${item.stage || ""}</span><strong class="${scoreClass(Number(item.score))}">${scoreDisplay(Number(item.score))}</strong><small>${dateLabel(item.date || item.createdAt?.slice(0, 10) || "")}｜段考</small></article>`),
       ].join("") || `<div class="empty small-empty">當日此科暫時沒有成績。</div>`}
     </div>
@@ -8911,8 +8967,8 @@ function renderParentScoreHistory(student) {
                 <td>${dateLabel(row.exam.date)}</td>
                 <td>${row.exam.subject}</td>
                 <td>${row.exam.scope || "-"}</td>
-                <td>${row.papers.map(scoreDisplay).join(" / ")}</td>
-                <td class="${scoreClass(row.score)}">${scoreDisplay(row.score)}</td>
+                <td>${rowPapersDisplay(row)}</td>
+                <td class="${scoreClass(row.score)}">${rowAverageDisplay(row)}</td>
                 <td>${rank}</td>
                 <td>${scoreDisplay(classAverage)}</td>
               </tr>

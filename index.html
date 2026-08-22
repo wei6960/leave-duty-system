@@ -339,6 +339,7 @@
         <button class="tab-button active" data-tab="dashboard">主頁看板</button>
         <button class="tab-button" data-tab="attendance">出缺勤</button>
         <button class="tab-button" data-tab="management">班務管理</button>
+        <button class="tab-button" data-tab="duty-work">教務作業</button>
         <button class="tab-button" data-tab="class-ops">班級經營</button>
         <button class="tab-button" data-tab="contact-book">聯絡本系統</button>
         <button class="tab-button" data-tab="settings">設定</button>
@@ -468,17 +469,35 @@
             <strong>留班報告</strong>
             <span>依當天考試與歷史水準分析留班名單</span>
           </button>
-          <button class="portal-tile" type="button" data-tab="roll-call">
+        </div>
+      </section>
+
+      <section class="page" id="duty-work">
+        <header class="section-head duty-work-head">
+          <div>
+            <p class="eyebrow">教務作業</p>
+            <h1>點名、檢核與教務表</h1>
+          </div>
+          <button class="ghost back-button" type="button" data-back-tab="dashboard">返回主頁</button>
+        </header>
+        <div class="duty-work-grid">
+          <button class="portal-tile duty-work-tile duty-work-tile-primary" type="button" data-tab="roll-call">
+            <span class="duty-work-index">01</span>
             <strong>點名系統</strong>
-            <span>依年級進入座位點名與教務表輸出</span>
+            <em>座位點名</em>
+            <small>PDF / 空白教務表 / Excel</small>
           </button>
-          <button class="portal-tile" type="button" data-tab="duty-check">
+          <button class="portal-tile duty-work-tile" type="button" data-tab="duty-check">
+            <span class="duty-work-index">02</span>
             <strong>作業與聯絡本檢核</strong>
-            <span>依座位表點選未完成、未簽名與本日重點</span>
+            <em>未完成回報</em>
+            <small>作業、聯絡本、筆記、專注</small>
           </button>
-          <button class="portal-tile" type="button" data-tab="duty-archive">
+          <button class="portal-tile duty-work-tile" type="button" data-tab="duty-archive">
+            <span class="duty-work-index">03</span>
             <strong>教務表存放區</strong>
-            <span>依日期調閱並輸出 PDF、圖片與 Excel</span>
+            <em>歷史調閱</em>
+            <small>日期切換與重新輸出</small>
           </button>
         </div>
       </section>
@@ -595,7 +614,7 @@
             <p class="eyebrow">點名系統</p>
             <h1>座位點名與到班狀況</h1>
           </div>
-          <button class="ghost back-button" type="button" data-back-tab="dashboard">返回主頁</button>
+          <button class="ghost back-button" type="button" data-back-tab="duty-work">返回教務作業</button>
         </header>
         <div class="portal-grid compact-portal-grid layer-panel" id="rollCallGradeMenu">
           <button class="portal-tile grade-entry-tile" type="button" data-roll-grade="國一">
@@ -643,10 +662,10 @@
       <section class="page" id="duty-check">
         <header class="section-head">
           <div>
-            <p class="eyebrow">班務管理</p>
+            <p class="eyebrow">教務作業</p>
             <h1>作業與聯絡本檢核</h1>
           </div>
-          <button class="ghost back-button" type="button" data-back-tab="management">返回班務管理</button>
+          <button class="ghost back-button" type="button" data-back-tab="duty-work">返回教務作業</button>
         </header>
         <div class="portal-grid compact-portal-grid layer-panel" id="dutyCheckGradeMenu">
           <button class="portal-tile grade-entry-tile" type="button" data-duty-check-grade="國一">
@@ -714,10 +733,10 @@
       <section class="page" id="duty-archive">
         <header class="section-head">
           <div>
-            <p class="eyebrow">班務管理</p>
+            <p class="eyebrow">教務作業</p>
             <h1>教務表存放區</h1>
           </div>
-          <button class="ghost back-button" type="button" data-back-tab="management">返回班務管理</button>
+          <button class="ghost back-button" type="button" data-back-tab="duty-work">返回教務作業</button>
         </header>
         <div class="portal-grid compact-portal-grid layer-panel" id="dutyArchiveGradeMenu">
           <button class="portal-tile grade-entry-tile" type="button" data-duty-archive-grade="國一">
