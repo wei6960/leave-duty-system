@@ -2286,8 +2286,13 @@ function printRollCallPdf(options = {}) {
   });
   const tableCols = `<colgroup><col class="col-no"><col class="col-name"><col class="col-roll"><col class="col-score"><col class="col-score"><col class="col-homework"><col class="col-check"><col class="col-check"><col class="col-check"><col class="col-check"><col class="col-remark"></colgroup>`;
   const tableHead = `${tableCols}<thead><tr><th rowspan="2">序號</th><th rowspan="2">名字</th><th rowspan="2">到班</th><th colspan="2">成績</th><th rowspan="2">作業</th><th colspan="2">聯絡本</th><th colspan="2">上課狀況</th><th rowspan="2">備註</th></tr><tr><th>1</th><th>2</th><th>繳交</th><th>未簽名</th><th>筆記</th><th>專注</th></tr></thead>`;
-  const leftRows = allRows.slice(0, 40).join("");
-  const rightRows = allRows.slice(40).join("");
+  const leftRowLimit = allRows.length > 34 ? 34 : allRows.length;
+  const rightRowCount = Math.max(0, allRows.length - leftRowLimit);
+  const leftRows = allRows.slice(0, leftRowLimit).join("");
+  const rightRows = allRows.slice(leftRowLimit).join("");
+  const leftRowHeightMm = leftRowLimit > 32 ? 4.35 : 4.75;
+  const rightRowHeightMm = rightRowCount > 22 ? 3.35 : rightRowCount > 14 ? 3.85 : 4.35;
+  const rightRosterHeightMm = rightRowCount ? Math.min(96, Math.max(18, 12 + rightRowCount * rightRowHeightMm)) : 0;
   const summaryHtml = `<div class="summary-counts"><b>應到</b><span>${summary.expected}</span><b>實到</b><span>${blank ? "" : summary.present}</span><b>請假</b><span>${blank ? "" : summary.leave}</span><b>未到</b><span>${blank ? "" : summary.absent}</span></div><div class="summary-list"><b>固定請假：</b>${blank ? "-" : summary.fixedLeaveStudents.map((student) => student.name).join("、") || "-"}<br><b>未到：</b>${blank ? "-" : summary.absentStudents.map((student) => student.name).join("、") || "-"}<br><b>晚到：</b>${blank ? "-" : summary.lateStudents.map((student) => student.name).join("、") || "-"}</div><div class="leave-follow-grid"><b>請假同學</b><span>${blank ? "" : summary.leaveStudents.map((student) => student.name).join("、") || "-"}</span><b>補課日期</b><span></span><b>補課檢核</b><span></span><b>補考</b><span></span></div><div class="sign-grid"><b>班導師簽核</b><span></span><b>主管簽核</b><span></span></div>`;
   const notes = blank ? {} : duty.notes || {};
   const focusHtml = `<div class="focus-title">本日重點事項</div><div class="focus-grid"><b>帶班導師</b><span>${escapeHtml(notes.homeroomTeacher || "")}</span><b>授課師</b><span>${escapeHtml(notes.teacher || "")}</span><b>進度</b><span class="wide">${escapeHtml(notes.progress || "")}</span><b>作業</b><span class="wide">${escapeHtml(notes.homework || "")}</span><b>考試</b><span class="wide">${escapeHtml(notes.test || "")}</span><b>備註</b><span class="wide tall">${escapeHtml(notes.note || "")}</span><b>上課狀況</b><span class="wide extra-tall">${escapeHtml(notes.classStatus || "")}</span></div>`;
@@ -2304,23 +2309,28 @@ function printRollCallPdf(options = {}) {
   const html = `<!doctype html><html><head><meta charset="utf-8"><title>點名表</title><style>
     @page { size: B4 landscape; margin: 7mm; }
     * { box-sizing: border-box; }
-    body { margin: 0; font-family: "Microsoft JhengHei", Arial, sans-serif; color: #151515; background: #f7f2e7; }
-    .sheet { position: relative; min-height: calc(100vh - 14mm); display: flex; flex-direction: column; gap: 6px; overflow: hidden; }
+    html, body { width: 100%; }
+    body { margin: 0; font-family: "Microsoft JhengHei", Arial, sans-serif; color: #151515; background: #f7f2e7; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .sheet { position: relative; width: 100%; height: 236mm; min-height: 0; max-height: 236mm; display: flex; flex-direction: column; gap: 5px; overflow: hidden; break-inside: avoid; page-break-inside: avoid; }
     .brand-head { display: flex; justify-content: space-between; align-items: end; padding: 8px 12px; border-radius: 12px; color: #fff7df; background: linear-gradient(112deg, #0f151d, #5b4520 56%, #b88a31); box-shadow: inset 0 0 0 1px rgba(255,255,255,.18); }
     .brand-left { display: flex; align-items: center; gap: 10px; }
     .brand-logo { width: 38px; height: 38px; border-radius: 50%; object-fit: contain; background: rgba(255,255,255,.08); }
     .brand-head h1 { margin: 0; font-size: 21px; letter-spacing: 0; }
     .brand-head p { margin: 3px 0 0; font-size: 12px; color: #ffe6a3; }
     .brand-head strong { font-size: 15px; }
-    .front-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; flex: 1; min-height: 0; }
+    .front-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; flex: 1; min-height: 0; height: 0; break-inside: avoid; page-break-inside: avoid; }
     .front-right { display: grid; grid-template-rows: auto 1fr; gap: 6px; min-height: 0; }
+    .front-right-full { grid-template-rows: 1fr; }
     .paper-panel { position: relative; display: flex; min-height: 0; padding: 6px; border: 1.5px solid #b88a31; border-radius: 13px; background: #fffdf7; overflow: hidden; }
-    .right-roster { min-height: 0; max-height: 45mm; }
+    .left-roster { height: 100%; }
+    .right-roster { min-height: 0; height: ${rightRosterHeightMm.toFixed(2)}mm; max-height: 96mm; flex: 0 0 auto; }
     .paper-panel::before { content: ""; position: absolute; inset: 0; background: linear-gradient(135deg, rgba(184,138,49,.12), transparent 38%); pointer-events: none; }
-    table { position: relative; width: 100%; height: 100%; border-collapse: collapse; font-size: ${compactPrint ? "10px" : "11.2px"}; table-layout: fixed; background: #fff; }
-    th, td { border: 1px solid #303030; padding: ${compactPrint ? "2px 2px" : "3px 3px"}; text-align: center; overflow: hidden; }
-    th { height: 22px; background: #111820; color: #f5d77d; font-size: ${compactPrint ? "8.8px" : "10px"}; line-height: 1.08; }
-    tbody tr { height: auto; }
+    table { position: relative; width: 100%; border-collapse: collapse; font-size: ${compactPrint ? "9.2px" : "10.3px"}; table-layout: fixed; background: #fff; break-inside: avoid; page-break-inside: avoid; }
+    .left-table tbody tr { height: ${leftRowHeightMm.toFixed(2)}mm; }
+    .right-table tbody tr { height: ${rightRowHeightMm.toFixed(2)}mm; }
+    th, td { border: 1px solid #303030; padding: ${compactPrint ? "1px 2px" : "2px 2px"}; text-align: center; overflow: hidden; line-height: 1.05; }
+    th { height: 18px; background: #111820; color: #f5d77d; font-size: ${compactPrint ? "8px" : "8.6px"}; line-height: 1.05; }
+    tbody tr { break-inside: avoid; page-break-inside: avoid; }
     td:nth-child(2), td:last-child { text-align: left; }
     .col-no { width: 5%; }
     .col-name { width: 13%; }
@@ -2363,9 +2373,9 @@ function printRollCallPdf(options = {}) {
     <section class="sheet">
       <div class="brand-head"><div class="brand-left"><img class="brand-logo" src="assets/logo.png"><div><h1>金牌躍騰平鎮分校 教務點名表</h1><p>${escapeHtml(dateLabel(date))}｜${escapeHtml(grade)}｜${escapeHtml(subject)}｜${escapeHtml(setting.room || "")}</p></div></div><strong>應到 ${summary.expected}　實到 ${summary.present}　請假 ${summary.leave}　未到 ${summary.absent}</strong></div>
       <div class="front-grid">
-        <div class="paper-panel"><table>${tableHead}<tbody>${leftRows}</tbody></table></div>
-        <div class="front-right">
-          <div class="paper-panel right-roster"><table>${tableHead}<tbody>${rightRows}</tbody></table></div>
+        <div class="paper-panel left-roster"><table class="left-table">${tableHead}<tbody>${leftRows}</tbody></table></div>
+        <div class="front-right ${rightRows ? "" : "front-right-full"}">
+          ${rightRows ? `<div class="paper-panel right-roster"><table class="right-table">${tableHead}<tbody>${rightRows}</tbody></table></div>` : ""}
           <div class="front-footer"><div class="focus-panel">${focusHtml}</div><div class="summary">${summaryHtml}</div></div>
         </div>
       </div>
