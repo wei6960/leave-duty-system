@@ -327,7 +327,6 @@
         <button class="tab-button active" data-tab="dashboard">主頁看板</button>
         <button class="tab-button" data-tab="attendance">出缺勤</button>
         <button class="tab-button" data-tab="management">班務管理</button>
-        <button class="tab-button" data-tab="roll-call">點名系統</button>
         <button class="tab-button" data-tab="class-ops">班級經營</button>
         <button class="tab-button" data-tab="contact-book">聯絡本系統</button>
         <button class="tab-button" data-tab="settings">設定</button>
@@ -456,6 +455,10 @@
           <button class="portal-tile" type="button" data-tab="retention-report">
             <strong>留班報告</strong>
             <span>依當天考試與歷史水準分析留班名單</span>
+          </button>
+          <button class="portal-tile" type="button" data-tab="roll-call">
+            <strong>點名系統</strong>
+            <span>依年級進入座位點名與教務表輸出</span>
           </button>
         </div>
       </section>
@@ -591,13 +594,11 @@
               <input id="rollDate" type="date">
             </label>
             <button class="ghost" id="rollNextDay" type="button">後一天</button>
-            <label>年級
-              <select id="rollGrade">
-                <option value="國一">國一</option>
-                <option value="國二">國二</option>
-                <option value="國三">國三</option>
-              </select>
-            </label>
+            <select id="rollGrade" hidden>
+              <option value="國一">國一</option>
+              <option value="國二">國二</option>
+              <option value="國三">國三</option>
+            </select>
             <label>課程
               <select id="rollSubject"></select>
             </label>
@@ -1272,6 +1273,7 @@
           <fieldset class="form-span-2">
             <legend>當天狀態</legend>
             <label class="check-pill"><input id="examNoTest" type="checkbox">無考試</label>
+            <label class="check-pill"><input id="examMockMode" type="checkbox">模擬測驗（A/B/C）</label>
           </fieldset>
           <button class="primary" type="submit">儲存成績單</button>
           <button class="ghost danger" id="resetExamForm" type="button">重設當天輸入</button>

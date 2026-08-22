@@ -100,7 +100,7 @@ const parentTabs = {
   scores: "management",
   term: "management",
   "class-ops": "class-ops",
-  "roll-call": "roll-call",
+  "roll-call": "management",
   career: "class-ops",
   events: "contact-book",
   "grade-promotion": "class-ops",
@@ -160,6 +160,7 @@ function emptyState() {
     contactBooks: [],
     paperAnalyses: [],
     courseCatalog: defaultCourses.map((name) => ({ name, core: coreCourses.includes(name) })),
+    deletedCourseNames: [],
     roomLayouts: normalizeRoomLayouts({}),
     seatSettings: {},
     rollCalls: [],
@@ -232,7 +233,11 @@ function loadState() {
 }
 
 function normalizeState(raw) {
-  const courseCatalog = normalizeCourseCatalog(raw.courseCatalog || defaultCourses);
+  const deletedCourseNames = Array.isArray(raw.deletedCourseNames)
+    ? raw.deletedCourseNames.map(normalizeCourseName).filter((name) => name && !coreCourses.includes(name))
+    : [];
+  const courseCatalog = normalizeCourseCatalog(raw.courseCatalog || defaultCourses)
+    .filter((item) => item.core || !deletedCourseNames.includes(item.name));
   const normalizedRoomLayouts = normalizeRoomLayouts(raw.roomLayouts || {}, raw.seatSettings || {});
   roomLayouts = normalizedRoomLayouts;
   const availableCourses = courseCatalog.map((item) => item.name);
@@ -285,6 +290,7 @@ function normalizeState(raw) {
     contactBooks: normalizeContactBooks(raw.contactBooks || []),
     paperAnalyses: normalizePaperAnalyses(raw.paperAnalyses || []),
     courseCatalog,
+    deletedCourseNames,
     roomLayouts: normalizedRoomLayouts,
     seatSettings: normalizeSeatSettings(raw.seatSettings || {}),
     rollCalls: normalizeRollCalls(raw.rollCalls || []),
@@ -549,6 +555,7 @@ function normalizeScoreDraft(record = {}) {
     paperCount: Math.max(1, Number(record.paperCount) || 1),
     paperTopics: Array.isArray(record.paperTopics) ? record.paperTopics : [],
     noExam: Boolean(record.noExam),
+    mockMode: Boolean(record.mockMode),
     scores,
     absences,
     clearedAt: record.clearedAt || "",
@@ -709,6 +716,7 @@ function normalizeExam(exam) {
     subject: courses.includes(normalizeCourseName(exam.subject)) ? normalizeCourseName(exam.subject) : "國文",
     scope: exam.scope || "",
     noExam: Boolean(exam.noExam),
+    mockMode: Boolean(exam.mockMode),
     paperCount: Math.max(1, Number(exam.paperCount) || 1),
     paperTopics: Array.isArray(exam.paperTopics) ? exam.paperTopics.map((item) => String(item || "")) : [],
     scores: exam.scores || {},
@@ -1069,6 +1077,10 @@ function mergeRemoteStateForSave(localState, remotePayload) {
   if (!remotePayload?.data) return localState;
   const remoteState = normalizeState(remotePayload.data || emptyState());
   const local = normalizeState(localState || emptyState());
+  const deletedCourseNames = [...new Set([...(remoteState.deletedCourseNames || []), ...(local.deletedCourseNames || [])])]
+    .filter((name) => !coreCourses.includes(name));
+  const courseCatalog = normalizeCourseCatalog([...(remoteState.courseCatalog || []), ...(local.courseCatalog || [])])
+    .filter((item) => item.core || !deletedCourseNames.includes(item.name));
   return {
     ...local,
     deletedStudentIds: [...new Set([...(remoteState.deletedStudentIds || []), ...(local.deletedStudentIds || [])])],
@@ -1093,7 +1105,8 @@ function mergeRemoteStateForSave(localState, remotePayload) {
     termWeights: { ...(remoteState.termWeights || {}), ...(local.termWeights || {}) },
     schedule: local.schedule || remoteState.schedule,
     settings: local.settings || remoteState.settings,
-    courseCatalog: normalizeCourseCatalog([...(remoteState.courseCatalog || []), ...(local.courseCatalog || [])]),
+    courseCatalog,
+    deletedCourseNames,
     scoreActivity: recordStamp(local.scoreActivity || {}) >= recordStamp(remoteState.scoreActivity || {}) ? local.scoreActivity : remoteState.scoreActivity,
     about: local.about || remoteState.about,
     aiSettings: local.aiSettings || remoteState.aiSettings,
@@ -1442,6 +1455,7 @@ function rollSummaryForCourse(date, grade, subject) {
   const absentStudents = students.filter((student) => !presentIds.has(student.id) && !leaveIds.has(student.id));
   const presentStudents = students.filter((student) => presentIds.has(student.id));
   const lateStudents = students.filter((student) => rollLateForStudent(student.id, date));
+  const fixedLeaveStudents = leaveStudents.filter((student) => rollLeaveForStudent(student.id, date)?.fixed);
   return {
     students,
     record,
@@ -1455,6 +1469,7 @@ function rollSummaryForCourse(date, grade, subject) {
     leaveStudents,
     absentStudents,
     lateStudents,
+    fixedLeaveStudents,
   };
 }
 
@@ -1490,6 +1505,7 @@ function renderTodayClassAttendance() {
         <span><b>${item.present}</b>實到</span>
         <span><b>${item.absent}</b>未到</span>
         <span class="leave-text"><b>${item.leave}</b>請假</span>
+        <span class="leave-text"><b>${item.fixedLeaveStudents.length}</b>固定請假</span>
       </div>
     </article>
   `).join("") || `<div class="empty">今日課表尚未設定課程。</div>`;
@@ -1868,7 +1884,23 @@ function currentRollRecord() {
 }
 
 function rollLeaveForStudent(studentId, date) {
-  return state.leaves.find((record) => record.studentId === studentId && getLeaveStart(record) <= date && getLeaveEnd(record) >= date);
+  const regular = state.leaves.find((record) => record.studentId === studentId && getLeaveStart(record) <= date && getLeaveEnd(record) >= date);
+  if (regular) return regular;
+  const student = getStudent(studentId);
+  if (student && studentHasClassOnDate(student, date) && student.fixedLeave.includes(weekdayFromDate(date))) {
+    return {
+      id: `fixed-leave-${student.id}-${date}`,
+      studentId,
+      date,
+      startDate: date,
+      endDate: date,
+      periods: [],
+      type: "請假",
+      note: "固定請假",
+      fixed: true,
+    };
+  }
+  return null;
 }
 
 function rollLateForStudent(studentId, date) {
@@ -1945,7 +1977,7 @@ function printRollCallPdf() {
     const leave = rollLeaveForStudent(student.id, date);
     const late = rollLateForStudent(student.id, date);
     const present = record.statuses?.[student.id] === "present";
-    const mark = present ? "✓" : leave && leave.type !== "提早離班" ? "假" : "?";
+    const mark = present ? "✓" : leave && leave.type !== "提早離班" ? "假" : "";
     return `<tr><td>${index + 1}</td><td>${escapeHtml(student.name)}</td><td class="${mark === "假" ? "leave" : ""}">${mark}</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td>${late ? "晚到" : ""}${leave?.type === "提早離班" ? "提早離班" : ""}</td></tr>`;
   };
   const totalPrintRows = Math.max(50, students.length + 5);
@@ -1959,7 +1991,7 @@ function printRollCallPdf() {
   const tableHead = `${tableCols}<thead><tr><th rowspan="2">序號</th><th rowspan="2">名字</th><th rowspan="2">到班</th><th colspan="2">成績</th><th rowspan="2">作業</th><th colspan="2">聯絡本</th><th colspan="2">上課狀況</th><th rowspan="2">備註</th></tr><tr><th>1</th><th>2</th><th>繳交</th><th>未簽名</th><th>筆記</th><th>專注</th></tr></thead>`;
   const leftRows = allRows.slice(0, 40).join("");
   const rightRows = allRows.slice(40).join("");
-  const summaryHtml = `<div class="summary-counts"><b>應到</b><span>${summary.expected}</span><b>實到</b><span>${summary.present}</span><b>請假</b><span>${summary.leave}</span><b>未到</b><span>${summary.absent}</span></div><div class="summary-list"><b>未到：</b>${summary.absentStudents.map((student) => student.name).join("、") || "-"}<br><b>晚到：</b>${summary.lateStudents.map((student) => student.name).join("、") || "-"}<br><b>請假：</b>${summary.leaveStudents.map((student) => student.name).join("、") || "-"}</div><div class="sign-grid"><b>班導師簽核</b><span></span><b>主管簽核</b><span></span></div>`;
+  const summaryHtml = `<div class="summary-counts"><b>應到</b><span>${summary.expected}</span><b>實到</b><span>${summary.present}</span><b>請假</b><span>${summary.leave}</span><b>未到</b><span>${summary.absent}</span></div><div class="summary-list"><b>未到：</b>${summary.absentStudents.map((student) => student.name).join("、") || "-"}<br><b>晚到：</b>${summary.lateStudents.map((student) => student.name).join("、") || "-"}</div><div class="leave-follow-grid"><b>請假同學</b><span>${summary.leaveStudents.map((student) => student.name).join("、") || "-"}</span><b>補課日期</b><span></span><b>補課檢核</b><span></span><b>補考</b><span></span></div><div class="sign-grid"><b>班導師簽核</b><span></span><b>主管簽核</b><span></span></div>`;
   const focusHtml = `<div class="focus-title">本日重點事項</div><div class="focus-grid"><b>帶班導師</b><span></span><b>授課師</b><span></span><b>進度</b><span class="wide"></span><b>作業</b><span class="wide"></span><b>考試</b><span class="wide"></span><b>備註</b><span class="wide tall"></span><b>上課狀況</b><span class="wide extra-tall"></span></div>`;
   const seatHtml = layoutSeats.map((id) => {
     const pos = seatPositionFromId(id);
@@ -2011,11 +2043,14 @@ function printRollCallPdf() {
     .focus-grid .extra-tall { min-height: 0; }
     .summary { padding: 7px 9px; border: 2px solid #b88a31; border-radius: 12px; background: rgba(255,248,232,.96); font-size: 10.8px; line-height: 1.35; box-shadow: 0 8px 20px rgba(60,43,12,.12); overflow: hidden; }
     .summary b { color: #8b1d12; }
-    .summary-counts, .sign-grid { display: grid; grid-template-columns: 56px 1fr 56px 1fr; border-top: 1px solid #303030; border-left: 1px solid #303030; margin-bottom: 5px; }
-    .summary-counts b, .summary-counts span, .sign-grid b, .sign-grid span { min-height: 18px; padding: 3px 4px; border-right: 1px solid #303030; border-bottom: 1px solid #303030; background: #fff; }
-    .summary-counts b, .sign-grid b { display: grid; place-items: center; background: #f2ead9; }
+    .summary-counts, .sign-grid, .leave-follow-grid { display: grid; grid-template-columns: 56px 1fr 56px 1fr; border-top: 1px solid #303030; border-left: 1px solid #303030; margin-bottom: 5px; }
+    .summary-counts b, .summary-counts span, .sign-grid b, .sign-grid span, .leave-follow-grid b, .leave-follow-grid span { min-height: 18px; padding: 3px 4px; border-right: 1px solid #303030; border-bottom: 1px solid #303030; background: #fff; }
+    .summary-counts b, .sign-grid b, .leave-follow-grid b { display: grid; place-items: center; background: #f2ead9; }
+    .leave-follow-grid { grid-template-columns: 64px 1fr; }
+    .leave-follow-grid b, .leave-follow-grid span { min-height: 24px; }
     .summary-list { margin: 4px 0 5px; min-height: 27px; }
-    .sign-grid span { min-height: 42px; }
+    .sign-grid { margin-top: 8px; }
+    .sign-grid span { min-height: 54px; }
     .page-break { break-before: page; page-break-before: always; }
     .seat-wrap { display: flex; flex-direction: column; gap: 9px; flex: 1; padding: 10px; border: 2px solid #b88a31; border-radius: 16px; background: radial-gradient(circle at 18% 12%, rgba(184,138,49,.16), transparent 28%), #fffdf7; }
     .podium-print { padding: 10px; border-radius: 13px; text-align: center; font-weight: 900; color: #fff7df; background: linear-gradient(100deg, #111820, #7a5a21); }
@@ -2114,7 +2149,7 @@ function renderRetentionSubjectOptions() {
   if (!target) return;
   const previous = target.value || retentionSubject || "全部";
   const subjects = [...new Set(state.exams
-    .filter((exam) => exam.grade === retentionGrade && exam.date === retentionDate && !exam.noTest)
+    .filter((exam) => exam.grade === retentionGrade && exam.date === retentionDate && !exam.noExam)
     .map((exam) => exam.subject)
     .filter(Boolean))];
   target.innerHTML = `<option value="全部">全部科目</option>${subjects.map((subject) => `<option value="${escapeHtml(subject)}">${escapeHtml(subject)}</option>`).join("")}`;
@@ -2124,7 +2159,7 @@ function renderRetentionSubjectOptions() {
 
 function studentSubjectAverageBefore(studentId, subject, date) {
   const rows = state.exams
-    .filter((exam) => exam.subject === subject && exam.date < date && !exam.noTest)
+    .filter((exam) => exam.subject === subject && exam.date < date && !exam.noExam)
     .flatMap((exam) => currentScoreRows(exam).filter((row) => row.student.id === studentId));
   if (!rows.length) return NaN;
   return rows.reduce((sum, row) => sum + row.score, 0) / rows.length;
@@ -2154,7 +2189,7 @@ function renderRetentionReport() {
   const target = $("#retentionReportBody");
   if (!target) return;
   const exams = state.exams
-    .filter((exam) => exam.grade === retentionGrade && exam.date === retentionDate && !exam.noTest)
+    .filter((exam) => exam.grade === retentionGrade && exam.date === retentionDate && !exam.noExam)
     .filter((exam) => retentionSubject === "全部" || exam.subject === retentionSubject);
   if (!exams.length) {
     target.innerHTML = `<div class="empty">這一天尚無符合的考試成績單。</div>`;
@@ -2578,6 +2613,7 @@ function captureScoreDraft() {
   draft.paperCount = Math.max(1, Number($("#examPaperCount").value) || 1);
   draft.paperTopics = paperTopicValues();
   draft.noExam = $("#examNoTest").checked;
+  draft.mockMode = $("#examMockMode")?.checked || false;
   draft.scores = draft.scores || {};
   draft.absences = draft.absences && !Array.isArray(draft.absences) ? draft.absences : {};
   const updatedAt = new Date().toISOString();
@@ -2606,6 +2642,7 @@ function updateScoreDraftMeta({ immediate = false } = {}) {
   draft.paperCount = Math.max(1, Number($("#examPaperCount").value) || 1);
   draft.paperTopics = paperTopicValues();
   draft.noExam = $("#examNoTest").checked;
+  draft.mockMode = $("#examMockMode")?.checked || false;
   publishScoreDraft(draft, { immediate });
 }
 
@@ -2677,6 +2714,7 @@ function restoreScoreDraftMeta() {
   $("#examPaperCount").value = Math.max(1, Number(scoreDraft.paperCount) || 1);
   renderPaperTopicInputs(scoreDraft.paperTopics || []);
   $("#examNoTest").checked = Boolean(scoreDraft.noExam);
+  if ($("#examMockMode")) $("#examMockMode").checked = Boolean(scoreDraft.mockMode);
   editingExamId = scoreDraft.editingExamId || null;
   updateExamFormMode();
 }
@@ -2716,6 +2754,7 @@ function applyRemoteScoreDraftToForm() {
   if (!focused?.matches?.("#examScope")) $("#examScope").value = scoreDraft.scope || "";
   if (!focused?.matches?.("#examPaperCount")) $("#examPaperCount").value = Math.max(1, Number(scoreDraft.paperCount) || 1);
   if (!focused?.matches?.("#examNoTest")) $("#examNoTest").checked = Boolean(scoreDraft.noExam);
+  if (!focused?.matches?.("#examMockMode") && $("#examMockMode")) $("#examMockMode").checked = Boolean(scoreDraft.mockMode);
   if (!focused?.closest?.("#examPaperTopics")) renderPaperTopicInputs(scoreDraft.paperTopics || []);
   const noExam = $("#examNoTest")?.checked;
   if (!noExam && !$("#scoreEntryList [data-score-student]").length) renderScoreEntryList();
@@ -2745,6 +2784,7 @@ function setScoreAbsentButton(button, active) {
 function renderScoreEntryList() {
   const subject = $("#examSubject")?.value || "國文";
   const noExam = $("#examNoTest")?.checked;
+  const mockMode = $("#examMockMode")?.checked;
   const paperCount = Math.max(1, Number($("#examPaperCount")?.value) || 1);
   const students = visibleScoreStudents();
   if (noExam) {
@@ -2757,7 +2797,7 @@ function renderScoreEntryList() {
         <span>${student.name}</span>
         <div class="paper-score-grid">
           ${Array.from({ length: paperCount }, (_, index) => `
-            <input type="text" inputmode="decimal" data-score-student="${student.id}" data-score-paper="${index}" placeholder="卷${index + 1} / A+">
+            <input type="text" inputmode="${mockMode ? "text" : "decimal"}" data-score-student="${student.id}" data-score-paper="${index}" placeholder="${mockMode ? `卷${index + 1} / A、B、C` : `卷${index + 1} / 分數`}">
           `).join("")}
           <button class="absent-check" type="button" data-score-absent="${student.id}" aria-pressed="false">缺考</button>
         </div>
@@ -2820,10 +2860,10 @@ function averageScore(values) {
   return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : NaN;
 }
 
-function parseScoreInput(value) {
+function parseScoreInput(value, mockMode = $("#examMockMode")?.checked) {
   const text = String(value ?? "").trim().toUpperCase();
-  const levelMap = { "A++": 98, "A+": 92, A: 87, "B++": 82, "B+": 77, B: 72, C: 60 };
-  if (levelMap[text] !== undefined) return levelMap[text];
+  const mockLevelMap = { "A++": 100, "A+": 95, A: 90, "B++": 88, "B+": 84, B: 80, C: 75 };
+  if (mockMode) return mockLevelMap[text] ?? NaN;
   const numeric = Number(text);
   return Number.isFinite(numeric) ? numeric : NaN;
 }
@@ -3019,6 +3059,7 @@ async function saveExam(event) {
   }
   captureScoreDraft();
   const noExam = $("#examNoTest").checked;
+  const mockMode = $("#examMockMode")?.checked || false;
   const paperCount = Math.max(1, Number($("#examPaperCount").value) || 1);
   const scores = {};
   const absences = [];
@@ -3032,7 +3073,7 @@ async function saveExam(event) {
       const input = document.querySelector(`[data-score-student="${student.id}"][data-score-paper="${index}"]`);
       const draftValue = draftScoreValue(scoreDraft, student.id, String(index));
       const value = draftValue !== undefined ? draftValue : input?.value;
-      return value !== "" && value !== undefined ? parseScoreInput(value) : null;
+      return value !== "" && value !== undefined ? parseScoreInput(value, mockMode) : null;
     }).filter((value) => value !== null && Number.isFinite(value));
     if (values.length) scores[student.id] = values;
   });
@@ -3049,6 +3090,7 @@ async function saveExam(event) {
     subject: $("#examSubject").value,
     scope: $("#examScope").value.trim(),
     noExam,
+    mockMode,
     paperCount,
     paperTopics: paperTopicValues(),
     scores,
@@ -3096,6 +3138,7 @@ function resetExamForm() {
   $("#examPaperCount").value = 1;
   renderPaperTopicInputs([]);
   $("#examNoTest").checked = false;
+  if ($("#examMockMode")) $("#examMockMode").checked = false;
   $("#scoreStudentPicker").value = "";
   $("#scoreStudentFilter").value = "全部";
   updateExamFormMode();
@@ -3118,6 +3161,7 @@ function fillExamForm(exam) {
   $("#examPaperCount").value = Math.max(1, Number(exam.paperCount) || 1);
   renderPaperTopicInputs(exam.paperTopics || []);
   $("#examNoTest").checked = Boolean(exam.noExam);
+  if ($("#examMockMode")) $("#examMockMode").checked = Boolean(exam.mockMode);
   $("#scoreStudentPicker").value = "";
   $("#scoreStudentFilter").value = "全部";
   updateExamFormMode();
@@ -6121,6 +6165,7 @@ function setupForms() {
     state.courseCatalog = catalog
       .filter((item) => item.name !== editingCourseName)
       .concat({ name: nextName, core: coreCourses.includes(nextName) });
+    state.deletedCourseNames = (state.deletedCourseNames || []).filter((name) => name !== nextName);
     applyCourseCatalog(state.courseCatalog);
     clearCourseForm();
     saveState();
@@ -6365,7 +6410,7 @@ function setupForms() {
     renderTermReport();
   });
 
-  ["examScope", "examPaperCount", "examPaperTopics", "examNoTest"].forEach((id) => {
+  ["examScope", "examPaperCount", "examPaperTopics", "examNoTest", "examMockMode"].forEach((id) => {
     onInputChange(id, () => updateScoreDraftMeta({ immediate: id !== "examScope" }));
   });
   ["scoreStudentPicker"].forEach((id) => {
@@ -6454,7 +6499,7 @@ function setupForms() {
     }
   });
 
-  ["studentFilter", "studentSearch", "leaveManageSearch", "lateGrade", "historyType", "historySearch", "scheduleGrade", "examGrade", "examSubject", "examPaperCount", "examNoTest", "scoreHistoryYear", "scoreHistorySemester", "scoreHistoryGrade", "careerQueryDate", "careerExamYear", "careerExamSemester", "careerTermYear", "careerTermAnalysisYear", "careerTermAnalysisSemester", "careerTermAnalysisStage", "careerReportRange", "careerReportYear", "careerReportSemester", "careerReportStage", "careerReportStartDate", "careerReportEndDate", "careerReportDetailRange", "termYear", "termSemester", "termGrade", "termStage", "termPeriodYear", "termPeriodSemester", "seatSettingGrade", "seatSettingSubject", "seatSettingRoom", "roomLayoutRoom", "rollDate", "rollGrade", "rollSubject", "retentionDate", "retentionSubject"].forEach((id) => {
+  ["studentFilter", "studentSearch", "leaveManageSearch", "lateGrade", "historyType", "historySearch", "scheduleGrade", "examGrade", "examSubject", "examPaperCount", "examNoTest", "examMockMode", "scoreHistoryYear", "scoreHistorySemester", "scoreHistoryGrade", "careerQueryDate", "careerExamYear", "careerExamSemester", "careerTermYear", "careerTermAnalysisYear", "careerTermAnalysisSemester", "careerTermAnalysisStage", "careerReportRange", "careerReportYear", "careerReportSemester", "careerReportStage", "careerReportStartDate", "careerReportEndDate", "careerReportDetailRange", "termYear", "termSemester", "termGrade", "termStage", "termPeriodYear", "termPeriodSemester", "seatSettingGrade", "seatSettingSubject", "seatSettingRoom", "roomLayoutRoom", "rollDate", "rollGrade", "rollSubject", "retentionDate", "retentionSubject"].forEach((id) => {
     onInputChange(id, () => {
       if (id.startsWith("scoreHistory")) examHistoryPage = 1;
       if (id === "rollGrade") rollCallGrade = $("#rollGrade").value;
@@ -6479,7 +6524,8 @@ function setupForms() {
         updateScoreDraftMeta({ immediate: true });
         return;
       }
-      if ($("#scores")?.classList.contains("active") && ["examPaperCount", "examNoTest"].includes(id)) {
+      if ($("#scores")?.classList.contains("active") && ["examPaperCount", "examNoTest", "examMockMode"].includes(id)) {
+        renderScoreEntryList();
         return;
       }
       if (id.startsWith("seatSetting")) {
@@ -7773,6 +7819,7 @@ async function generateStudentAiAnalysis(studentId, output) {
     }
     if (deleteCourseName && !coreCourses.includes(deleteCourseName) && confirm(`確定刪除課程「${deleteCourseName}」？歷史成績不會刪除。`)) {
       state.courseCatalog = normalizeCourseCatalog(state.courseCatalog).filter((item) => item.name !== deleteCourseName);
+      state.deletedCourseNames = [...new Set([...(state.deletedCourseNames || []), deleteCourseName])];
       applyCourseCatalog(state.courseCatalog);
     }
     if (cleanArchiveYear) {
@@ -7802,12 +7849,10 @@ async function generateStudentAiAnalysis(studentId, output) {
     if (editStudentId) {
       const student = getStudent(editStudentId);
       if (student) {
-        const keepScroll = $("#students")?.classList.contains("active");
-        const scrollY = window.scrollY;
         fillStudentForm(student);
-        navigateToTab("students", { preserveScroll: keepScroll });
-        if (keepScroll) window.scrollTo({ top: scrollY });
-        $("#studentName").focus({ preventScroll: keepScroll });
+        navigateToTab("students");
+        window.scrollTo({ top: 0, behavior: "smooth" });
+        $("#studentName").focus({ preventScroll: true });
       }
     }
     if (deleteStudentId && confirm("確定移除這位學生檔案？相關請假與晚到紀錄也會一起移除。")) {
