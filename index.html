@@ -335,16 +335,25 @@
         </div>
       </div>
 
-      <nav class="tabs" aria-label="系統分頁">
-        <button class="tab-button active" data-tab="dashboard">主頁看板</button>
-        <button class="tab-button" data-tab="attendance">出缺勤</button>
-        <button class="tab-button" data-tab="management">班務管理</button>
-        <button class="tab-button" data-tab="duty-work">教務作業</button>
-        <button class="tab-button" data-tab="class-ops">班級經營</button>
-        <button class="tab-button" data-tab="contact-book">聯絡本系統</button>
-        <button class="tab-button" data-tab="settings">設定</button>
-        <button class="tab-button" data-tab="academic">學年設定</button>
-        <button class="tab-button" data-tab="archive-cleanup">歷屆資料</button>
+      <nav class="tabs grouped-tabs" aria-label="系統分頁">
+        <section class="nav-group nav-group-daily" aria-label="日常作業">
+          <div class="nav-group-title"><span>日常作業</span><small>今日</small></div>
+          <button class="tab-button active" data-tab="dashboard">主頁看板</button>
+          <button class="tab-button" data-tab="attendance">出缺勤</button>
+          <button class="tab-button" data-tab="duty-work">教務作業</button>
+        </section>
+        <section class="nav-group nav-group-learning" aria-label="學生學習">
+          <div class="nav-group-title"><span>學生學習</span><small>追蹤</small></div>
+          <button class="tab-button" data-tab="management">班務管理</button>
+          <button class="tab-button" data-tab="class-ops">班級經營</button>
+          <button class="tab-button" data-tab="contact-book">聯絡本系統</button>
+        </section>
+        <section class="nav-group nav-group-system" aria-label="系統設定">
+          <div class="nav-group-title"><span>系統設定</span><small>資料</small></div>
+          <button class="tab-button" data-tab="settings">設定</button>
+          <button class="tab-button" data-tab="academic">學年設定</button>
+          <button class="tab-button" data-tab="archive-cleanup">歷屆資料</button>
+        </section>
       </nav>
       <button class="logout-button" id="logoutButton" type="button">登出 / 切換分校</button>
     </aside>

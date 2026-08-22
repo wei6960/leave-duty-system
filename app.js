@@ -2766,20 +2766,82 @@ function studentSubjectAverageBefore(studentId, subject, date) {
   return rows.reduce((sum, row) => sum + row.score, 0) / rows.length;
 }
 
-function retentionDecision(row, examRows) {
-  const baseline = studentSubjectAverageBefore(row.student.id, row.exam.subject, row.exam.date);
-  const total = Math.max(1, examRows.length);
-  const classAverage = examRows.length ? examRows.reduce((sum, item) => sum + item.score, 0) / examRows.length : NaN;
-  const rankRatio = row.rank / total;
+function subjectScoresForBenchmark(studentId, subject, date = "", { excludeDate = false } = {}) {
+  return state.exams
+    .filter((exam) => normalizeCourseName(exam.subject) === normalizeCourseName(subject) && !exam.noExam)
+    .filter((exam) => !date || (excludeDate ? exam.date < date : exam.date <= date))
+    .flatMap((exam) => currentScoreRows(exam).filter((row) => row.student.id === studentId))
+    .map((row) => row.score)
+    .filter(Number.isFinite);
+}
+
+function termScoresForBenchmark(studentId, subject, date = "", { excludeDate = false } = {}) {
+  return state.termScores
+    .filter((item) => item.studentId === studentId && normalizeCourseName(item.subject) === normalizeCourseName(subject))
+    .filter((item) => {
+      if (!date) return true;
+      const recordDate = item.date || item.createdAt?.slice(0, 10) || "";
+      if (!recordDate) return true;
+      return excludeDate ? recordDate < date : recordDate <= date;
+    })
+    .map((item) => Number(item.score))
+    .filter(Number.isFinite);
+}
+
+function retentionBenchmarkForStudent(student, subject, date = todayISO(), options = {}) {
+  if (!student) {
+    return { weeklyAvg: NaN, termAvg: NaN, baseline: NaN, reasonable: NaN, weeklyCount: 0, termCount: 0, hasPersonalBaseline: false, source: "資料不足" };
+  }
+  const weeklyScores = subjectScoresForBenchmark(student.id, subject, date, options);
+  const termScores = termScoresForBenchmark(student.id, subject, date, options);
+  const weeklyAvg = averageScore(weeklyScores);
+  const termAvg = averageScore(termScores);
+  const hasWeekly = Number.isFinite(weeklyAvg);
+  const hasTerm = Number.isFinite(termAvg);
+  let baseline = NaN;
+  if (hasWeekly && hasTerm) baseline = weeklyAvg * .68 + termAvg * .32;
+  else if (hasWeekly) baseline = weeklyAvg;
+  else if (hasTerm) baseline = termAvg;
+  const hasPersonalBaseline = Number.isFinite(baseline);
+  if (!hasPersonalBaseline && Number.isFinite(options.classAverage)) baseline = options.classAverage;
   const reasonable = Number.isFinite(baseline)
     ? Math.max(35, Math.min(88, baseline - (baseline >= 80 ? 10 : baseline >= 60 ? 8 : 5)))
-    : (Number.isFinite(classAverage) ? Math.max(35, Math.min(60, classAverage - 10)) : 50);
+    : 50;
+  const source = hasWeekly && hasTerm
+    ? "週考+段考"
+    : hasWeekly
+      ? "週考"
+      : hasTerm
+        ? "段考"
+        : Number.isFinite(options.classAverage)
+          ? "班平均推估"
+          : "資料不足";
+  return {
+    weeklyAvg,
+    termAvg,
+    baseline,
+    reasonable,
+    weeklyCount: weeklyScores.length,
+    termCount: termScores.length,
+    hasPersonalBaseline,
+    source,
+  };
+}
+
+function retentionDecision(row, examRows) {
+  const total = Math.max(1, examRows.length);
+  const classAverage = examRows.length ? examRows.reduce((sum, item) => sum + item.score, 0) / examRows.length : NaN;
+  const benchmark = retentionBenchmarkForStudent(row.student, row.exam.subject, row.exam.date, { classAverage, excludeDate: true });
+  const baseline = benchmark.baseline;
+  const rankRatio = row.rank / total;
+  const reasonable = benchmark.reasonable;
   const reasons = [];
-  if (Number.isFinite(baseline) && row.score < reasonable) reasons.push(`低於個人合理值 ${scoreDisplay(reasonable)}`);
-  if (Number.isFinite(baseline) && baseline >= 70 && row.score <= baseline - 15) reasons.push("較長期水準明顯失常");
-  if (!Number.isFinite(baseline) && row.score < reasonable) reasons.push("新資料偏低需追蹤");
+  if (benchmark.hasPersonalBaseline && row.score < reasonable) reasons.push(`低於個人合理值 ${scoreDisplay(reasonable)}`);
+  if (!benchmark.hasPersonalBaseline && row.score < reasonable) reasons.push(`低於推估合理值 ${scoreDisplay(reasonable)}`);
+  if (benchmark.hasPersonalBaseline && baseline >= 70 && row.score <= baseline - 15) reasons.push("較長期水準明顯失常");
+  if (!benchmark.hasPersonalBaseline && row.score < reasonable) reasons.push("新資料偏低需追蹤");
   if (row.score < 35) reasons.push("基礎分數過低需立即補強");
-  return { baseline, reasonable, classAverage, total, rankRatio, shouldStay: reasons.length > 0, reason: reasons.join("、") || "達個人合理水準" };
+  return { ...benchmark, baseline, reasonable, classAverage, total, rankRatio, shouldStay: reasons.length > 0, reason: reasons.join("、") || "達個人合理水準" };
 }
 
 function renderRetentionReport() {
@@ -2829,7 +2891,7 @@ function renderRetentionReport() {
     <h3 class="subhead">當天成績排名</h3>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>排名</th><th>學生</th><th>科目</th><th>單元</th><th>成績</th><th>歷史平均</th><th>合理值</th><th>留班</th><th>原因</th></tr></thead>
+        <thead><tr><th>排名</th><th>學生</th><th>科目</th><th>單元</th><th>成績</th><th>基準</th><th>合理值</th><th>依據</th><th>留班</th><th>原因</th></tr></thead>
         <tbody>${rows.map((row) => `
           <tr class="${row.decision.shouldStay ? "attention-row" : ""}">
             <td>${row.rank}/${row.decision.total}</td>
@@ -2839,10 +2901,11 @@ function renderRetentionReport() {
             <td class="${rowScoreClass(row)}">${rowAverageDisplay(row)}</td>
             <td>${scoreDisplay(row.decision.baseline)}</td>
             <td>${scoreDisplay(row.decision.reasonable)}</td>
+            <td>${escapeHtml(row.decision.source)}</td>
             <td>${row.decision.shouldStay ? "留班" : "-"}</td>
             <td>${escapeHtml(row.decision.reason)}</td>
           </tr>
-        `).join("") || `<tr><td colspan="9">目前沒有當天成績。</td></tr>`}</tbody>
+        `).join("") || `<tr><td colspan="10">目前沒有當天成績。</td></tr>`}</tbody>
       </table>
     </div>
     <h3 class="subhead">留班名單</h3>
@@ -5142,6 +5205,43 @@ function studentReportVisualsHtml(student, analyses) {
   </section>`;
 }
 
+function retentionBenchmarkHtml(student, analyses, selectedSubject = "全部") {
+  const subjectPool = new Set([
+    ...(student.courses || []),
+    ...analyses.map((item) => item.subject),
+    ...studentExamRows(student).map((row) => row.exam.subject),
+  ].map(normalizeCourseName).filter(Boolean));
+  const subjects = reportSubjects
+    .filter((subject) => subjectPool.has(normalizeCourseName(subject)))
+    .filter((subject) => selectedSubject === "全部" || normalizeCourseName(subject) === normalizeCourseName(selectedSubject));
+  if (!subjects.length) return "";
+  const rows = subjects.map((subject) => ({ subject, benchmark: retentionBenchmarkForStudent(student, subject, todayISO()) }));
+  const validReasonable = rows.map((row) => row.benchmark.reasonable).filter(Number.isFinite);
+  const overall = averageScore(validReasonable);
+  return `<section class="retention-benchmark-panel">
+    <div class="analysis-card-head">
+      <strong>留班合理值</strong>
+      <b class="level-badge">週考 + 段考</b>
+    </div>
+    <div class="retention-benchmark-summary">
+      <span>平均合理值 <b>${scoreDisplay(overall)}</b></span>
+      <span>依每科歷史水準滾動調整</span>
+    </div>
+    <div class="retention-benchmark-grid">
+      ${rows.map(({ subject, benchmark }) => `
+        <article class="retention-benchmark-card">
+          <div>
+            <strong>${escapeHtml(subject)}</strong>
+            <span>${escapeHtml(benchmark.source)}</span>
+          </div>
+          <b>${scoreDisplay(benchmark.reasonable)}</b>
+          <small>基準 ${scoreDisplay(benchmark.baseline)}｜週考 ${benchmark.weeklyCount} 筆｜段考 ${benchmark.termCount} 筆</small>
+        </article>
+      `).join("")}
+    </div>
+  </section>`;
+}
+
 function termScoreLineChart(rows) {
   const chartRows = rows.slice(-12);
   if (chartRows.length < 2) return `<div class="empty small-empty">至少需要 2 次段考成績才會形成折線圖。</div>`;
@@ -5705,6 +5805,7 @@ function renderStudentReportHtml(student, subjectOverride = null, options = {}) 
       <span>最新年級 PR：${prLabel}</span>
       <span>各科定位：${levelSummary}</span>
     </div>
+    ${retentionBenchmarkHtml(student, analyses, subject)}
     ${studentReportVisualsHtml(student, analyses)}
     ${studentWeakUnitsHtml(student, analyses)}
     <div class="analysis-grid">
@@ -5798,6 +5899,16 @@ function renderStudentReportHtml(student, subjectOverride = null, options = {}) 
     .report-table th { background: #2a3039; }
     .report-head { display: grid; gap: 6px; padding: 14px; border: 1px solid #dfcfaa; border-radius: 8px; background: #fff9ea; margin: 14px 0; }
     .report-head strong { font-size: 20px; color: #7a551a; }
+    .retention-benchmark-panel { display: grid; gap: 8px; margin: 10px 0; padding: 10px; border: 1px solid #dfcfaa; border-radius: 8px; background: #fffdf7; break-inside: avoid; }
+    .retention-benchmark-summary { display: flex; flex-wrap: wrap; gap: 6px; }
+    .retention-benchmark-summary span { padding: 6px 8px; border: 1px solid #ead9ae; border-radius: 6px; background: #fff9ea; font-size: 12px; }
+    .retention-benchmark-summary b { color: #7a551a; font-size: 15px; }
+    .retention-benchmark-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 7px; }
+    .retention-benchmark-card { display: grid; grid-template-columns: 1fr auto; gap: 4px 8px; align-items: center; padding: 8px; border: 1px solid #ead9ae; border-radius: 7px; background: #fff9ea; }
+    .retention-benchmark-card strong, .retention-benchmark-card span, .retention-benchmark-card small { display: block; }
+    .retention-benchmark-card span, .retention-benchmark-card small { color: #755927; font-size: 11px; }
+    .retention-benchmark-card b { color: #7a551a; font-size: 20px; }
+    .retention-benchmark-card small { grid-column: 1 / -1; }
     .student-report-visuals { display: grid; grid-template-columns: .85fr 1.15fr; gap: 8px; margin: 10px 0; break-inside: avoid; }
     .analysis-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-top: 10px; }
     .analysis-card { padding: 9px; border: 1px solid #dfcfaa; border-radius: 8px; background: #fffdf7; break-inside: avoid; }

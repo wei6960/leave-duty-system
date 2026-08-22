@@ -183,8 +183,49 @@ select {
 
 .tabs {
   display: grid;
-  gap: .6rem;
+  grid-template-columns: 1fr;
+  align-content: start;
+  gap: .75rem;
   margin-top: 1.25rem;
+}
+
+.nav-group {
+  display: grid;
+  gap: .42rem;
+  padding: .58rem;
+  border: 1px solid rgba(241, 211, 124, .12);
+  border-radius: .68rem;
+  background:
+    linear-gradient(135deg, rgba(198, 151, 53, .075), transparent 56%),
+    rgba(255, 255, 255, .024);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .026);
+}
+
+.nav-group:has(.tab-button.active) {
+  border-color: rgba(241, 211, 124, .32);
+  background:
+    linear-gradient(135deg, rgba(198, 151, 53, .16), rgba(255, 255, 255, .02) 60%),
+    rgba(255, 255, 255, .03);
+}
+
+.nav-group-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .6rem;
+  min-height: 1.25rem;
+  padding: .05rem .12rem .2rem;
+  color: #ffe7a2;
+  font-size: .74rem;
+  font-weight: 900;
+  letter-spacing: .08em;
+}
+
+.nav-group-title small {
+  color: rgba(230, 220, 196, .68);
+  font-size: .68rem;
+  font-weight: 700;
+  letter-spacing: 0;
 }
 
 .logout-button {
@@ -1541,7 +1582,7 @@ main {
 }
 
 .tabs {
-  gap: .45rem;
+  gap: .75rem;
 }
 
 .tab-button {
@@ -1550,6 +1591,11 @@ main {
   border-color: rgba(241, 211, 124, .12);
   background: rgba(255, 255, 255, .025);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, .025);
+}
+
+.nav-group .tab-button {
+  min-height: 2.65rem;
+  padding: .68rem .8rem .68rem 1rem;
 }
 
 .tab-button.active {
@@ -2953,6 +2999,91 @@ body.parent-nav-open .parent-drawer {
   grid-template-columns: minmax(17rem, .86fr) minmax(0, 1.14fr);
   gap: .85rem;
   margin: 1rem 0;
+}
+
+.retention-benchmark-panel {
+  display: grid;
+  gap: .78rem;
+  margin: 1rem 0;
+  padding: .95rem;
+  border: 1px solid rgba(241, 211, 124, .18);
+  border-radius: .55rem;
+  background:
+    linear-gradient(135deg, rgba(198, 151, 53, .13), transparent 55%),
+    rgba(255, 255, 255, .026);
+}
+
+.retention-benchmark-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .55rem;
+}
+
+.retention-benchmark-summary span {
+  display: inline-flex;
+  align-items: center;
+  gap: .35rem;
+  min-height: 2.25rem;
+  padding: .42rem .62rem;
+  border: 1px solid rgba(241, 211, 124, .16);
+  border-radius: .42rem;
+  background: rgba(0, 0, 0, .16);
+  color: #e6dcc4;
+  font-size: .88rem;
+}
+
+.retention-benchmark-summary b {
+  color: #ffe7a2;
+  font-size: 1.05rem;
+}
+
+.retention-benchmark-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(13.5rem, 1fr));
+  gap: .62rem;
+}
+
+.retention-benchmark-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: .35rem .55rem;
+  align-items: center;
+  padding: .76rem;
+  border: 1px solid rgba(241, 211, 124, .14);
+  border-radius: .48rem;
+  background:
+    linear-gradient(145deg, rgba(0, 0, 0, .32), rgba(198, 151, 53, .09)),
+    rgba(255, 255, 255, .028);
+}
+
+.retention-benchmark-card strong,
+.retention-benchmark-card span,
+.retention-benchmark-card small {
+  display: block;
+  min-width: 0;
+}
+
+.retention-benchmark-card strong {
+  color: #fff6da;
+  font-size: .98rem;
+}
+
+.retention-benchmark-card span,
+.retention-benchmark-card small {
+  color: var(--muted);
+  font-size: .78rem;
+}
+
+.retention-benchmark-card b {
+  color: #ffe7a2;
+  font-size: 1.45rem;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+}
+
+.retention-benchmark-card small {
+  grid-column: 1 / -1;
+  overflow-wrap: anywhere;
 }
 
 .student-radar {
