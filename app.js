@@ -153,15 +153,21 @@ function emptyState() {
     exams: [],
     deletedExamIds: [],
     termScores: [],
+    deletedTermReportKeys: [],
     termPeriods: {},
+    deletedTermPeriodKeys: [],
     termWeights: {},
     academicPeriods: [],
     events: [],
+    deletedEventIds: [],
     contactBooks: [],
+    deletedContactIds: [],
     paperAnalyses: [],
+    deletedPaperAnalysisIds: [],
     courseCatalog: defaultCourses.map((name) => ({ name, core: coreCourses.includes(name) })),
     deletedCourseNames: [],
     roomLayouts: normalizeRoomLayouts({}),
+    deletedRoomLayoutNames: [],
     seatSettings: {},
     rollCalls: [],
     scoreDrafts: {},
@@ -236,9 +242,18 @@ function normalizeState(raw) {
   const deletedCourseNames = Array.isArray(raw.deletedCourseNames)
     ? raw.deletedCourseNames.map(normalizeCourseName).filter((name) => name && !coreCourses.includes(name))
     : [];
+  const deletedEventIds = Array.isArray(raw.deletedEventIds) ? raw.deletedEventIds : [];
+  const deletedContactIds = Array.isArray(raw.deletedContactIds) ? raw.deletedContactIds : [];
+  const deletedPaperAnalysisIds = Array.isArray(raw.deletedPaperAnalysisIds) ? raw.deletedPaperAnalysisIds : [];
+  const deletedTermReportKeys = Array.isArray(raw.deletedTermReportKeys) ? raw.deletedTermReportKeys : [];
+  const deletedTermPeriodKeys = Array.isArray(raw.deletedTermPeriodKeys) ? raw.deletedTermPeriodKeys : [];
+  const deletedRoomLayoutNames = Array.isArray(raw.deletedRoomLayoutNames)
+    ? raw.deletedRoomLayoutNames.filter((name) => name && !defaultRoomLayouts[name])
+    : [];
   const courseCatalog = normalizeCourseCatalog(raw.courseCatalog || defaultCourses)
     .filter((item) => item.core || !deletedCourseNames.includes(item.name));
   const normalizedRoomLayouts = normalizeRoomLayouts(raw.roomLayouts || {}, raw.seatSettings || {});
+  deletedRoomLayoutNames.forEach((name) => delete normalizedRoomLayouts[name]);
   roomLayouts = normalizedRoomLayouts;
   const availableCourses = courseCatalog.map((item) => item.name);
   const baseSchedule = defaultSchedule();
@@ -278,20 +293,28 @@ function normalizeState(raw) {
     settings: normalizeAcademicSettings(raw.settings),
     deletedExamIds: Array.isArray(raw.deletedExamIds) ? raw.deletedExamIds : [],
     exams: (raw.exams || []).filter((exam) => !(raw.deletedExamIds || []).includes(exam.id)).map(normalizeExam),
-    termScores: (raw.termScores || []).map((item) => ({
+    termScores: (raw.termScores || [])
+      .filter((item) => !deletedTermReportKeys.includes(termScoreReportKey(item)))
+      .map((item) => ({
       ...item,
       id: item.id || crypto.randomUUID(),
       date: item.date || item.createdAt?.slice(0, 10) || todayISO(),
     })),
-    termPeriods: normalizeTermPeriods(raw.termPeriods || {}),
+    deletedTermReportKeys,
+    termPeriods: Object.fromEntries(Object.entries(normalizeTermPeriods(raw.termPeriods || {})).filter(([key]) => !deletedTermPeriodKeys.includes(termPeriodGroupKeyFromPeriodKey(key)))),
+    deletedTermPeriodKeys,
     termWeights: normalizeTermWeights(raw.termWeights || {}),
     academicPeriods: normalizeAcademicPeriods(raw.academicPeriods || [], normalizeAcademicSettings(raw.settings)),
-    events: normalizeEvents(raw.events || []),
-    contactBooks: normalizeContactBooks(raw.contactBooks || []),
-    paperAnalyses: normalizePaperAnalyses(raw.paperAnalyses || []),
+    deletedEventIds,
+    events: normalizeEvents(raw.events || []).filter((item) => !deletedEventIds.includes(item.id)),
+    deletedContactIds,
+    contactBooks: normalizeContactBooks(raw.contactBooks || []).filter((item) => !deletedContactIds.includes(item.id)),
+    deletedPaperAnalysisIds,
+    paperAnalyses: normalizePaperAnalyses(raw.paperAnalyses || []).filter((item) => !deletedPaperAnalysisIds.includes(item.id)),
     courseCatalog,
     deletedCourseNames,
     roomLayouts: normalizedRoomLayouts,
+    deletedRoomLayoutNames,
     seatSettings: normalizeSeatSettings(raw.seatSettings || {}),
     rollCalls: normalizeRollCalls(raw.rollCalls || []),
     scoreDrafts: normalizeScoreDrafts(raw.scoreDrafts || {}),
@@ -980,7 +1003,7 @@ function mergeScoreDraft(localDraft, remoteDraft) {
     const paperIds = new Set([...Object.keys(local.scores?.[studentId] || {}), ...Object.keys(remote.scores?.[studentId] || {})]);
     paperIds.forEach((paper) => {
       const cell = newestRecord(local.scores?.[studentId]?.[paper], remote.scores?.[studentId]?.[paper]);
-      if (!cell || cell.value === "") return;
+      if (!cell) return;
       if (!scores[studentId]) scores[studentId] = {};
       scores[studentId][paper] = cell;
     });
@@ -1079,8 +1102,21 @@ function mergeRemoteStateForSave(localState, remotePayload) {
   const local = normalizeState(localState || emptyState());
   const deletedCourseNames = [...new Set([...(remoteState.deletedCourseNames || []), ...(local.deletedCourseNames || [])])]
     .filter((name) => !coreCourses.includes(name));
+  const deletedEventIds = [...new Set([...(remoteState.deletedEventIds || []), ...(local.deletedEventIds || [])])];
+  const deletedContactIds = [...new Set([...(remoteState.deletedContactIds || []), ...(local.deletedContactIds || [])])];
+  const deletedPaperAnalysisIds = [...new Set([...(remoteState.deletedPaperAnalysisIds || []), ...(local.deletedPaperAnalysisIds || [])])];
+  const deletedTermReportKeys = [...new Set([...(remoteState.deletedTermReportKeys || []), ...(local.deletedTermReportKeys || [])])];
+  const deletedTermPeriodKeys = [...new Set([...(remoteState.deletedTermPeriodKeys || []), ...(local.deletedTermPeriodKeys || [])])];
+  const deletedRoomLayoutNames = [...new Set([...(remoteState.deletedRoomLayoutNames || []), ...(local.deletedRoomLayoutNames || [])])]
+    .filter((name) => !defaultRoomLayouts[name]);
   const courseCatalog = normalizeCourseCatalog([...(remoteState.courseCatalog || []), ...(local.courseCatalog || [])])
     .filter((item) => item.core || !deletedCourseNames.includes(item.name));
+  const mergedTermPeriods = { ...(remoteState.termPeriods || {}), ...(local.termPeriods || {}) };
+  deletedTermPeriodKeys.forEach((key) => {
+    Object.keys(mergedTermPeriods).forEach((periodKey) => {
+      if (termPeriodGroupKeyFromPeriodKey(periodKey) === key) delete mergedTermPeriods[periodKey];
+    });
+  });
   return {
     ...local,
     deletedStudentIds: [...new Set([...(remoteState.deletedStudentIds || []), ...(local.deletedStudentIds || [])])],
@@ -1091,17 +1127,24 @@ function mergeRemoteStateForSave(localState, remotePayload) {
     lateRecords: mergeByIdWithDeleted(local.lateRecords, remoteState.lateRecords, [...(remoteState.deletedLateIds || []), ...(local.deletedLateIds || [])]),
     deletedExamIds: [...new Set([...(remoteState.deletedExamIds || []), ...(local.deletedExamIds || [])])],
     exams: mergeExams(local.exams, remoteState.exams, [...(remoteState.deletedExamIds || []), ...(local.deletedExamIds || [])]),
-    termScores: mergeById(local.termScores, remoteState.termScores),
+    deletedTermReportKeys,
+    termScores: mergeById(local.termScores, remoteState.termScores)
+      .filter((item) => !deletedTermReportKeys.includes(termScoreReportKey(item))),
     academicPeriods: mergeById(local.academicPeriods, remoteState.academicPeriods),
-    events: mergeById(local.events, remoteState.events),
-    contactBooks: mergeById(local.contactBooks, remoteState.contactBooks),
-    paperAnalyses: mergeById(local.paperAnalyses, remoteState.paperAnalyses),
+    deletedEventIds,
+    events: mergeByIdWithDeleted(local.events, remoteState.events, deletedEventIds),
+    deletedContactIds,
+    contactBooks: mergeByIdWithDeleted(local.contactBooks, remoteState.contactBooks, deletedContactIds),
+    deletedPaperAnalysisIds,
+    paperAnalyses: mergeByIdWithDeleted(local.paperAnalyses, remoteState.paperAnalyses, deletedPaperAnalysisIds),
     rollCalls: mergeById(local.rollCalls, remoteState.rollCalls),
     archives: mergeById(local.archives, remoteState.archives),
     scoreDrafts: mergeScoreDrafts(local.scoreDrafts, remoteState.scoreDrafts),
-    roomLayouts: mergeRoomLayouts(local.roomLayouts, remoteState.roomLayouts),
+    roomLayouts: Object.fromEntries(Object.entries(mergeRoomLayouts(local.roomLayouts, remoteState.roomLayouts)).filter(([name]) => !deletedRoomLayoutNames.includes(name))),
+    deletedRoomLayoutNames,
     seatSettings: mergeSeatSettings(local.seatSettings, remoteState.seatSettings),
-    termPeriods: { ...(remoteState.termPeriods || {}), ...(local.termPeriods || {}) },
+    termPeriods: mergedTermPeriods,
+    deletedTermPeriodKeys,
     termWeights: { ...(remoteState.termWeights || {}), ...(local.termWeights || {}) },
     schedule: local.schedule || remoteState.schedule,
     settings: local.settings || remoteState.settings,
@@ -3219,6 +3262,7 @@ function saveTermScore(event) {
   const stage = $("#termStage").value;
   const term = `${year}${semester}`;
   const meta = { year, semester, grade, stage };
+  state.deletedTermReportKeys = (state.deletedTermReportKeys || []).filter((key) => key !== termScoreReportKey(meta));
   state.termWeights[termWeightKey(meta)] = readTermWeights();
   const inputs = $$('[data-term-score-student][data-term-score-subject]');
   let saved = 0;
@@ -3988,6 +4032,10 @@ function applyTermReportKey(key) {
   return { year, semester, grade, stage };
 }
 
+function termScoreReportKey(item = {}) {
+  return [item.year, item.semester, item.grade, item.stage].join("|");
+}
+
 function termReportFileName(meta, ext) {
   return `${meta.year}${meta.semester}_${meta.grade}_${meta.stage}_段考成績單.${ext}`;
 }
@@ -4744,6 +4792,11 @@ function termPeriodGeneralKey(meta) {
   return termPeriodKey({ ...meta, grade: "全體" });
 }
 
+function termPeriodGroupKeyFromPeriodKey(key) {
+  const [year, semester, grade = "全體"] = String(key || "").split("|");
+  return [year, semester, grade || "全體"].join("|");
+}
+
 function termPeriodRange(meta) {
   const value = state.termPeriods?.[termPeriodKey(meta)] || state.termPeriods?.[termPeriodGeneralKey(meta)];
   if (typeof value === "string") return { startDate: "", endDate: value };
@@ -4833,6 +4886,8 @@ function deleteTermPeriodGroup(key) {
 function saveTermPeriodSettings(event) {
   event.preventDefault();
   const meta = currentTermPeriodMeta();
+  const groupKey = [meta.year, meta.semester, meta.grade || "全體"].join("|");
+  state.deletedTermPeriodKeys = (state.deletedTermPeriodKeys || []).filter((key) => key !== groupKey);
   termStages.forEach((stage) => {
     const startDate = $(`[data-term-period-start="${stage}"]`)?.value || "";
     const endDate = $(`[data-term-period-end="${stage}"]`)?.value || "";
@@ -6197,6 +6252,7 @@ function setupForms() {
       ...(state.roomLayouts || {}),
       [name]: { name, layoutSeats: defaultLayoutSeatIdsFromSize(4, 6), updatedAt: new Date().toISOString() },
     }, state.seatSettings);
+    state.deletedRoomLayoutNames = (state.deletedRoomLayoutNames || []).filter((item) => item !== name);
     roomLayouts = state.roomLayouts;
     $("#roomLayoutName").value = "";
     saveState();
@@ -6214,6 +6270,7 @@ function setupForms() {
     const next = { ...(state.roomLayouts || {}) };
     delete next[room];
     state.roomLayouts = normalizeRoomLayouts(next, state.seatSettings);
+    state.deletedRoomLayoutNames = [...new Set([...(state.deletedRoomLayoutNames || []), room])];
     roomLayouts = state.roomLayouts;
     saveState();
     renderSeatSettingBoard();
@@ -7925,6 +7982,7 @@ async function generateStudentAiAnalysis(studentId, output) {
     if (deleteTermReportKey) {
       const { year, semester, grade, stage } = applyTermReportKey(deleteTermReportKey);
       if (confirm(`確定刪除 ${year}${semester} ${grade} ${stage} 段考成績單？刪除後家長端與生涯檔案也不會再顯示這次段考。`)) {
+        state.deletedTermReportKeys = [...new Set([...(state.deletedTermReportKeys || []), termScoreReportKey({ year, semester, grade, stage })])];
         state.termScores = state.termScores.filter((item) =>
           !(item.year === year && item.semester === semester && item.grade === grade && item.stage === stage)
         );
@@ -7958,10 +8016,12 @@ async function generateStudentAiAnalysis(studentId, output) {
     }
     if (deleteEventId && confirm("確定刪除這則重大行事曆公告？家長端也會同步移除。")) {
       state.events = state.events.filter((item) => item.id !== deleteEventId);
+      state.deletedEventIds = [...new Set([...(state.deletedEventIds || []), deleteEventId])];
       if (editingEventId === deleteEventId) clearEventForm();
     }
     if (deleteContactId && confirm("確定刪除這筆聯絡本？")) {
       state.contactBooks = state.contactBooks.filter((item) => item.id !== deleteContactId);
+      state.deletedContactIds = [...new Set([...(state.deletedContactIds || []), deleteContactId])];
     }
     if (editContactId) {
       const record = state.contactBooks.find((item) => item.id === editContactId);
@@ -7977,6 +8037,7 @@ async function generateStudentAiAnalysis(studentId, output) {
       $("#termPeriodForm")?.scrollIntoView({ behavior: "smooth", block: "start" });
     }
     if (deleteTermPeriodKey && confirm("確定刪除這組段考區間？成績不會被刪除，只會移除分析用日期範圍。")) {
+      state.deletedTermPeriodKeys = [...new Set([...(state.deletedTermPeriodKeys || []), deleteTermPeriodKey])];
       deleteTermPeriodGroup(deleteTermPeriodKey);
       saveState();
       renderAll();
@@ -7987,6 +8048,7 @@ async function generateStudentAiAnalysis(studentId, output) {
     }
     if (deletePaperAnalysisId && confirm("確定刪除這筆考卷分析？")) {
       state.paperAnalyses = state.paperAnalyses.filter((item) => item.id !== deletePaperAnalysisId);
+      state.deletedPaperAnalysisIds = [...new Set([...(state.deletedPaperAnalysisIds || []), deletePaperAnalysisId])];
     }
 
     if (deleteStudentId || toggleWithdrawnId || deleteCourseName || cleanArchiveYear || dismissLeaveId || deleteLeaveId || removeLateId || deleteLateId || deleteExamId || deleteEventId || deleteContactId || deleteTeacherId || deletePaperAnalysisId) {
