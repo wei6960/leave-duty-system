@@ -22,7 +22,9 @@ const periods = ["上午", "下午", "晚上"];
 const termStages = ["一段", "二段", "三段"];
 const coreCourses = ["國文", "英文", "數A", "數B", "數學", "自然", "總複習"];
 const defaultCourses = ["國文", "英文", "數A", "數B", "數學", "數輔", "自然", "總複習", "素養課", "讀書班"];
-const mockLevelScores = { "A++": 100, "A+": 95, A: 90, "B++": 88, "B+": 84, B: 80, C: 75 };
+const mockLevelScores = { "A++": 95, "A+": 90, A: 80, "B++": 70, "B+": 60, B: 45, C: 30 };
+const legacyMockLevelScores = { 100: "A++", 95: "A+", 90: "A", 88: "B++", 84: "B+", 80: "B", 75: "C" };
+const capWeakScoreLine = 55;
 let courses = [...defaultCourses];
 const termSubjects = ["國文", "英文", "數學", "自然", "歷史", "地理", "公民"];
 let reportSubjects = [...new Set([...courses, ...termSubjects])];
@@ -2040,7 +2042,7 @@ function dutyScoresForStudent(studentId, date, grade, subject) {
   if (!exam) return [];
   const rawValues = rawScoreValuesForStudent(exam, studentId);
   return rawValues.length
-    ? rawValues.map((value) => scoreDisplayForExam(value, exam))
+    ? rawValues.map((value) => scoreDisplayForExam(value, exam, { raw: true }))
     : scoreValuesForStudent(exam, studentId).map((value) => scoreDisplayForExam(value, exam));
 }
 
@@ -2712,7 +2714,7 @@ function renderRetentionReport() {
             <td>${escapeHtml(row.student.name)}</td>
             <td>${escapeHtml(row.exam.subject)}</td>
             <td>${escapeHtml(row.exam.scope || "-")}</td>
-            <td class="${scoreClass(row.score)}">${rowAverageDisplay(row)}</td>
+            <td class="${rowScoreClass(row)}">${rowAverageDisplay(row)}</td>
             <td>${scoreDisplay(row.decision.baseline)}</td>
             <td>${scoreDisplay(row.decision.reasonable)}</td>
             <td>${row.decision.shouldStay ? "留班" : "-"}</td>
@@ -3356,18 +3358,31 @@ function scoreNumericValue(value, mockMode = false) {
   return Number.isFinite(numeric) ? numeric : NaN;
 }
 
-function mockLevelFromScore(value) {
+function mockLevelFromScore(value, { raw = false } = {}) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return "-";
+  if (raw && legacyMockLevelScores[numeric]) return legacyMockLevelScores[numeric];
+  if (numeric >= 95) return "A++";
+  if (numeric >= 90) return "A+";
+  if (numeric >= 80) return "A";
+  if (numeric >= 70) return "B++";
+  if (numeric >= 60) return "B+";
+  if (numeric >= 45) return "B";
+  return "C";
+}
+
+function nearestMockLevelFromScore(value) {
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) return "-";
   return Object.entries(mockLevelScores)
     .sort((a, b) => Math.abs(numeric - a[1]) - Math.abs(numeric - b[1]) || b[1] - a[1])[0]?.[0] || "-";
 }
 
-function scoreDisplayForExam(value, exam = null) {
+function scoreDisplayForExam(value, exam = null, options = {}) {
   if (exam?.mockMode) {
     const level = normalizeMockLevel(value);
     if (level) return level;
-    return mockLevelFromScore(value);
+    return options.nearest ? nearestMockLevelFromScore(value) : mockLevelFromScore(value, options);
   }
   return scoreDisplay(scoreNumericValue(value));
 }
@@ -3375,7 +3390,7 @@ function scoreDisplayForExam(value, exam = null) {
 function rowPapersDisplay(row) {
   if (row?.exam?.mockMode) {
     const values = row.rawPapers?.length ? row.rawPapers : row.papers || [];
-    return values.map((value) => scoreDisplayForExam(value, row.exam)).join(" / ");
+    return values.map((value) => scoreDisplayForExam(value, row.exam, { raw: true })).join(" / ");
   }
   return (row?.papers || []).map(scoreDisplay).join(" / ");
 }
@@ -3406,7 +3421,7 @@ function applyEditingExamScores() {
     const values = rawScoreValuesForStudent(exam, student.id);
     Array.from({ length: paperCount }, (_, index) => {
       const input = document.querySelector(`[data-score-student="${student.id}"][data-score-paper="${index}"]`);
-      if (input && values[index] !== undefined) input.value = exam.mockMode ? scoreDisplayForExam(values[index], exam) : values[index];
+      if (input && values[index] !== undefined) input.value = exam.mockMode ? scoreDisplayForExam(values[index], exam, { raw: true }) : values[index];
     });
   });
 }
@@ -3439,10 +3454,18 @@ function scoreClass(value) {
   return Number.isFinite(value) && value < 60 ? "fail-score" : "";
 }
 
-function scoreTableCell(value, absent = false, exam = null) {
+function scoreClassForExam(value, exam = null, options = {}) {
+  if (exam?.mockMode) return scoreDisplayForExam(value, exam, options) === "C" ? "fail-score" : "";
+  return scoreClass(scoreNumericValue(value));
+}
+
+function rowScoreClass(row) {
+  return scoreClassForExam(row?.score, row?.exam);
+}
+
+function scoreTableCell(value, absent = false, exam = null, options = {}) {
   if (absent) return `<td class="absent-score">缺考</td>`;
-  const numeric = scoreNumericValue(value, exam?.mockMode);
-  return `<td class="${scoreClass(numeric)}">${scoreDisplayForExam(value, exam)}</td>`;
+  return `<td class="${scoreClassForExam(value, exam, options)}">${scoreDisplayForExam(value, exam, options)}</td>`;
 }
 
 function chunkArray(items, size) {
@@ -3530,7 +3553,7 @@ function renderClassReport(exam = displayedClassReportExam()) {
     </div>
     <table>
       <thead><tr><th>排名</th><th>姓名</th><th>班級</th><th>科目</th>${Array.from({ length: paperCount }, (_, index) => `<th>卷${index + 1}</th>`).join("")}<th>平均</th></tr></thead>
-      <tbody>${reportRows.map(({ student, ranked, absent }) => `<tr><td>${ranked ? ranked.rank : "-"}</td><td>${student.name}</td><td>${student.grade}</td><td>${exam.subject}</td>${Array.from({ length: paperCount }, (_, index) => scoreTableCell(ranked?.rawPapers?.[index] ?? ranked?.papers[index], absent, exam)).join("")}${scoreTableCell(ranked?.score, absent, exam)}</tr>`).join("") || `<tr><td colspan="${5 + paperCount}">尚無成績</td></tr>`}</tbody>
+      <tbody>${reportRows.map(({ student, ranked, absent }) => `<tr><td>${ranked ? ranked.rank : "-"}</td><td>${student.name}</td><td>${student.grade}</td><td>${exam.subject}</td>${Array.from({ length: paperCount }, (_, index) => scoreTableCell(ranked?.rawPapers?.[index] ?? ranked?.papers[index], absent, exam, { raw: true })).join("")}${scoreTableCell(ranked?.score, absent, exam)}</tr>`).join("") || `<tr><td colspan="${5 + paperCount}">尚無成績</td></tr>`}</tbody>
     </table>
   `;
 }
@@ -4162,7 +4185,7 @@ function summarizeScores(rows) {
   const scores = rows.map((row) => Number(row.score)).filter(Number.isFinite);
   const average = averageScore(scores);
   const passRate = scores.length ? scores.filter((score) => score >= 60).length / scores.length * 100 : NaN;
-  const lowRate = scores.length ? scores.filter((score) => score < 70).length / scores.length * 100 : NaN;
+  const lowRate = scores.length ? scores.filter((score) => score < capWeakScoreLine).length / scores.length * 100 : NaN;
   const high = scores.length ? Math.max(...scores) : NaN;
   const low = scores.length ? Math.min(...scores) : NaN;
   return { count: scores.length, average, passRate, lowRate, high, low, range: Number.isFinite(high) && Number.isFinite(low) ? high - low : NaN };
@@ -4223,10 +4246,10 @@ function classOpsWeakUnits(meta) {
   return [...groups.values()]
     .map((group) => {
       const average = averageScore(group.scores);
-      const lowCount = group.scores.filter((score) => score < 70).length;
+      const lowCount = group.scores.filter((score) => score < capWeakScoreLine).length;
       return { ...group, average, lowCount, count: group.scores.length, latestDate: group.dates.sort().pop() || "" };
     })
-    .filter((group) => group.lowCount || group.average < 75)
+    .filter((group) => group.lowCount || group.average < 60)
     .sort((a, b) => b.lowCount - a.lowCount || a.average - b.average)
     .slice(0, 12);
 }
@@ -4468,7 +4491,7 @@ function renderClassOps() {
             <strong>${item.subject}</strong>
             <b class="level-badge">${levelFromScore(item.average)}</b>
           </div>
-          <span>平均 ${scoreDisplay(item.average)}｜及格率 ${scoreDisplay(item.passRate)}%｜低於 70：${scoreDisplay(item.lowRate)}%</span>
+          <span>平均 ${scoreDisplay(item.average)}｜及格率 ${scoreDisplay(item.passRate)}%｜基礎線以下：${scoreDisplay(item.lowRate)}%</span>
           <small>最高 ${scoreDisplay(item.high)}，最低 ${scoreDisplay(item.low)}，波動 ${scoreDisplay(item.range)}，共 ${item.count} 筆</small>
           <div class="subject-bar"><i style="width:${Math.max(0, Math.min(100, item.average || 0))}%"></i></div>
         </article>
@@ -4667,8 +4690,8 @@ function downloadTermReportImage() {
 
 function estimateLevel(avg) {
   if (!Number.isFinite(avg)) return "資料不足";
-  if (avg >= 85) return "A 區間";
-  if (avg >= 70) return "B 區間";
+  if (avg >= 80) return "A 區間";
+  if (avg >= 45) return "B 區間";
   return "C 區間";
 }
 
@@ -4678,10 +4701,10 @@ function levelFromScore(score) {
   if (!Number.isFinite(score)) return "資料不足";
   if (score >= 95) return "A++";
   if (score >= 90) return "A+";
-  if (score >= 85) return "A";
-  if (score >= 80) return "B++";
-  if (score >= 75) return "B+";
-  if (score >= 70) return "B";
+  if (score >= 80) return "A";
+  if (score >= 70) return "B++";
+  if (score >= 60) return "B+";
+  if (score >= 45) return "B";
   return "C";
 }
 
@@ -4727,8 +4750,8 @@ function analyzeSubjectPerformance(subject, rows) {
   let level = levelFromScore(combined);
   if (trend >= 8 && latest >= recentAvg) level = shiftLevel(level, 1);
   if (trend <= -8 || (range >= 25 && latest < recentAvg)) level = shiftLevel(level, -1);
-  if ((combined >= 70 || latest >= 70) && level === "C") level = "B";
-  const weakRows = recent.filter((row) => row.score < 70);
+  if ((combined >= capWeakScoreLine || latest >= capWeakScoreLine) && level === "C") level = "B";
+  const weakRows = recent.filter((row) => row.score < capWeakScoreLine);
   const focus = weakRows.map((row) => row.exam.scope || dateLabel(row.exam.date)).slice(-3).join("、");
   const note = [
     `歷程 ${allScores.length} 次`,
@@ -4737,7 +4760,7 @@ function analyzeSubjectPerformance(subject, rows) {
     `最新 ${scoreDisplay(latest)}`,
     trendLabel(trend),
     stabilityLabel(range),
-    focus ? `需補強：${focus}` : "近期未見明顯低於 70 分的單元",
+    focus ? `需補強：${focus}` : "近期未見明顯低於基礎線的單元",
   ].join("｜");
   return { subject, level, recentAvg, longAvg, latest, trend, range, count: allScores.length, recentCount: scores.length, note };
 }
@@ -4895,7 +4918,7 @@ function studentWeakUnits(student, analyses = subjectPerformanceRows(student)) {
   analyses.forEach((analysis) => {
     const grouped = new Map();
     analysis.rows
-      .filter((row) => Number.isFinite(row.score) && row.score < 70)
+      .filter((row) => Number.isFinite(row.score) && row.score < capWeakScoreLine)
       .forEach((row) => {
         const topic = weakTopicKey(row.exam.scope || "未填重點");
         const key = `${analysis.subject}|${topic}`;
@@ -4929,7 +4952,7 @@ function studentWeakUnitsHtml(student, analyses) {
   return `<section class="student-weak-panel">
     <div class="panel-title">
       <h2>弱點科目與單元</h2>
-      <span>依歷史週考低於 70 分統整</span>
+      <span>依會考基礎線以下紀錄統整</span>
     </div>
     <div class="weak-topic-grid">
       ${weakSubjects.map((item) => `<article class="weak-topic-card">
@@ -4978,8 +5001,8 @@ function studentAiVisualStripHtml(student, analyses) {
 function studentReportVisualsHtml(student, analyses) {
   const scores = analyses.flatMap((item) => item.rows.map((row) => row.score).filter(Number.isFinite));
   const average = averageScore(scores);
-  const lowCount = scores.filter((score) => score < 70).length;
-  const highCount = scores.filter((score) => score >= 85).length;
+  const lowCount = scores.filter((score) => score < capWeakScoreLine).length;
+  const highCount = scores.filter((score) => score >= 80).length;
   return `<section class="student-report-visuals">
     <article class="analysis-card chart-card">
       <div class="analysis-card-head"><strong>各科雷達圖</strong><b class="level-badge">能力面</b></div>
@@ -4991,7 +5014,7 @@ function studentReportVisualsHtml(student, analyses) {
       <div class="student-stat-grid">
         <span>總平均 <b>${scoreDisplay(average)}</b></span>
         <span>高分筆數 <b>${highCount}</b></span>
-        <span>低於70 <b>${lowCount}</b></span>
+        <span>基礎線以下 <b>${lowCount}</b></span>
       </div>
     </article>
   </section>`;
@@ -5107,7 +5130,7 @@ function careerScoreLookupHtml(student, queryDate, selectedSubject, options = {}
               return `<div class="score-result-card">
                 <b>${row.exam.subject}</b>
                 <span>${row.exam.scope || "未填重點"}</span>
-                <strong class="${scoreClass(row.score)}">${rowAverageDisplay(row)}</strong>
+                <strong class="${rowScoreClass(row)}">${rowAverageDisplay(row)}</strong>
                 <small>各卷 ${rowPapersDisplay(row)}</small>
                 <div class="score-stat-grid">
                   <span>排名 <b>${stats.rank}</b></span>
@@ -5135,7 +5158,7 @@ function careerScoreLookupHtml(student, queryDate, selectedSubject, options = {}
           return `<article class="exam-mini-card">
             <div class="mini-card-top">
               <b>${row.exam.subject}</b>
-              <strong class="${scoreClass(row.score)}">${rowAverageDisplay(row)}</strong>
+              <strong class="${rowScoreClass(row)}">${rowAverageDisplay(row)}</strong>
             </div>
             <span>${row.exam.scope || "未填考試單元"}</span>
             <div class="mini-card-meta">
@@ -5160,7 +5183,7 @@ function careerScoreLookupHtml(student, queryDate, selectedSubject, options = {}
         <thead><tr><th>日期</th><th>科目</th><th>重點</th><th>各卷</th><th>平均</th><th>當天統計</th></tr></thead>
         <tbody>${weekRows.map((row) => {
           const stats = examStatsForStudent(row.exam, student.id);
-          return `<tr><td>${dateLabel(row.exam.date)}</td><td>${row.exam.subject}</td><td>${row.exam.scope || "-"}</td><td>${rowPapersDisplay(row)}</td><td class="${scoreClass(row.score)}">${rowAverageDisplay(row)}</td><td>${examStatsInline(stats)}</td></tr>`;
+          return `<tr><td>${dateLabel(row.exam.date)}</td><td>${row.exam.subject}</td><td>${row.exam.scope || "-"}</td><td>${rowPapersDisplay(row)}</td><td class="${rowScoreClass(row)}">${rowAverageDisplay(row)}</td><td>${examStatsInline(stats)}</td></tr>`;
         }).join("") || `<tr><td colspan="6">本週尚無成績</td></tr>`}</tbody>
       </table>
     </div>`}
@@ -5435,7 +5458,7 @@ function termAnalysisSubjectCards(student, meta, selectedSubject, rows) {
       const termScore = termScoreForSubject(student, meta, subject);
       const latestRow = subjectRows.at(-1);
       const latestStats = latestRow ? examStatsForStudent(latestRow.exam, student.id) : null;
-      const weakRows = subjectRows.filter((row) => Number(row.score) < 70);
+      const weakRows = subjectRows.filter((row) => Number(row.score) < capWeakScoreLine);
       const weakUnits = weakRows.map((row) => row.exam.scope || dateLabel(row.exam.date)).slice(-5);
       const termScoreValue = Number(termScore?.score);
       const level = Number.isFinite(termScoreValue) ? levelFromScore(termScoreValue) : (analysis?.level || "資料不足");
@@ -5496,7 +5519,7 @@ function termAnalysisReportHtml(student, meta, selectedSubject) {
         <thead><tr><th>日期</th><th>科目</th><th>考試重點 / 單元</th><th>各卷</th><th>平均</th><th>排名</th></tr></thead>
         <tbody>${filteredRows.slice().reverse().map((row) => {
           const rank = currentScoreRows(row.exam).find((item) => item.student.id === student.id)?.rank || "-";
-          return `<tr><td>${dateLabel(row.exam.date)}</td><td>${row.exam.subject}</td><td>${row.exam.scope || "-"}</td><td>${rowPapersDisplay(row)}</td><td class="${scoreClass(row.score)}">${rowAverageDisplay(row)}</td><td>${rank}</td></tr>`;
+          return `<tr><td>${dateLabel(row.exam.date)}</td><td>${row.exam.subject}</td><td>${row.exam.scope || "-"}</td><td>${rowPapersDisplay(row)}</td><td class="${rowScoreClass(row)}">${rowAverageDisplay(row)}</td><td>${rank}</td></tr>`;
         }).join("") || `<tr><td colspan="6">尚無該段週考紀錄</td></tr>`}</tbody>
       </table>
     </div>
@@ -5753,9 +5776,9 @@ function printClassReportPdf() {
       ${Array.from({ length: paperCount }, (_, index) => {
         if (absent) return `<td class="absent-score">缺考</td>`;
         const value = ranked?.rawPapers?.[index] ?? ranked?.papers[index];
-        return `<td class="${scoreClass(scoreNumericValue(value, exam.mockMode))}">${scoreDisplayForExam(value, exam)}</td>`;
+        return `<td class="${scoreClassForExam(value, exam, { raw: true })}">${scoreDisplayForExam(value, exam, { raw: true })}</td>`;
       }).join("")}
-      <td class="${absent ? "absent-score" : scoreClass(ranked?.score)}">${absent ? "缺考" : scoreDisplayForExam(ranked?.score, exam)}</td>
+      <td class="${absent ? "absent-score" : scoreClassForExam(ranked?.score, exam)}">${absent ? "缺考" : scoreDisplayForExam(ranked?.score, exam)}</td>
     </tr>
   `;
   const pagesHtml = pages.map((pageRows, pageIndex) => `
@@ -5835,7 +5858,7 @@ function printClassOpsWeeklyReportPdf() {
     <section class="report-section">
       <h2 class="section-title">各科狀況</h2>
       <table class="report-table">
-        <thead><tr><th>科目</th><th>平均</th><th>及格率</th><th>低於 70</th><th>最高</th><th>最低</th><th>資料量</th></tr></thead>
+        <thead><tr><th>科目</th><th>平均</th><th>及格率</th><th>基礎線以下</th><th>最高</th><th>最低</th><th>資料量</th></tr></thead>
         <tbody>${statRows.map((item) => `<tr><td>${escapeHtml(item.subject)}</td><td class="${scoreClass(item.average)}">${scoreDisplay(item.average)}</td><td>${scoreDisplay(item.passRate)}%</td><td>${scoreDisplay(item.lowRate)}%</td><td>${scoreDisplay(item.high)}</td><td>${scoreDisplay(item.low)}</td><td>${item.count}</td></tr>`).join("") || `<tr><td colspan="7">目前沒有符合條件的班級成績。</td></tr>`}</tbody>
       </table>
     </section>
@@ -5869,9 +5892,9 @@ function classReportExportRows(exam) {
     name: student.name,
     grade: student.grade,
     subject: exam.subject,
-    papers: Array.from({ length: paperCount }, (_item, index) => absent ? "缺考" : scoreDisplayForExam(ranked?.rawPapers?.[index] ?? ranked?.papers[index], exam)),
+    papers: Array.from({ length: paperCount }, (_item, index) => absent ? "缺考" : scoreDisplayForExam(ranked?.rawPapers?.[index] ?? ranked?.papers[index], exam, { raw: true })),
     average: absent ? "缺考" : scoreDisplayForExam(ranked?.score, exam),
-    failing: !absent && Number.isFinite(ranked?.score) && ranked.score < 60,
+    failing: !absent && scoreClassForExam(ranked?.score, exam) === "fail-score",
   }));
   return { average, paperCount, rows };
 }
@@ -6311,7 +6334,7 @@ async function printStudentReportPdf() {
   const weeklyRows = examRows.slice().reverse().map((row) => {
     const stats = examStatsForStudent(row.exam, student.id);
     const paperTopics = row.papers.map((_value, index) => row.exam.paperTopics?.[index] || `卷${index + 1}`).join(" / ");
-    return `<tr><td>${escapeHtml(dateLabel(row.exam.date))}</td><td>${escapeHtml(row.exam.subject)}</td><td class="left">${escapeHtml(row.exam.scope || "-")}<br><small>${escapeHtml(paperTopics)}</small></td><td>${escapeHtml(rowPapersDisplay(row))}</td><td class="${scoreClass(row.score)}">${rowAverageDisplay(row)}</td><td>${escapeHtml(examStatsInline(stats))}</td></tr>`;
+    return `<tr><td>${escapeHtml(dateLabel(row.exam.date))}</td><td>${escapeHtml(row.exam.subject)}</td><td class="left">${escapeHtml(row.exam.scope || "-")}<br><small>${escapeHtml(paperTopics)}</small></td><td>${escapeHtml(rowPapersDisplay(row))}</td><td class="${rowScoreClass(row)}">${rowAverageDisplay(row)}</td><td>${escapeHtml(examStatsInline(stats))}</td></tr>`;
   }).join("");
   pdfDocument(`${student.name} 生涯分析報告`, `
     <section class="report-cover">
@@ -8947,7 +8970,7 @@ function renderParentScoreHistory(student) {
     <h3 class="subhead">當日成績</h3>
     <div class="lookup-list">
       ${[
-        ...dayRows.map((row) => `<article class="score-result-card"><b>${row.exam.subject}</b><span>${row.exam.scope || "未填重點"}</span><strong class="${scoreClass(row.score)}">${rowAverageDisplay(row)}</strong><small>${dateLabel(row.exam.date)}｜週考｜各卷 ${rowPapersDisplay(row)}</small></article>`),
+        ...dayRows.map((row) => `<article class="score-result-card"><b>${row.exam.subject}</b><span>${row.exam.scope || "未填重點"}</span><strong class="${rowScoreClass(row)}">${rowAverageDisplay(row)}</strong><small>${dateLabel(row.exam.date)}｜週考｜各卷 ${rowPapersDisplay(row)}</small></article>`),
         ...dayTermRows.map((item) => `<article class="score-result-card"><b>${item.subject}</b><span>${item.term || `${item.year || ""}${item.semester || ""}`} ${item.stage || ""}</span><strong class="${scoreClass(Number(item.score))}">${scoreDisplay(Number(item.score))}</strong><small>${dateLabel(item.date || item.createdAt?.slice(0, 10) || "")}｜段考</small></article>`),
       ].join("") || `<div class="empty small-empty">當日此科暫時沒有成績。</div>`}
     </div>
@@ -8968,7 +8991,7 @@ function renderParentScoreHistory(student) {
                 <td>${row.exam.subject}</td>
                 <td>${row.exam.scope || "-"}</td>
                 <td>${rowPapersDisplay(row)}</td>
-                <td class="${scoreClass(row.score)}">${rowAverageDisplay(row)}</td>
+                <td class="${rowScoreClass(row)}">${rowAverageDisplay(row)}</td>
                 <td>${rank}</td>
                 <td>${scoreDisplay(classAverage)}</td>
               </tr>
